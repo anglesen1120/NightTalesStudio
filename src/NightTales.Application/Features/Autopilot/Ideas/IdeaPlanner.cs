@@ -3,13 +3,17 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
+using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Stories.Similarity;
+using NightTales.Domain.Stories.Structure;
 
 namespace NightTales.Application.Features.Autopilot.Ideas;
 
@@ -25,12 +29,24 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// series' approved episodes and pending ideas (<see cref="IIdeaCorpusProvider"/>), one lexical shingle pass over
 /// every candidate together with the batch's <b>one</b> judge call (<see cref="IIdeaNoveltyChecker"/>; no call at
 /// all when every candidate is already rejected lexically), the content-policy pre-check
-/// (<see cref="IIdeaPolicyChecker"/>: banned themes, the moderator and the true-crime research flag), and the
-/// weighted score of every candidate (<c>IdeaScorer</c>). The pick is the highest-scoring candidate no rule
+/// (<see cref="IIdeaPolicyChecker"/>: banned themes, the moderator and the true-crime research flag), the
+/// per-candidate variety evaluation (<c>VarietyGuard</c>, 02.8.4-T1) and the weighted score of every candidate
+/// (<c>IdeaScorer</c>). The pick is the highest-scoring candidate no rule
 /// rejected, or <c>ideas_no_idea</c> carrying the most common rejection reason when every candidate was rejected.
 /// Every row keeps its measurements whether it won or lost, and the whole batch is stored with one
 /// <see cref="IAppDbContext.SaveChangesAsync"/>. The caller then marks the pick used (<c>MarkUsedAsync</c>) when
 /// the episode consumes it.
+/// </para>
+/// <para>
+/// <b>The variety step (02.8.4-T1).</b> Its input is the series' approved-episode structure history, which
+/// <see cref="IIdeaContextProvider"/> has already read once into <c>IdeaContext.History</c> (newest first): the
+/// planner assesses the window <b>before</b> the paid call, so the guard's suggestion travels in the idea prompt
+/// as <c>required_tags</c>/<c>forbidden_tags</c> and nothing is read or computed twice. Per candidate the order
+/// stays novelty → policy → variety → score → pick, so an earlier rule's reason always wins; a candidate whose
+/// only variety finding is a tag-share hit is penalised (its penalty enters the score) and is never rejected, and
+/// a block is the guard's own <c>variety_triple_repeat</c>/<c>variety_template_repeat</c> reason. Before the rows
+/// are created, every survivor's three vocabulary tags are mapped through the shared
+/// <c>StructureVocabMapper</c> (IDEA-S52-1), so the stored row and the guard read the same values.
 /// </para>
 /// <para>
 /// <b>Ownership (task file [DECISION]).</b> The caller owns the <c>generation_runs</c> row — it creates it,
@@ -77,6 +93,11 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <param name="weights">The score's weights (<c>Autopilot:Ideas:Weights</c>): the ranking the pick comes from.</param>
 /// <param name="limits">The configured field limits <see cref="IdeaValidator"/> enforces.</param>
 /// <param name="options">The configured batch size and its ceiling (<c>Autopilot:Ideas</c>).</param>
+/// <param name="variety">The variety guard's window, cap and switch (<c>Autopilot:Variety</c>, 02.8.4-T1).</param>
+/// <param name="prompts">
+/// The D5 prompt catalog, read for the shared structure vocabulary
+/// (<c>prompts/shared/structure-vocab.v1.json</c>) the guard's tag mapping uses (02.8.4-T1, IDEA-S52-1).
+/// </param>
 /// <param name="metrics">The feature's instruments: what happened to each candidate of the batch.</param>
 /// <param name="logger">The outcome log of this run.</param>
 public sealed partial class IdeaPlanner(
@@ -94,15 +115,11 @@ public sealed partial class IdeaPlanner(
     IdeaWeights weights,
     IdeaLimits limits,
     IdeaPlannerOptions options,
+    VarietyOptions variety,
+    IPromptCatalog prompts,
     IdeaMetrics metrics,
     ILogger<IdeaPlanner> logger) : IIdeaPlanner
 {
-    /// <summary>
-    /// The variety penalty 02.8.1-T2 passes (task Decision 2): 02.8.4-T1's guard computes the real one between
-    /// the policy pre-check and the scoring, and until it is wired the penalty is neutral.
-    /// </summary>
-    private const decimal VarietyPenalty = 0m;
-
     /// <inheritdoc />
     public async ValueTask<ErrorOr<IdeaPick>> ProposeAndPickAsync(
         Guid seriesId,
@@ -131,6 +148,28 @@ public sealed partial class IdeaPlanner(
         var context = await contexts.GetAsync(seriesId, ct).ConfigureAwait(false);
         var language = Enum.Parse<Language>(context.Language, ignoreCase: true);
 
+        // The variety guard's window and steering (02.8.4-T1), computed ONCE here — before the one paid call,
+        // because the suggestion it produces is an input of the prompt, and it costs no money and reads no text.
+        // The history is the list the context provider has already read (newest first, `IdeaContext.History`), so
+        // the guard needs no second query; it takes its own WindowK/TemplateWindowK out of the head of it.
+        var varietyWindow = context.History
+            .Take(Math.Max(variety.WindowK, variety.TemplateWindowK))
+            .ToArray();
+        var assessment = VarietyGuard.AssessBatch(varietyWindow, variety);
+
+        // IDEA-S52-1: the tags of the survivors are mapped onto the topic's own vocabulary with the shared
+        // 02.2.1-T1 mapper and the shared vocabulary file (one reader: the D5 prompt catalog) before any row is
+        // created, so what is stored is what the guard compares and what the writer prompt calls a vocabulary
+        // value. `setting` is a free string and is not part of that set.
+        var rules = new StoryRules
+        {
+            Language = language,
+            StructureVocab = IdeaStructureMapper.Vocabulary(
+                prompts.GetShared(PromptFile.StructureVocab, language),
+                context.Topic,
+                language),
+        };
+
         // The prompt's continuity memory is the bible's own summaries; the history titles stand in for them only
         // when the bible carries none, so the same text is never paid for twice (task file [DECISION]). The test
         // is the summaries and not the snapshot itself (C5): a young series' bible holds a persona, a character or
@@ -151,8 +190,10 @@ public sealed partial class IdeaPlanner(
             context.BannedThemes,
             context.Bible,
             recentEpisodes,
-            RequiredTags: null,
-            ForbiddenTags: null,
+            // An all-empty steering block is sent as `null` rather than as empty members, so the data object
+            // omits the key entirely and the prompt's "absent means unconstrained" rule holds (02.8.4-T1).
+            RequiredTags: RequiredOrNull(assessment.SuggestedRequired),
+            ForbiddenTags: ForbiddenOrNull(assessment.SuggestedForbidden),
             context.ResearchNotes,
             EffectiveCount(context.Count));
 
@@ -163,7 +204,7 @@ public sealed partial class IdeaPlanner(
         }
 
         var batch = generated.Value;
-        var survivors = SelectSurvivors(batch, run.GenerationRunId);
+        var survivors = SelectSurvivors(batch, rules, run.GenerationRunId);
         if (survivors.Count == 0)
         {
             LogNoValidCandidate(run.GenerationRunId, seriesId, batch.Count);
@@ -200,9 +241,10 @@ public sealed partial class IdeaPlanner(
             .CheckAsync(slots, new IdeaPolicyContext(context.Topic, context.BannedThemes), run, ct)
             .ConfigureAwait(false);
 
-        // The seam 02.8.4-T1 plugs into: novelty, then the policy pre-check, then the variety penalty, then the
-        // score. Every candidate of the batch is scored and stored, rejected or not, because the run log shows
-        // the whole pool and the calibration histograms need the readings of the ones that lost.
+        // The variety step 02.8.4-T1 owns: novelty, then the policy pre-check, then the variety guard's per
+        // candidate verdict, then the score. Every candidate of the batch is scored and stored, rejected or not,
+        // because the run log shows the whole pool and the calibration histograms need the readings of the ones
+        // that lost.
         var novelty = measured.Value.ByIdeaId;
 
         // A batch whose answer carried no usable row at all has no measured candidate to protect, so every
@@ -216,12 +258,20 @@ public sealed partial class IdeaPlanner(
         var reasons = new string?[slots.Count];
         var eligible = new decimal?[slots.Count];
         var research = new bool[slots.Count];
+        var decisions = new VarietyDecision[slots.Count];
 
         for (var index = 0; index < slots.Count; index++)
         {
             var signal = novelty[slots[index].IdeaId];
             var verdict = verdicts.ByIdeaId[slots[index].IdeaId];
             var judge = signal.Judge;
+
+            // The guard reads the candidate's mapped tags and beats against the window assessed before the paid
+            // call (02.8.4-T1): a hard block (a triple or a template repeat) rejects it, a tag-share hit only
+            // penalises it. `Autopilot:Variety:Enabled=false` answers the neutral decision — steering stays, no
+            // rejection and no penalty.
+            var decision = VarietyGuard.Evaluate(slots[index].Candidate, assessment, variety);
+            decisions[index] = decision;
 
             // A candidate with no judge reading is neutral, but not identically so: a batch whose call degraded
             // lost the judge for every candidate together, so it keeps LexicalOnly's fit of 1.0 and its own
@@ -230,10 +280,10 @@ public sealed partial class IdeaPlanner(
             // weight, and an unmeasured 1.0 would let it outrank candidates the judge did measure on the very
             // component it never answered about. That one candidate takes the neutral 0.5 instead (F6/S3).
             signals[index] = judge is not null
-                ? new IdeaSignals(signal.LexicalScore, judge.Score, judge.Fit, judge.HookStrength, VarietyPenalty)
+                ? new IdeaSignals(signal.LexicalScore, judge.Score, judge.Fit, judge.HookStrength, decision.Penalty)
                 : anyJudged
-                    ? IdeaSignals.Unjudged(signal.LexicalScore, VarietyPenalty)
-                    : IdeaSignals.LexicalOnly(signal.LexicalScore, VarietyPenalty);
+                    ? IdeaSignals.Unjudged(signal.LexicalScore, decision.Penalty)
+                    : IdeaSignals.LexicalOnly(signal.LexicalScore, decision.Penalty);
             details[index] = new IdeaNoveltyDetail(
                 new IdeaNoveltyLexical(
                     signal.LexicalScore,
@@ -256,16 +306,34 @@ public sealed partial class IdeaPlanner(
 
             // The two raw readings decide the rejection, never the weighted score: the lexical ceiling first (it
             // is free and it is what the whole batch shares), then the judge's own score, then the policy's
-            // verdict. A candidate that survives all three is eligible for the pick.
+            // verdict, and last the variety guard's block — so an earlier rule's reason always wins and a
+            // candidate whose only variety finding is the tag-share cap is scored rather than rejected. A
+            // candidate that survives all four is eligible for the pick.
             reasons[index] = signal.LexicalScore > noveltyOptions.EffectiveLexicalMax
                 ? IdeaRejectionReason.NoveltyLexical
                 : judge is not null && judge.Score > noveltyOptions.EffectiveJudgeMax
                     ? IdeaRejectionReason.NoveltyJudge
-                    : verdict.RejectReason;
+                    : verdict.RejectReason ?? decision.RejectReason;
             eligible[index] = reasons[index] is null ? scores[index] : null;
         }
 
         var winner = IdeaScorer.PickIndex(eligible);
+
+        // The candidates the guard's own rules actually rejected, counted per rule: a candidate whose earlier rule
+        // (novelty or the policy) also named a reason keeps that reason, so the guard is credited only for its own
+        // blocks, and the reason it is credited under is one of the closed `IdeaRejectionReason` constants — never
+        // text (D19). A positive penalty is counted for every candidate that carried it, its pick included: a
+        // penalty is a ranking input, not an outcome.
+        var varietyBlocks = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var reason in reasons)
+        {
+            if (reason is not null && IdeaMetrics.VarietyRuleNames.Contains(reason))
+            {
+                varietyBlocks[reason] = varietyBlocks.GetValueOrDefault(reason) + 1;
+            }
+        }
+
+        var varietyPenalties = decisions.Count(decision => decision.Penalty > 0m);
 
         for (var index = 0; index < ideas.Count; index++)
         {
@@ -283,6 +351,31 @@ public sealed partial class IdeaPlanner(
             var reason = reasons[index] ?? IdeaRejectionReason.NotBest;
             ideas[index].MarkRejected(reason, clock);
             metrics.Candidates(reason, 1);
+        }
+
+        foreach (var (rule, blocked) in varietyBlocks)
+        {
+            metrics.VarietyRejections(rule, blocked);
+        }
+
+        if (varietyPenalties > 0)
+        {
+            metrics.VarietyPenalties(varietyPenalties);
+        }
+
+        if (varietyBlocks.Count > 0 || varietyPenalties > 0)
+        {
+            // Counts and closed codes only (D19): the window the guard read, the candidates it penalised and the
+            // candidates its rules rejected, with the rule named when every block shares one ("-" otherwise).
+            var blockedRules = varietyBlocks.Keys.Order(StringComparer.Ordinal).ToArray();
+            var blockedTotal = varietyBlocks.Values.Sum();
+            LogVariety(
+                run.GenerationRunId,
+                seriesId,
+                assessment.WindowSize,
+                varietyPenalties,
+                blockedTotal,
+                blockedRules.Length == 1 ? blockedRules[0] : "-");
         }
 
         if (winner is not null)
@@ -559,15 +652,20 @@ public sealed partial class IdeaPlanner(
     }
 
     /// <summary>
-    /// Applies the three rules of plan §4 U1 step 4 to one model batch, in the plan's order: everything beyond
+    /// Applies the four rules of plan §4 U1 step 4 to one model batch, in the plan's order: everything beyond
     /// <c>Autopilot:Ideas:MaxCount</c> is dropped, then every candidate <see cref="IdeaValidator"/> refuses, then
-    /// every candidate whose normalised title repeats an earlier survivor (the later one is dropped with reason
+    /// every candidate whose structure tags the shared D3 mapper (02.8.4-T1, IDEA-S52-1) cannot store, then every
+    /// candidate whose normalised title repeats an earlier survivor (the later one is dropped with reason
     /// <c>duplicate</c>).
     /// </summary>
     /// <param name="batch">The model's candidates, in its own order.</param>
+    /// <param name="rules">
+    /// The rules carrying the topic's structure vocabulary: the mapper maps the survivors' tags with them before
+    /// anything is stored or scored (02.8.4-T1).
+    /// </param>
     /// <param name="runId">The run, for the log line.</param>
     /// <returns>The survivors, in the batch's order; empty when no candidate passed.</returns>
-    private List<IdeaCandidate> SelectSurvivors(IReadOnlyList<IdeaCandidate> batch, Guid runId)
+    private List<IdeaCandidate> SelectSurvivors(IReadOnlyList<IdeaCandidate> batch, StoryRules rules, Guid runId)
     {
         var maxCount = EffectiveMaxCount();
         var survivors = new List<IdeaCandidate>(Math.Min(batch.Count, maxCount));
@@ -586,6 +684,20 @@ public sealed partial class IdeaPlanner(
                 invalid++;
                 continue;
             }
+
+            // IDEA-S52-1: a value outside the topic's vocabulary is stored as `other:<text>` by the shared mapper,
+            // which is what the prompt promises the model; the advisory issue that mapping raises is expected and
+            // does not drop anything. Only a blocking text issue (over 40 characters, markup or a URL) does, and
+            // it is a safety net: `IdeaValidator` has just refused the same shapes, so a candidate can only reach
+            // it through a disagreement between the two rule sets.
+            var mapping = IdeaStructureMapper.Map(candidate, rules);
+            if (mapping.IsBlocked)
+            {
+                invalid++;
+                continue;
+            }
+
+            candidate = mapping.Candidate;
 
             if (!titles.Add(IdeaTitleKey.Normalise(candidate.Title)))
             {
@@ -641,6 +753,25 @@ public sealed partial class IdeaPlanner(
     private int EffectiveMaxCount() =>
         options.MaxCount > 0 ? options.MaxCount : IdeaPlannerOptions.DefaultMaxCount;
 
+    /// <summary>
+    /// The guard's required values as the request carries them: an unconstrained dimension is already
+    /// <see langword="null"/> inside the record, and a block that constrains nothing at all is dropped so the
+    /// idea data object omits <c>required_tags</c> rather than sending an empty member (02.8.4-T1).
+    /// </summary>
+    /// <param name="required">The guard's suggested requirements.</param>
+    /// <returns>The value to send, or <see langword="null"/> when the block constrains nothing.</returns>
+    private static StructureRequirements? RequiredOrNull(StructureRequirements required) =>
+        required == StructureRequirements.None ? null : required;
+
+    /// <summary>
+    /// The guard's forbidden values as the request carries them: a block with no forbidden value in any dimension
+    /// is dropped so the idea data object omits <c>forbidden_tags</c> (02.8.4-T1).
+    /// </summary>
+    /// <param name="forbidden">The guard's suggested forbidden values.</param>
+    /// <returns>The value to send, or <see langword="null"/> when nothing is forbidden.</returns>
+    private static StructureForbidden? ForbiddenOrNull(StructureForbidden forbidden) =>
+        forbidden.IsEmpty ? null : forbidden;
+
     [LoggerMessage(
         EventId = 6360,
         Level = LogLevel.Warning,
@@ -688,4 +819,20 @@ public sealed partial class IdeaPlanner(
         Level = LogLevel.Warning,
         Message = "idea_planner_mark_used_refused ideaId={IdeaId} code={Code}")]
     private partial void LogMarkUsedRefused(Guid ideaId, string code);
+
+    /// <summary>
+    /// One line of the variety step (02.8.4-T1, D19): the counts the guard produced and, when every block of the
+    /// batch shares one, the closed rule code that blocked them.
+    /// </summary>
+    /// <param name="runId">The run.</param>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="window">How many history entries the assessment read.</param>
+    /// <param name="penalties">How many candidates carried a positive penalty.</param>
+    /// <param name="blocks">How many candidates the guard's own rules rejected.</param>
+    /// <param name="rule">The shared block rule code, or <c>-</c> when the batch's blocks differ or there is none.</param>
+    [LoggerMessage(
+        EventId = 6374,
+        Level = LogLevel.Information,
+        Message = "idea_planner_variety runId={RunId} seriesId={SeriesId} window={Window} penalties={Penalties} blocks={Blocks} rule={Rule}")]
+    private partial void LogVariety(Guid runId, Guid seriesId, int window, int penalties, int blocks, string rule);
 }

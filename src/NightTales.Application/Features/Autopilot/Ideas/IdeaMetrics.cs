@@ -54,12 +54,38 @@ public sealed class IdeaMetrics : IDisposable
     /// <summary>The <c>brief</c> stage 02.8.1-T2's per-candidate pre-check records.</summary>
     public static readonly string BriefStage = ModerationStageNames.ToWireName(ModerationStage.Brief);
 
+    /// <summary>A candidate the variety guard blocked, by rule (02.8.4-T1).</summary>
+    public const string VarietyRejectionsTotalName = "variety_rejections_total";
+
+    /// <summary>A candidate the variety guard penalised without blocking (02.8.4-T1).</summary>
+    public const string VarietyPenaltiesTotalName = "variety_penalty_total";
+
+    /// <summary>The tag naming the guard rule that blocked a candidate, alongside its counter (02.8.4-T1).</summary>
+    public const string RuleTagName = "rule";
+
+    /// <summary>
+    /// The closed vocabulary of the <see cref="RuleTagName"/> tag: the two rules that block, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <c>variety_tag_cap</c> is deliberately absent: the tag-share cap is a penalty, never a rejection
+    /// (<see cref="IdeaRejectionReason.VarietyTagCap"/>), so it can never be the rule a candidate was blocked
+    /// by and never reaches this tag. A caller that names anything outside this set is refused instead of
+    /// publishing a free-text value on a metric (D19).
+    /// </remarks>
+    public static readonly IReadOnlySet<string> VarietyRuleNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        IdeaRejectionReason.VarietyTripleRepeat,
+        IdeaRejectionReason.VarietyTemplateRepeat,
+    };
+
     private readonly Meter _meter = new(MeterName);
     private readonly Counter<long> _candidates;
     private readonly Histogram<double> _noveltyLexical;
     private readonly Histogram<double> _noveltyJudge;
     private readonly Counter<long> _moderationFlags;
     private readonly Counter<long> _moderationUnavailable;
+    private readonly Counter<long> _varietyRejections;
+    private readonly Counter<long> _varietyPenalties;
 
     /// <summary>Creates the instruments.</summary>
     public IdeaMetrics()
@@ -84,6 +110,14 @@ public sealed class IdeaMetrics : IDisposable
             ModerationUnavailableTotalName,
             "1",
             "A moderation check that could not complete; the fail-closed event of the policy pre-check.");
+        _varietyRejections = _meter.CreateCounter<long>(
+            VarietyRejectionsTotalName,
+            "1",
+            "A candidate the variety guard blocked, tagged with the rule that blocked it.");
+        _varietyPenalties = _meter.CreateCounter<long>(
+            VarietyPenaltiesTotalName,
+            "1",
+            "A candidate the variety guard penalised without blocking; the soft cap's share pressure.");
     }
 
     /// <summary>
@@ -127,6 +161,40 @@ public sealed class IdeaMetrics : IDisposable
 
     /// <summary>Counts one moderation check that could not complete, whatever the fail mode then decides.</summary>
     public void ModerationUnavailable() => _moderationUnavailable.Add(1);
+
+    /// <summary>
+    /// Counts the candidates a variety rule blocked, in one add, so a batch the template rule stopped is one
+    /// instrument update rather than one per candidate.
+    /// </summary>
+    /// <param name="rule">
+    /// The rule that blocked them: <see cref="IdeaRejectionReason.VarietyTripleRepeat"/> or
+    /// <see cref="IdeaRejectionReason.VarietyTemplateRepeat"/>, and nothing else (the closed
+    /// <see cref="VarietyRuleNames"/> set — the value is a rule code, never idea text, D19).
+    /// </param>
+    /// <param name="count">How many candidates the rule blocked; must be positive.</param>
+    /// <exception cref="ArgumentException"><paramref name="rule"/> is blank or outside <see cref="VarietyRuleNames"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is not positive.</exception>
+    public void VarietyRejections(string rule, int count)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rule);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+        if (!VarietyRuleNames.Contains(rule))
+        {
+            throw new ArgumentException("The variety rule is outside the closed vocabulary.", nameof(rule));
+        }
+
+        _varietyRejections.Add(count, new KeyValuePair<string, object?>(RuleTagName, rule));
+    }
+
+    /// <summary>Counts the candidates the variety guard penalised without blocking.</summary>
+    /// <param name="count">How many candidates carried a positive penalty; must be positive.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is not positive.</exception>
+    public void VarietyPenalties(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+
+        _varietyPenalties.Add(count);
+    }
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

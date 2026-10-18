@@ -13,7 +13,7 @@ namespace NightTales.Domain.Autopilot.Ideas;
 /// <param name="JudgeScore">The judge's similarity score, 0…1 (0 when the judge was skipped).</param>
 /// <param name="JudgeFit">The judge's fit score, 0…1 (1 when the whole batch degraded, 0.5 when only this candidate was left unjudged).</param>
 /// <param name="JudgeHookStrength">The judge's hook strength, 0…1 (0.5 when the batch degraded or this candidate was left unjudged).</param>
-/// <param name="VarietyPenalty">The variety guard's penalty: 0 clean, 0.5 soft cap hit; 1 blocks before scoring.</param>
+/// <param name="VarietyPenalty">The variety guard's penalty: 0 clean, 0.5 for one soft cap hit, 0.75 for two or more (02.8.4-T1).</param>
 public sealed record IdeaSignals(
     decimal LexicalScore,
     decimal JudgeScore,
@@ -36,7 +36,7 @@ public sealed record IdeaSignals(
     /// expression and one source for the degradation.
     /// </remarks>
     /// <param name="lexicalScore">The lexical similarity to the corpus, 0…1 (0 when nothing overlapped).</param>
-    /// <param name="varietyPenalty">The variety guard's penalty for this candidate, 0…1 (0 in 02.8.1-T2, where the guard is not wired).</param>
+    /// <param name="varietyPenalty">The variety guard's penalty for this candidate, 0…1 (02.8.4-T1; 0 when the guard is off or the candidate is clean).</param>
     /// <returns>The signals the scorer reads for a judge-degraded candidate.</returns>
     public static IdeaSignals LexicalOnly(decimal lexicalScore, decimal varietyPenalty) =>
         new(
@@ -62,7 +62,7 @@ public sealed record IdeaSignals(
     /// neutral either way (<c>IdeaSignals</c>, 02.8.1 plan §3.4).
     /// </remarks>
     /// <param name="lexicalScore">The lexical similarity to the corpus, 0…1 (0 when nothing overlapped).</param>
-    /// <param name="varietyPenalty">The variety guard's penalty for this candidate, 0…1 (0 in 02.8.1-T2, where the guard is not wired).</param>
+    /// <param name="varietyPenalty">The variety guard's penalty for this candidate, 0…1 (02.8.4-T1; 0 when the guard is off or the candidate is clean).</param>
     /// <returns>The signals the scorer reads for a candidate no judge row mentioned.</returns>
     public static IdeaSignals Unjudged(decimal lexicalScore, decimal varietyPenalty) =>
         new(
