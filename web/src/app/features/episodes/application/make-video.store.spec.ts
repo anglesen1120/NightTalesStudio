@@ -1,8 +1,10 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import type { Observable } from 'rxjs';
 import { vi, type MockInstance } from 'vitest';
+import { AppErrorMapper } from '@core/errors';
 import type { AppError, AppErrorKind } from '@core/errors';
 import { APP_ERROR_DEV_MODE } from '@core/errors/app-error-mapper';
 import { IdempotencyIntent } from '@core/http';
@@ -25,6 +27,7 @@ import { MakeVideoStore } from './make-video.store';
 import { StoryEditorStore } from './story-editor.store';
 
 const ETAG = '"ep-1"';
+const OTHER_EPISODE_ID = '33333333-3333-4333-8333-333333333333';
 const ACTION = 'episodes.render.make.action';
 const RETRY = 'episodes.render.make.retry';
 const BLOCKED = 'episodes.render.make.blockedKeywords';
@@ -86,6 +89,15 @@ async function loaded(options: SetupOptions = {}): Promise<StoreState> {
   await state.editor.load(EPISODE_ID);
   return state;
 }
+/**
+ * Moves the page to another `:id` the way the route does it: the scripted read answers the new episode and the detail
+ * store's own `load` installs it. The make-video store is component-scoped, so nothing else resets it.
+ */
+async function openEpisode(state: StoreState, id: string): Promise<void> {
+  state.episodes.scriptGet(() => Promise.resolve(detailAnswer({ id, nextActions: ['render'] })));
+  await state.detail.load(id);
+}
+
 function keyOf(call: RenderCommandIntent | undefined): string {
   return call?.key ?? '';
 }
@@ -368,6 +380,97 @@ describe('MakeVideoStore', () => {
     await state.store.makeVideo();
     expect(state.store.retryAfterSec()).toBeNull();
     expect(state.store.canMakeVideo()).toBe(true);
+  });
+
+  it('makeVideo_HeldIntentOfAnotherEpisode_IsSettledSoTheNewEpisodeGetsItsOwnKey', async () => {
+    const state = await loaded();
+    state.repo.willFailRender(networkError());
+    await state.store.makeVideo();
+    const heldA = state.store.intent();
+    expect(heldA).not.toBeNull();
+
+    // The same page for another `:id` (the route is reused): the key of the first click is not a key for this episode.
+    await openEpisode(state, OTHER_EPISODE_ID);
+    state.repo.willAcceptRender('job-b');
+    await state.store.makeVideo();
+
+    const [first, second] = state.repo.requestCalls;
+    expect(second?.episodeId).toBe(OTHER_EPISODE_ID);
+    expect(keyOf(second?.intent)).not.toBe(keyOf(first?.intent));
+    expect(keyOf(second?.intent)).not.toBe('');
+    // The abandoned key is settled and released here, so no later click can replay it on a third episode.
+    expect(heldA?.isSettled).toBe(true);
+    expect(state.store.intent()).toBeNull();
+  });
+
+  it('makeVideo_EpisodeSwitchesWhileACallIsInFlight_LateAnswerWritesNothingAndTheNewEpisodeGetsItsOwnKey', async () => {
+    const state = await loaded();
+    state.repo.deferRender();
+    const runningA = state.store.makeVideo();
+    await settle();
+
+    await openEpisode(state, OTHER_EPISODE_ID);
+    // The in-flight hold is the store's own: nothing on B can mint a key while A's answer is outstanding.
+    expect(state.store.canMakeVideo()).toBe(false);
+
+    // A's answer arrives after the switch: it belongs to a superseded command on another episode, so it writes nothing
+    // and leaves no key of A's behind for B's click to replay (the 422 path the server would answer with).
+    state.repo.resolveRender('job-a', 0);
+    await runningA;
+    await settle();
+    expect(state.store.error()).toBeNull();
+    expect(state.store.intent()).toBeNull();
+
+    state.repo.deferRender(false);
+    state.repo.willAcceptRender('job-b');
+    await state.store.makeVideo();
+    const [first, second] = state.repo.requestCalls;
+    expect(second?.episodeId).toBe(OTHER_EPISODE_ID);
+    expect(keyOf(second?.intent)).not.toBe(keyOf(first?.intent));
+    expect(state.store.intent()).toBeNull();
+  });
+
+  it.each([
+    [408, 'Request Timeout'],
+    [425, 'Too Early'],
+  ] as const)('makeVideo_UnmappedTransportStatus_%i_KeepsTheKeyForTheRetry', async (status, statusText) => {
+    const state = await loaded();
+    // Built by the real mapper, as the wire does: an unmapped status is `unknown_error` with kind `unknown`, which is
+    // not a definitive refusal — an intermediary may have answered after the API already created the job.
+    const upstream = TestBed.inject(AppErrorMapper).from(new HttpErrorResponse({ status, statusText, url: '/api/v1/episodes/x/render' }));
+    expect(upstream.kind).toBe('unknown');
+    expect(upstream.status).toBe(status);
+
+    state.repo.willFailRender(upstream);
+    await state.store.makeVideo();
+    expect(state.store.error()?.status).toBe(status);
+    expect(state.store.intent()).not.toBeNull();
+
+    state.repo.willAcceptRender('job-2');
+    await state.store.makeVideo();
+    const [first, second] = state.repo.requestCalls;
+    // One key on the wire: the server replays its stored answer instead of a second job and a second reservation.
+    expect(second?.intent).toBe(first?.intent);
+    expect(keyOf(second?.intent)).toBe(keyOf(first?.intent));
+    expect(state.store.intent()).toBeNull();
+  });
+
+  it.each([
+    [400, 'validation_failed', 'validation'],
+    [422, 'idempotency_key_reused', 'client_bug'],
+    [429, 'spend_cap_reached', 'rate_limit'],
+  ] as const)('makeVideo_MappedRefusal_%i_%s_SettlesTheKeySoTheRetryMintsANewOne', async (status, code, kind) => {
+    const state = await loaded();
+    state.repo.willFailRender(appError(code, status, kind));
+    await state.store.makeVideo();
+    // A definitive refusal is the whole answer: the intent is done with, so the next click is a new command.
+    expect(state.store.intent()).toBeNull();
+
+    state.repo.willAcceptRender('job-2');
+    await state.store.makeVideo();
+    const [first, second] = state.repo.requestCalls;
+    expect(state.repo.requestCalls).toHaveLength(2);
+    expect(keyOf(second?.intent)).not.toBe(keyOf(first?.intent));
   });
 
   it('dismiss_Teardown_DropsTheHeldIntent', async () => {

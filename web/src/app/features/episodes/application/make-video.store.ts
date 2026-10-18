@@ -15,6 +15,18 @@ import { StoryEditorStore } from './story-editor.store';
 const RENDER_ACTION = 'render';
 const RETRY_RENDER_ACTION = 'retry_render';
 
+/**
+ * True when the server never gave a definitive refusal, so the command may or may not have been applied: no response
+ * at all (`kind network`), a 5xx (`kind server`), or a status this client cannot map — a proxy's 408/425 or a status 0
+ * with no mapped code. The key is KEPT for these, so the user's retry replays one server effect instead of reserving
+ * credit twice (09.6.1-T1:197). Every mapped refusal (400/401/403/404/409/412/413/422/428/429) is final for the intent.
+ */
+function isUnknownOutcome(error: AppError): boolean {
+  if (error.kind === 'network' || error.kind === 'server') return true;
+  if (error.kind !== 'unknown') return false;
+  return error.status === 0 || error.status === 408 || error.status === 425 || error.status >= 500;
+}
+
 const ACTION_KEY = 'episodes.render.make.action' as const;
 const RETRY_KEY = 'episodes.render.make.retry' as const;
 const BLOCKED_KEY = 'episodes.render.make.blockedKeywords' as const;
@@ -71,6 +83,8 @@ export class MakeVideoStore {
   /** The wait a `429 spend_cap_reached` asked for, in seconds; it feeds `RetryCountdown` and holds the button back. */
   readonly retryAfterSec = this.retryAfterState.asReadonly();
   private readonly intentState = signal<IdempotencyIntent | null>(null);
+  /** The episode the held intent was minted for: a page that moves to another `:id` must never replay its key. */
+  private intentEpisodeId: string | null = null;
 
   /** The one intent of the click in progress, reused by every retry until a terminal answer settles it. */
   readonly intent = this.intentState.asReadonly();
@@ -136,17 +150,24 @@ export class MakeVideoStore {
     this.errorState.set(null);
     this.needsRefreshState.set(false);
     this.clearRateLimit();
-    const intent = this.intentFor();
+    const intent = this.intentFor(episode.id);
     try {
       await this.repo.requestRender(episode.id, episode.etag, intent);
-      if (this.stale(episode.id, call)) return;
+      if (this.stale(episode.id, call)) {
+        // The page moved on while this was in flight: the answer belongs to another `:id`, so no key of this episode
+        // is left behind for the next click to replay on a different one (D1).
+        this.dropIntent(intent);
+        return;
+      }
       // 202: the key is spent and the server owns the new state. Nothing is written here — the episode's own status
       // and the timeline branch take over once the detail reports the job.
-      intent.settle();
-      this.intentState.set(null);
+      this.dropIntent(intent);
       void this.detail.refetch();
     } catch (cause) {
-      if (this.stale(episode.id, call)) return;
+      if (this.stale(episode.id, call)) {
+        this.dropIntent(intent);
+        return;
+      }
       await this.route(episode.id, intent, cause);
     } finally {
       if (call === this.callSeq && !this.destroyed) this.submittingState.set(false);
@@ -163,6 +184,7 @@ export class MakeVideoStore {
     this.confirmRef?.close(false);
     this.confirmRef = null;
     this.intentState.set(null);
+    this.intentEpisodeId = null;
     this.submittingState.set(false);
   }
 
@@ -179,27 +201,41 @@ export class MakeVideoStore {
     return accepted;
   }
 
-  /** The held, unfinished intent when there is one (a retry of the same click), otherwise a new key for a new click. */
-  private intentFor(): IdempotencyIntent {
+  /**
+   * The held, unfinished intent when it belongs to **this** episode (a retry of the same click, e.g. after a lost
+   * response), otherwise a new key. An intent left over from another `:id` — the page reuses the route — is settled
+   * and replaced: the API refuses a key reused on another episode with 422 `idempotency_key_reused` (09.6.1-T1:217).
+   */
+  private intentFor(episodeId: string): IdempotencyIntent {
     const held = this.intent();
-    if (held !== null && !held.isSettled) return held;
+    if (held !== null && !held.isSettled && this.intentEpisodeId === episodeId) return held;
+    if (held !== null) this.dropIntent(held);
     const intent = this.keys.begin('episode.render');
     this.intentState.set(intent);
+    this.intentEpisodeId = episodeId;
     return intent;
   }
 
+  /** Settles and drops `intent`, but only while it is still the held one: a newer click's key is never touched. */
+  private dropIntent(intent: IdempotencyIntent): void {
+    if (this.intent() !== intent) return;
+    intent.settle();
+    this.intentState.set(null);
+    this.intentEpisodeId = null;
+  }
+
   /**
-   * One failure → the signal the screen needs (D9), by code, never by copy. An unknown outcome (no response, a 5xx, a
-   * timeout) keeps the intent so the retry replays the same key; every other answer is final for this intent.
+   * One failure → the signal the screen needs (D9), by code, never by copy. A non-definitive answer (`isUnknownOutcome`:
+   * no response, a 5xx, an unmapped 408/425) keeps the intent, so the retry replays the same key and one server effect;
+   * every mapped refusal is final for this intent.
    */
   private async route(episodeId: string, intent: IdempotencyIntent, cause: unknown): Promise<void> {
     const error = isAppError(cause) ? cause : this.mapper.from(cause);
-    if (error.kind === 'network' || error.kind === 'server') {
+    if (isUnknownOutcome(error)) {
       this.errorState.set(error);
       return;
     }
-    intent.settle();
-    this.intentState.set(null);
+    this.dropIntent(intent);
     if (error.status === 409 && error.code === 'keywords_flagged') {
       // WR6: the editor store is the ONE owner of the flags, and this is the same hand-off the approve flow uses
       // (10.5.6-T1): the rows are mapped once, a refusal whose rows are all unusable writes nothing (no empty list),
