@@ -688,9 +688,8 @@ public sealed partial class SubmitRenderJob(
         Message = "render_submit_adapter_alert renderJobId={RenderJobId} code={Code} detail={Detail}")]
     private partial void LogAdapterAlert(Guid renderJobId, string? code, string? detail);
 
-    // 6197 is taken by LoggingRenderIngestEnqueuer.LogIngestNotWired (IRenderIngestEnqueuer.cs), and 6200-6202 by
-    // RenderPollingService while RenderFailureRecorder uses 6210-6215 and PollRenderJob 6220-6231, so this one
-    // line of the submit sits in the gap above the poller.
+    // 6200-6202 are taken by RenderPollingService, RenderFailureRecorder uses 6210-6215 and PollRenderJob
+    // 6220-6231, so this one line of the submit sits in the gap above the poller.
     [LoggerMessage(
         EventId = 6204,
         Level = LogLevel.Error,

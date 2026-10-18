@@ -514,6 +514,72 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     }
 
     /// <summary>
+    /// Raises the <see cref="RenderSucceeded"/> of an ingested attempt (02 CR-23, 09.6.3-T2 step 9), so the outbox
+    /// writes its <c>render_succeeded.v1</c> row in the same transaction as the assets, the episode's move to
+    /// <c>video_review</c> and the settlement of <see cref="ReservationId"/>.
+    /// </summary>
+    /// <remarks>
+    /// Valid only on an already <see cref="RenderJobStatus.Succeeded"/> row — <see cref="Succeed"/> is what decides
+    /// that transition, and this method never writes state, so it cannot move a row behind the caller's back. The
+    /// instant is <see cref="FinishedAt"/>, the reading <see cref="Succeed"/> stored, so the event and the row agree
+    /// on when the attempt ended (the clock is the caller's). Raising it twice is the caller's concern: one terminal
+    /// transition raises exactly one event.
+    /// </remarks>
+    /// <returns><c>Success</c>, or the 409 of a row that is not <c>succeeded</c>.</returns>
+    public ErrorOr<Success> RaiseSucceeded()
+    {
+        if (Status != RenderJobStatus.Succeeded)
+        {
+            return InvalidState("raise a success event");
+        }
+
+        Raise(new RenderSucceeded(EpisodeId, Id, FinishedAt!.Value));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Stores the canonical verdict of the attempt (05 D10) — <c>render-quality.v1</c> plus 03.4.2-T1's
+    /// <c>images</c> block, as JSON text, written by the ingest (09.6.3-T2 step 8) inside the transaction that
+    /// decides the attempt's fate.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The report is written on both verdicts: a failed one keeps the checks that failed, which is what the owner
+    /// and 10.6.2-T1 read after a <c>render_quality_failed</c> attempt. Only an in-flight row accepts it: a terminal
+    /// row's verdict is history and never moves, so a late duplicate of the ingest cannot rewrite it.
+    /// </para>
+    /// <para>
+    /// The text is stored verbatim — the Domain cannot read the typed document (D1) — so the caller is the one that
+    /// serialises the Application layer's <c>RenderQualityReportV1</c> with the strict node JSON options. Blank text
+    /// is refused rather than stored: an empty <c>quality_report</c> would read as "no report" (05 P2).
+    /// </para>
+    /// </remarks>
+    /// <param name="reportJson">The serialised <c>render-quality.v1</c> document.</param>
+    /// <returns><c>Success</c>, the 400 of a blank document, or the 409 of a terminal row.</returns>
+    public ErrorOr<Success> RecordQualityReport(string reportJson)
+    {
+        ArgumentNullException.ThrowIfNull(reportJson);
+
+        if (string.IsNullOrWhiteSpace(reportJson))
+        {
+            return Error.Validation(
+                ValidationFailedCode,
+                "A quality report carries the verdict document (05 D10).",
+                Field("quality_report"));
+        }
+
+        if (Status is not (RenderJobStatus.Running or RenderJobStatus.Ingesting))
+        {
+            return InvalidState("record a quality report");
+        }
+
+        QualityReport = reportJson;
+
+        return Result.Success;
+    }
+
+    /// <summary>
     /// Asks for the cancellation of an in-flight attempt (BD8): <c>submitted</c> or <c>running</c> stamps
     /// <see cref="CancelRequestedAt"/> so the adapter can be told to cancel and WT55's re-check after the adapter call
     /// skips the submit.

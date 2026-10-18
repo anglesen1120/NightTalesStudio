@@ -1203,6 +1203,22 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
 
             return ValueTask.FromResult(Classification);
         }
+
+        // 09.6.3-T2 added the two success-path members to the same seam. The poller never calls them (they belong
+        // to the ingest's final transaction), so recording them changes no existing order assertion.
+        public ValueTask<System.Text.Json.Nodes.JsonNode?> MergeImagesAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct)
+        {
+            Calls.Add("images");
+
+            return ValueTask.FromResult<System.Text.Json.Nodes.JsonNode?>(null);
+        }
+
+        public ValueTask RecordKeptVideoAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct)
+        {
+            Calls.Add("kept");
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>

@@ -1,5 +1,5 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Features.Rendering.Jobs;
 
 namespace NightTales.Application.Features.Rendering;
 
@@ -9,8 +9,8 @@ namespace NightTales.Application.Features.Rendering;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 09.6.3-T1 ships only the <see cref="LoggingRenderIngestEnqueuer"/> default; 09.6.3-T2 replaces the
-/// registration with a Hangfire enqueue of <c>IngestRenderOutputJob</c>. The poller therefore depends on this
+/// 09.6.3-T2 registers <see cref="SchedulerRenderIngestEnqueuer"/>, which enqueues
+/// <see cref="IngestRenderOutputJob"/> on the <c>render</c> queue (D12). The poller therefore depends on this
 /// seam instead of on the job type, so the split of submit+poll from ingest (WF14) stays a registration
 /// change.
 /// </para>
@@ -27,24 +27,27 @@ public interface IRenderIngestEnqueuer
 }
 
 /// <summary>
-/// The default <see cref="IRenderIngestEnqueuer"/>: it warns that the ingest step is not composed yet and
-/// enqueues nothing.
+/// The Worker's <see cref="IRenderIngestEnqueuer"/> (09 README D12, WF14): it queues
+/// <see cref="IngestRenderOutputJob"/> on the <c>render</c> queue the moment the poller has committed the
+/// row's transition to <c>ingesting</c>.
 /// </summary>
 /// <remarks>
-/// Registered with <c>TryAdd</c> so 09.6.3-T2 replaces it. The warning carries the render job id alone — never
-/// the node, the key or the params (BD16) — and is written once per job the poller moves to <c>ingesting</c>,
-/// which is the visible signal that the ingest job is missing from the host.
+/// <para>
+/// The only argument is the <c>render_jobs</c> id (D12: job arguments are stored in plain text in the
+/// <c>hangfire</c> schema); the row — not the payload — owns the params, the node and the adapter task, which
+/// is what makes a retry that runs the job again still correct. Delivery is at least once, and the job's own
+/// idempotency is what keeps a redelivery from ingesting twice.
+/// </para>
+/// <para>
+/// It is registered beside <see cref="IJobScheduler"/> and resolved from a scope the way a job is, so the
+/// poller never depends on the Hangfire client directly (the Api's port throws by design and never composes
+/// this graph).
+/// </para>
 /// </remarks>
-/// <param name="logger">The host's logger.</param>
-public sealed partial class LoggingRenderIngestEnqueuer(ILogger<LoggingRenderIngestEnqueuer> logger)
-    : IRenderIngestEnqueuer
+/// <param name="scheduler">The Worker's job port; the job expression is built here, never in the poller.</param>
+public sealed class SchedulerRenderIngestEnqueuer(IJobScheduler scheduler) : IRenderIngestEnqueuer
 {
     /// <inheritdoc />
-    public void Enqueue(Guid renderJobId) => LogIngestNotWired(renderJobId);
-
-    [LoggerMessage(
-        EventId = 6197,
-        Level = LogLevel.Warning,
-        Message = "render_ingest_not_wired renderJobId={RenderJobId}")]
-    private partial void LogIngestNotWired(Guid renderJobId);
+    public void Enqueue(Guid renderJobId) =>
+        scheduler.Enqueue<IngestRenderOutputJob>((job, ct) => job.RunAsync(renderJobId, ct));
 }
