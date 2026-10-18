@@ -74,8 +74,9 @@ public static class IdeaOperations
 /// episode is summarised — so such a series still avoids repeats.
 /// </para>
 /// <para>
-/// <see cref="RequiredTags"/> and <see cref="ForbiddenTags"/> are always <see langword="null"/> in 02.8.1-T1:
-/// the variety guard that fills them is 02.8.4-T1's, which also owns the rotation the pair steers.
+/// <see cref="RequiredTags"/> and <see cref="ForbiddenTags"/> are 02.8.4-T1's steering: the planner fills them
+/// from <c>VarietyGuard.AssessBatch</c> over the series' approved-episode history before it makes the call, and
+/// passes <see langword="null"/> when the guard constrains nothing, so the data object omits the key entirely.
 /// </para>
 /// </remarks>
 /// <param name="Run">
@@ -89,8 +90,8 @@ public static class IdeaOperations
 /// <param name="BannedThemes">The series' banned themes; empty when the settings carry none. Never concatenated into the system prompt.</param>
 /// <param name="Bible">The bible snapshot as the writer sees it, or <see langword="null"/> when the series has no bible content.</param>
 /// <param name="RecentEpisodes">The history titles that stand in for the bible's summaries; empty when the bible carries them.</param>
-/// <param name="RequiredTags">The structure values the ideas must use, or <see langword="null"/> (T1).</param>
-/// <param name="ForbiddenTags">The structure values the ideas must not use, or <see langword="null"/> (T1).</param>
+/// <param name="RequiredTags">The structure values the ideas must use, or <see langword="null"/> when the guard requires none (02.8.4-T1).</param>
+/// <param name="ForbiddenTags">The structure values the ideas must not use, or <see langword="null"/> when the guard forbids none (02.8.4-T1).</param>
 /// <param name="ResearchNotes">Up to five of the series' own notes (<c>user_note</c> text only, ≤ 400 characters; D19).</param>
 /// <param name="Count">How many ideas to ask for, already clamped to <c>1…Autopilot:Ideas:MaxCount</c>.</param>
 public sealed record IdeaGenerationRequest(
