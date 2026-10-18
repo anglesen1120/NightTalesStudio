@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
@@ -102,9 +103,19 @@ public sealed partial class IngestRenderOutputJob(
     /// <summary>The catalogued code of a <c>storage_key</c> that already holds different bytes.</summary>
     private const string StorageKeyConflictCode = "asset_storage_key_conflict";
 
+    /// <summary>PostgreSQL's SQLSTATE for a unique-constraint violation.</summary>
+    private const string UniqueViolation = "23505";
+
+    /// <summary>The key Npgsql records the refused constraint under in <see cref="Exception.Data"/>.</summary>
+    private const string ConstraintNameKey = "ConstraintName";
+
+    /// <summary>The unique index of <c>assets.storage_key</c>, whose refusal is a delivery that stored the key
+    /// first (AC8).</summary>
+    private const string StorageKeyIndex = "ix_assets_storage_key";
+
     /// <summary>
-    /// The budget of a best-effort call that must not fail the ingest (the settlement, a cleanup delete): the
-    /// job's own token may already be cancelled, and the ledger of a terminal transition is not skippable.
+    /// The budget of a call this job holds a timeout of its own for: the settlement (which must still be
+    /// attempted when the job's own token is already cancelled) and the best-effort rollbacks and blob deletes.
     /// </summary>
     private static readonly TimeSpan BestEffortTimeout = TimeSpan.FromSeconds(10);
 
@@ -165,7 +176,7 @@ public sealed partial class IngestRenderOutputJob(
 
         // Step 1. At-least-once delivery: a row whose verdict is written never moves again, so a second run of
         // this job is a logged no-op (AC8).
-        if (job.Status is RenderJobStatus.Succeeded or RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+        if (IsTerminal(job.Status))
         {
             var terminal = job.Status.ToString();
             LogTerminalNoOp(job.Id, terminal);
@@ -280,6 +291,7 @@ public sealed partial class IngestRenderOutputJob(
                 stage,
                 startedAt,
                 now,
+                attempt.IsLastAttempt,
                 recorder,
                 metrics,
                 unitOfWork,
@@ -458,6 +470,10 @@ public sealed partial class IngestRenderOutputJob(
                 .PutAsync(bucket, videoKey, video.Rewind(), VideoContentType, cancellationToken)
                 .ConfigureAwait(false);
 
+            // Recorded before the answer is read: a PUT the store refused may still have left bytes under the
+            // key, and every path that ends this attempt without keeping the output deletes what it wrote (D4).
+            written.Add(videoKey);
+
             if (storedVideo.IsError || !HashMatches(storedVideo.Value.Sha256, downloaded.Value.Sha256))
             {
                 LogStoreFailed(job.Id, videoKey, storedVideo.IsError ? storedVideo.FirstError.Code : Sha256Mismatch);
@@ -472,18 +488,19 @@ public sealed partial class IngestRenderOutputJob(
                     recorder,
                     metrics,
                     unitOfWork,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
 
                 return;
             }
-
-            written.Add(videoKey);
 
             if (subtitles is not null && subtitlesSha is { } trackSha)
             {
                 var storedTrack = await blobs
                     .PutAsync(bucket, subtitlesKey, subtitles.Rewind(), SubtitlesContentType, cancellationToken)
                     .ConfigureAwait(false);
+
+                written.Add(subtitlesKey);
 
                 if (storedTrack.IsError || !HashMatches(storedTrack.Value.Sha256, trackSha))
                 {
@@ -499,12 +516,11 @@ public sealed partial class IngestRenderOutputJob(
                         recorder,
                         metrics,
                         unitOfWork,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
 
                     return;
                 }
-
-                written.Add(subtitlesKey);
             }
 
             // Steps 7-9. One short transaction decides the attempt: the verdict (with the 03.4.2-T1 `images` block
@@ -538,6 +554,39 @@ public sealed partial class IngestRenderOutputJob(
             }
 
             await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+            // WT55, SubmitRenderJob's own first step: the final transaction opens on the row lock, so two
+            // deliveries of this job that both passed the entry guards serialise here instead of one losing at the
+            // insert. The winner commits; this one re-reads the committed row below.
+            await db.LockRenderJobForUpdateAsync(job.Id, cancellationToken).ConfigureAwait(false);
+
+            // Read as committed (no identity resolution, the poller's own shape): a delivery that committed while
+            // this attempt was downloading has already stored the verdict, the assets and the settlement, so this
+            // run is the logged no-op of AC8 — no second asset, no second settle, no second event (D7).
+            var committed = await db.RenderJobs
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == job.Id)
+                .Select(candidate => (RenderJobStatus?)candidate.Status)
+                .SingleOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (committed is null)
+            {
+                LogJobMissing(job.Id);
+                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+
+            if (IsTerminal(committed.Value))
+            {
+                var stored = committed.Value.ToString();
+
+                LogTerminalNoOp(job.Id, stored);
+                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
 
             var images = await hooks.MergeImagesAsync(job, body, cancellationToken).ConfigureAwait(false);
             var merged = report with { Images = images };
@@ -707,7 +756,34 @@ public sealed partial class IngestRenderOutputJob(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            await CommitAsync(unitOfWork, job.Id, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await CommitAsync(unitOfWork, job.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DbUpdateException exception) when (IsStorageKeyViolation(exception))
+            {
+                // AC8's insert-time backstop: an assets row already names this key, so a delivery the row lock
+                // above did not serialise won the insert. That delivery owns the verdict, the settle and the
+                // event, so this attempt only drops its own writes.
+                await RollbackQuietlyAsync(unitOfWork, job.Id).ConfigureAwait(false);
+                DiscardPendingChanges(db);
+
+                var stored = await db.RenderJobs
+                    .AsNoTracking()
+                    .Where(candidate => candidate.Id == job.Id)
+                    .Select(candidate => (RenderJobStatus?)candidate.Status)
+                    .SingleOrDefaultAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (stored is RenderJobStatus.Succeeded)
+                {
+                    LogConcurrentNoOp(job.Id, videoKey, StorageKeyIndex);
+
+                    return;
+                }
+
+                throw;
+            }
 
             LogIngested(job.Id, job.EpisodeId, videoAsset.Value, downloaded.Value.Bytes);
 
@@ -716,6 +792,64 @@ public sealed partial class IngestRenderOutputJob(
             // Step 10. Only now, with the verdict committed, is the adapter asked to release the task; a failure
             // here never fails an ingest whose output is already durable, and it deletes no blob.
             await DeleteAdapterTaskAsync(client, node, taskId, job.Id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Every outcome of the download, the verification, the blob PUTs and the final transaction ends here
+            // (D3, H1, WT52): the attempt's own writes are dropped first — a transaction of this scope is either
+            // rolled back now or by the scope's disposal, so nothing it staged can be committed by the terminal
+            // write below — and the row is then handed back to the scheduler, or, on the attempt that has none
+            // left, ended here, because a row left `ingesting` with no claim on it is exactly the stranding WT52
+            // forbids. An `OperationCanceledException` this job's own token did not ask for is the destination's
+            // (the download client rethrows it unchanged); one the token did ask for is the host shutting down and
+            // is never swallowed.
+            var destination = IsDestinationFailure(exception, cancellationToken);
+
+            DiscardPendingChanges(db);
+            await RollbackQuietlyAsync(unitOfWork, job.Id).ConfigureAwait(false);
+
+            if (!attempt.IsLastAttempt)
+            {
+                throw;
+            }
+
+            LogAttemptExhausted(job.Id, destination ? "destination" : "unexpected", exception.GetType().Name);
+
+            // The committed row, read after this attempt's writes were dropped: the attempt may in fact have
+            // committed (a failure after the commit) or another delivery may have ended the row while this one
+            // ran, and a terminal row — whose output is durable — is left exactly as it is (D7).
+            var current = await db.RenderJobs
+                .SingleOrDefaultAsync(candidate => candidate.Id == job.Id, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (current is null)
+            {
+                LogJobMissing(job.Id);
+
+                return;
+            }
+
+            if (IsTerminal(current.Status))
+            {
+                var stored = current.Status.ToString();
+
+                LogTerminalNoOp(job.Id, stored);
+
+                return;
+            }
+
+            await RetryOrFailAsync(
+                current,
+                RenderOutcomeCodes.RenderOutputInvalid,
+                stage,
+                startedAt,
+                now,
+                lastAttempt: true,
+                recorder,
+                metrics,
+                unitOfWork,
+                cancellationToken,
+                () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -753,6 +887,70 @@ public sealed partial class IngestRenderOutputJob(
             throw new InvalidOperationException(
                 $"Committing the ingest of job '{renderJobId}' failed ('{committed.FirstError.Code}').");
         }
+    }
+
+    /// <summary>Rolls back the scope's transaction and swallows a secondary failure: the failure the caller is
+    /// already handling is the one that has to travel.</summary>
+    /// <param name="unitOfWork">The unit of work of this scope (no transaction open is a no-op).</param>
+    /// <param name="renderJobId">The row the transaction belongs to (for the log line).</param>
+    /// <returns>A task that completes once the rollback was attempted.</returns>
+    private async Task RollbackQuietlyAsync(IUnitOfWork unitOfWork, Guid renderJobId)
+    {
+        using var budget = new CancellationTokenSource(BestEffortTimeout);
+
+        try
+        {
+            await unitOfWork.RollbackAsync(budget.Token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || budget.IsCancellationRequested)
+        {
+            // A transaction that cannot roll back is the scope's disposal's business (it rolls back an abandoned
+            // one), and the attempt's failure is what the caller must see.
+            LogRollbackSkipped(renderJobId, exception.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Drops every unsaved change of this scope's context, so the committed row can be read back and the terminal
+    /// write is the only change left to save (the <c>GenerateFactSheetPipeline</c>/
+    /// <c>StoryGenerationProgress.DiscardPendingChanges</c> precedent).
+    /// </summary>
+    /// <param name="db">The scope's context.</param>
+    private static void DiscardPendingChanges(IAppDbContext db)
+    {
+        if (db is DbContext context)
+        {
+            context.ChangeTracker.Clear();
+        }
+    }
+
+    /// <summary>Whether a row has already ended: a terminal row is never moved again by a delivery of this job.</summary>
+    /// <param name="status">The row's status.</param>
+    /// <returns><c>true</c> for <c>succeeded</c>, <c>failed</c> and <c>cancelled</c>.</returns>
+    private static bool IsTerminal(RenderJobStatus status) =>
+        status is RenderJobStatus.Succeeded or RenderJobStatus.Failed or RenderJobStatus.Cancelled;
+
+    /// <summary>
+    /// Whether the commit was refused by the <c>assets</c> storage-key index — another delivery stored this
+    /// attempt's key first. The Application layer may not reference Npgsql, so the provider's error is read
+    /// through the BCL only (<see cref="DbException.SqlState"/> and the constraint name the provider records in
+    /// <see cref="Exception.Data"/>, the <c>FactSheetFlushConflict</c>/<c>BibleProposalRunConflict</c> shape).
+    /// </summary>
+    /// <param name="exception">The commit's <see cref="DbUpdateException"/>.</param>
+    /// <returns><c>true</c> when that index was the one refused.</returns>
+    private static bool IsStorageKeyViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is DbException { SqlState: UniqueViolation } database
+                && database.Data[ConstraintNameKey] is string constraint
+                && string.Equals(constraint, StorageKeyIndex, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -812,6 +1010,11 @@ public sealed partial class IngestRenderOutputJob(
     /// Throws when the job still has an attempt left (the scheduler downloads again from scratch) and ends the row
     /// in-job on the last one (WT52: nothing may be left <c>ingesting</c> with no claim).
     /// </summary>
+    /// <remarks>
+    /// A row the owner already asked to cancel never waits for another attempt (WT51): the terminal recorder's
+    /// verdict is final whatever the code says, so the attempt is ended here rather than spending the rest of the
+    /// scheduler's budget of downloads on a render the owner cancelled.
+    /// </remarks>
     /// <param name="job">The tracked row.</param>
     /// <param name="code">The D5 outcome code of the failure.</param>
     /// <param name="stage">The <c>stage</c> tag of the histogram.</param>
@@ -822,6 +1025,10 @@ public sealed partial class IngestRenderOutputJob(
     /// <param name="metrics">The render instruments.</param>
     /// <param name="unitOfWork">The unit of work the recorder writes in.</param>
     /// <param name="cancellationToken">The caller's token.</param>
+    /// <param name="afterEnding">
+    /// The best-effort cleanup of this attempt's own objects, run once the row is terminal and never on the
+    /// rethrow (a rethrown attempt keeps its keys: the next attempt overwrites them, BD7).
+    /// </param>
     /// <returns>A task that completes when the row is either terminal or left for the next attempt.</returns>
     private async Task RetryOrFailAsync(
         RenderJob job,
@@ -833,9 +1040,10 @@ public sealed partial class IngestRenderOutputJob(
         IRenderFailureRecorder recorder,
         RenderMetrics metrics,
         IUnitOfWork unitOfWork,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Task>? afterEnding = null)
     {
-        if (!lastAttempt)
+        if (!lastAttempt && job.CancelRequestedAt is null)
         {
             throw new InvalidOperationException(
                 $"The output of job '{job.Id}' could not be stored ('{code}'); the job's next attempt downloads it again.");
@@ -852,15 +1060,21 @@ public sealed partial class IngestRenderOutputJob(
             metrics,
             unitOfWork,
             cancellationToken).ConfigureAwait(false);
+
+        if (afterEnding is not null)
+        {
+            await afterEnding().ConfigureAwait(false);
+        }
     }
 
-    /// <summary>Classifies a failed status call: the deferred and not-ready kinds are retried, the rest end the
-    /// attempt with the code the failure carries (or the D5 default of its kind).</summary>
+    /// <summary>Classifies a failed status call: the deferred and not-ready kinds are retried until the scheduler's
+    /// last attempt, the rest end the attempt with the code the failure carries (or the D5 default of its kind).</summary>
     /// <param name="error">The mapped failure of the status call.</param>
     /// <param name="job">The tracked row.</param>
     /// <param name="stage">The <c>stage</c> tag of the histogram.</param>
     /// <param name="startedAt">When the attempt started.</param>
     /// <param name="now">The clock reading of this attempt.</param>
+    /// <param name="lastAttempt">Whether the scheduler has no attempt left.</param>
     /// <param name="recorder">The terminal-failure recorder.</param>
     /// <param name="metrics">The render instruments.</param>
     /// <param name="unitOfWork">The unit of work the recorder writes in.</param>
@@ -872,6 +1086,7 @@ public sealed partial class IngestRenderOutputJob(
         string stage,
         DateTimeOffset startedAt,
         DateTimeOffset now,
+        bool lastAttempt,
         IRenderFailureRecorder recorder,
         RenderMetrics metrics,
         IUnitOfWork unitOfWork,
@@ -881,14 +1096,28 @@ public sealed partial class IngestRenderOutputJob(
 
         if (failure is { Kind: RenderClientFailureKind.Deferred or RenderClientFailureKind.OutputNotReady })
         {
-            throw new InvalidOperationException(
-                $"The status call of job '{job.Id}' was '{failure.Kind}'; the next attempt reads it again.");
+            if (!lastAttempt)
+            {
+                throw new InvalidOperationException(
+                    $"The status call of job '{job.Id}' was '{failure.Kind}'; the next attempt reads it again.");
+            }
+
+            // IJobAttempt's rule, and WT52's: the scheduler has no attempt left, so the row cannot wait for
+            // another read — the attempt ends here (as the node error this path's other failures carry) rather
+            // than leaving the row `ingesting` with no claim on it.
+            LogAttemptExhausted(job.Id, "status", failure.Kind.ToString());
         }
 
-        var code = failure?.OutcomeCode
-                   ?? (failure is { Kind: RenderClientFailureKind.TerminalFailure }
-                       ? RenderOutcomeCodes.RenderOutputInvalid
-                       : RenderOutcomeCodes.RenderNodeError);
+        var code = failure switch
+        {
+            // A deferred/not-ready read that has run out of the scheduler's attempts carries no catalogued D5 code
+            // of its own (its code is an adapter detail, never render_jobs.error_code - 05 H4), so the verdict is
+            // the node error this path's other failures carry.
+            { Kind: RenderClientFailureKind.Deferred or RenderClientFailureKind.OutputNotReady } => RenderOutcomeCodes.RenderNodeError,
+            { OutcomeCode: { } carried } => carried,
+            { Kind: RenderClientFailureKind.TerminalFailure } => RenderOutcomeCodes.RenderOutputInvalid,
+            _ => RenderOutcomeCodes.RenderNodeError,
+        };
 
         LogStatusFailed(job.Id, code);
 
@@ -935,13 +1164,31 @@ public sealed partial class IngestRenderOutputJob(
         if (failure is { Kind: RenderClientFailureKind.TransientFailure or RenderClientFailureKind.Deferred or RenderClientFailureKind.OutputNotReady })
         {
             var kind = failure.Kind.ToString();
-            LogDownloadRetried(job.Id, kind);
 
-            throw new InvalidOperationException(
-                $"Downloading the output of job '{job.Id}' failed as '{failure.Kind}'; the next attempt takes it again.");
+            if (!lastAttempt)
+            {
+                LogDownloadRetried(job.Id, kind);
+
+                throw new InvalidOperationException(
+                    $"Downloading the output of job '{job.Id}' failed as '{failure.Kind}'; the next attempt takes it again.");
+            }
+
+            // IJobAttempt's rule, and WT52's: the scheduler has no attempt left, so the row cannot be handed back
+            // for another download — the attempt ends below (as the invalid output this path's other failures
+            // carry) rather than leaving the row `ingesting` with no claim on it.
+            LogAttemptExhausted(job.Id, "download", kind);
         }
 
-        var code = failure?.OutcomeCode ?? RenderOutcomeCodes.RenderOutputInvalid;
+        var code = failure switch
+        {
+            // A retried kind that has run out of the scheduler's attempts (the branch above threw for the others)
+            // carries no catalogued D5 code of its own - its code is an adapter detail, never
+            // render_jobs.error_code (05 H4) - so the verdict is the D5 code this path's other failures use.
+            { Kind: RenderClientFailureKind.TransientFailure } => RenderOutcomeCodes.RenderNodeError,
+            { Kind: RenderClientFailureKind.Deferred or RenderClientFailureKind.OutputNotReady } => RenderOutcomeCodes.RenderOutputInvalid,
+            { OutcomeCode: { } carried } => carried,
+            _ => RenderOutcomeCodes.RenderOutputInvalid,
+        };
 
         LogOutputInvalid(job.Id, "download", code);
 
@@ -958,31 +1205,37 @@ public sealed partial class IngestRenderOutputJob(
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Settles the reservation of a stored render, once, by reservation id and with the ledger's own
-    /// budget (the recorder's refund pattern).</summary>
+    /// <summary>Settles the reservation of a stored render, once, by reservation id, with the ledger's own budget:
+    /// a failure is never swallowed, because the row this job is about to commit is exactly what a swallow would
+    /// buy (D5).</summary>
+    /// <remarks>
+    /// <c>SettleAsync</c> is not the refund of a terminal transition: it has no documented idempotence per
+    /// reservation and it is not part of this job's unit of work, so it is called before the row turns terminal
+    /// and its failure travels (AC3): the attempt's transaction rolls back, the row is not committed
+    /// <c>succeeded</c>, and the attempt is either retried or ended on its last one — never a settled-short
+    /// success. The budget is still its own, because the job's token may already be cancelled by a shutdown.
+    /// </remarks>
     /// <param name="ledger">The credit ledger.</param>
     /// <param name="job">The row whose reservation is settled.</param>
     /// <param name="cancellationToken">The job's token; a cancelled one still gets the settlement.</param>
-    /// <returns>A task that completes once the ledger answered or the budget ran out.</returns>
+    /// <returns>A task that completes once the ledger answered.</returns>
+    /// <exception cref="InvalidOperationException">The ledger refused the settlement; the attempt must not
+    /// commit.</exception>
     private async Task SettleAsync(ICreditLedger ledger, RenderJob job, CancellationToken cancellationToken)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         budget.CancelAfter(BestEffortTimeout);
 
-        try
-        {
-            var settled = await ledger
-                .SettleAsync(new ReservationId(job.ReservationId), budget.Token)
-                .ConfigureAwait(false);
+        var settled = await ledger
+            .SettleAsync(new ReservationId(job.ReservationId), budget.Token)
+            .ConfigureAwait(false);
 
-            if (settled.IsError)
-            {
-                LogSettleFailed(job.Id, settled.FirstError.Code);
-            }
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException || budget.IsCancellationRequested)
+        if (settled.IsError)
         {
-            LogSettleFailed(job.Id, exception.GetType().Name);
+            LogSettleFailed(job.Id, settled.FirstError.Code);
+
+            throw new InvalidOperationException(
+                $"Settling the reservation of job '{job.Id}' failed ('{settled.FirstError.Code}'); the ingest is not committed.");
         }
     }
 
@@ -1289,6 +1542,19 @@ public sealed partial class IngestRenderOutputJob(
     private static RenderClientFailure? FailureOf(Error error) =>
         RenderClientErrors.TryGetFailure(error, out var failure) ? failure : null;
 
+    /// <summary>
+    /// Whether an exception came from the destination rather than from the node: the spool refused a write, or a
+    /// cancellation this job's own token did not ask for (H1, 09.6.2-T1's hand-over — the download client rethrows a
+    /// destination exception unchanged, so the ingest is where it is recognised). Everything else keeps travelling
+    /// to the scheduler as the bug it is.
+    /// </summary>
+    /// <param name="exception">The exception this attempt threw.</param>
+    /// <param name="cancellationToken">The job's own token.</param>
+    /// <returns>Whether this is the destination's own failure.</returns>
+    private static bool IsDestinationFailure(Exception exception, CancellationToken cancellationToken) =>
+        exception is IOException
+        || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+
     /// <summary>The reason of a downloaded output whose byte count is not the one the node declared.</summary>
     private const string BytesMismatch = "bytes_mismatch";
 
@@ -1363,4 +1629,13 @@ public sealed partial class IngestRenderOutputJob(
 
     [LoggerMessage(EventId = 6321, Level = LogLevel.Warning, Message = "render_ingest_episode_state_refused renderJobId={RenderJobId} episodeId={EpisodeId} code={Code}")]
     private partial void LogEpisodeStateRefused(Guid renderJobId, Guid episodeId, string code);
+
+    [LoggerMessage(EventId = 6333, Level = LogLevel.Warning, Message = "render_ingest_attempt_exhausted renderJobId={RenderJobId} operation={Operation} kind={Kind}")]
+    private partial void LogAttemptExhausted(Guid renderJobId, string operation, string kind);
+
+    [LoggerMessage(EventId = 6334, Level = LogLevel.Information, Message = "render_ingest_concurrent_noop renderJobId={RenderJobId} storageKey={StorageKey} constraint={Constraint}")]
+    private partial void LogConcurrentNoOp(Guid renderJobId, string storageKey, string constraint);
+
+    [LoggerMessage(EventId = 6335, Level = LogLevel.Warning, Message = "render_ingest_rollback_skipped renderJobId={RenderJobId} reason={Reason}")]
+    private partial void LogRollbackSkipped(Guid renderJobId, string reason);
 }

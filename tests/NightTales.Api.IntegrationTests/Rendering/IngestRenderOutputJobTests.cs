@@ -123,7 +123,9 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         // The event carries ids only, and the audit row carries the hash but never the content (AC1, AC2).
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(1);
-        IngestDb.SucceededPayload(Database, world).ShouldBe($"{world.RenderJobId}|{world.EpisodeId}|false|false|2");
+        IngestDb.SucceededPayload(Database, world).ShouldBe(
+            $"{world.RenderJobId}|{world.EpisodeId}|false|false|episodeId,occurredAt,renderJobId",
+            "the payload carries the event's ids and its instant only: no blob key, no URL, no content");
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(0);
         IngestDb.AuditCount(Database, world).ShouldBe(1);
         var audit = IngestDb.Audit(Database, world).ShouldHaveSingleItem();
@@ -174,7 +176,10 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+        // The verdict is written on the scheduler's last attempt (WT52). One attempt earlier the job throws so the
+        // scheduler re-downloads instead of recording, which NonLastAttempt_InvalidOutput_RethrowsAndDoesNotRefund
+        // pins.
+        await harness.RunLastAttemptAsync(world.RenderJobId);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         harness.Blobs.Puts.ShouldBeEmpty();
@@ -183,6 +188,10 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.TempFiles().ShouldBeEmpty();
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
         IngestDb.FailedPayload(Database, world).ShouldBe($"{world.RenderJobId}|render_output_invalid|false");
+        IngestDb.JobRows(Database, world).ShouldContain(
+            row => row.EndsWith("|2|queued", StringComparison.Ordinal),
+            "render_output_invalid is transient (05 D5), so the policy queues the render's attempt 2 — which is "
+            + "why the event carries Final = false");
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
     }
 
@@ -197,7 +206,9 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+        // The cap trip is recorded on the scheduler's last attempt (WT52); the caps of the call itself are
+        // asserted below.
+        await harness.RunLastAttemptAsync(world.RenderJobId);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         harness.Blobs.Puts.ShouldBeEmpty();
@@ -224,7 +235,8 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+        // The refusal is recorded on the scheduler's last attempt (WT52).
+        await harness.RunLastAttemptAsync(world.RenderJobId);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         harness.Blobs.Puts.ShouldBeEmpty();
@@ -255,7 +267,11 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
         IngestDb.JobCount(Database, world).ShouldBe(1, "a refused verdict is terminal, so no retry row exists");
 
-        harness.Blobs.Puts.ShouldBeEmpty();
+        // Step 6 stores the objects before step 8 decides, and a refused attempt's own objects are deleted
+        // best-effort once the verdict commits: nothing is left in nt-media and no asset row exists.
+        harness.Blobs.Puts.Select(put => put.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Keys.ShouldBeEmpty();
         IngestDb.AssetCount(Database, world).ShouldBe(0);
         IngestDb.Episode(Database, world).ShouldBe("story_approved|-");
 
@@ -285,11 +301,17 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
     }
 
     /// <summary>The <c>MarkIngesting</c> step and the poller release commit before the first byte is read (WT45).</summary>
+    /// <remarks>
+    /// The row is seeded <c>running</c> with a live poll instant: that is the only shape where the ingest's own
+    /// step-2 write is observable, because <c>MarkIngesting</c> clears <c>next_poll_at</c> (a row that is already
+    /// <c>ingesting</c> and still claimable cannot be produced by the poller, and seeding one would make the
+    /// assertion below hold whether or not the ingest wrote anything).
+    /// </remarks>
     [Fact]
     public async Task Ingest_CommitsMarkIngestingBeforeDownload()
     {
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
-        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { Status = "running" });
         var video = harness.Downloads.ServeVideo(4096);
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
@@ -335,11 +357,16 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
     /// The last scheduler attempt cannot hand the row back: it refunds once, raises the event with the final flag
     /// and takes the episode out of rendering.
     /// </summary>
+    /// <remarks>
+    /// The row is the render's second and last attempt (WT50), so <c>RenderRetryPolicy</c> refuses a third one and
+    /// the verdict is final — the last allowed scheduler attempt ends the row itself instead of leaving it
+    /// <c>ingesting</c> with no claim on it (WT52, <c>IJobAttempt</c>).
+    /// </remarks>
     [Fact]
     public async Task LastAttempt_InvalidOutput_FailsRenderOutputInvalid_RaisesRenderFailed_WithFinalFlag_RefundsOnce()
     {
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
-        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { Attempt = IngestHarness.MaxAttempts });
         var video = harness.Downloads.ServeVideoBytes(Encoding.UTF8.GetBytes("nts-video-canary-aaaa"), tamper: true);
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
@@ -349,7 +376,8 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         IngestDb.FailedPayload(Database, world).ShouldBe($"{world.RenderJobId}|render_output_invalid|true");
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
-        IngestDb.JobCount(Database, world).ShouldBe(1, "the last attempt has nowhere to retry, so no retry row exists");
+        IngestDb.JobCount(Database, world).ShouldBe(
+            1, "the row is the policy's last attempt, so the transient code queues no third render attempt");
         IngestDb.Episode(Database, world).ShouldBe("story_approved|-");
 
         var refund = harness.Money.Refunds.ShouldHaveSingleItem();
@@ -482,7 +510,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         var tampered = harness.Downloads.ServeVideoBytes(Encoding.UTF8.GetBytes("nts-video-canary-aaaa"), tamper: true);
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(mismatch, IngestBodies.Output(tampered, null), IngestBodies.Check()));
-        await harness.RunAsync(mismatch.RenderJobId, 1, IngestHarness.MaxAttempts);
+        await harness.RunLastAttemptAsync(mismatch.RenderJobId);
         IngestDb.Row(Database, mismatch).ShouldStartWith("failed|");
         harness.TempFiles().ShouldBeEmpty();
 
@@ -511,7 +539,12 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
 
-        thrown.Message.ShouldContain("storage_unavailable");
+        // The thrown code is the D5 outcome of the failure (a store fault has no D5 code of its own and maps to
+        // render_output_invalid — task §Failure handling); the store's own code is what the job logs.
+        thrown.Message.ShouldContain("render_output_invalid");
+        harness.IngestLines().ShouldContain(
+            entry => entry.Message.Contains("storage_unavailable", StringComparison.Ordinal),
+            "the store's own code is what the attempt's log names");
         harness.Blobs.Keys.ShouldBeEmpty();
         harness.Money.Refunds.ShouldBeEmpty();
         harness.Money.Settles.ShouldBeEmpty();
@@ -521,11 +554,15 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
     }
 
     /// <summary>On the last attempt the same store failure refunds once and ends the render with the final flag.</summary>
+    /// <remarks>
+    /// The row is the render's second and last attempt (WT50), so the code the store failure maps to is final: no
+    /// third attempt is queued and the attempt is settled in-job (WT52).
+    /// </remarks>
     [Fact]
     public async Task BlobStoreUnavailable_LastAttempt_RefundsOnceAndRaisesRenderFailedFinal()
     {
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
-        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { Attempt = IngestHarness.MaxAttempts });
         var video = harness.Downloads.ServeVideo(4096);
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
@@ -533,10 +570,12 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         await harness.RunLastAttemptAsync(world.RenderJobId);
 
-        IngestDb.Row(Database, world).ShouldStartWith("failed|");
+        IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
-        IngestDb.FailedPayload(Database, world).ShouldEndWith("|true");
-        IngestDb.JobCount(Database, world).ShouldBe(1);
+        IngestDb.FailedPayload(Database, world).ShouldBe($"{world.RenderJobId}|render_output_invalid|true");
+        IngestDb.JobCount(Database, world).ShouldBe(
+            1, "the row is the policy's last attempt, so no third render attempt is queued");
+        IngestDb.Episode(Database, world).ShouldBe("story_approved|-");
         harness.Blobs.Keys.ShouldBeEmpty();
         harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
         harness.TempFiles().ShouldBeEmpty();
@@ -642,13 +681,16 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
     {
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
         var world = await IngestWorlds.SeedAsync(Database, Ct);
-        var honest = harness.Downloads.ServeVideo(4096);
+        // The ingest downloads the *first* scripted answer of a kind, so the tampered one must be scripted first:
+        // the honest answer is only the declaration both bodies carry.
         var tampered = harness.Downloads.ServeVideo(4096, tamper: true);
+        var honest = harness.Downloads.ServeVideo(4096);
         tampered.DeclaredSha256.ShouldBe(honest.DeclaredSha256, "the declaration is the untampered file's hash");
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(tampered, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+        // The wire copy disagrees with the manifest: the verdict is written on the scheduler's last attempt (WT52).
+        await harness.RunLastAttemptAsync(world.RenderJobId);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         harness.Blobs.Puts.ShouldBeEmpty();
@@ -669,7 +711,12 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_quality_failed|false");
         IngestDb.FailedPayload(Database, world).ShouldBe($"{world.RenderJobId}|render_quality_failed|true");
-        harness.Blobs.Puts.ShouldBeEmpty();
+
+        // The stored video is written before the verdict and removed with it (the same rule as the other refused
+        // verdict): no bytes stay in nt-media and no asset row exists.
+        harness.Blobs.Puts.Select(put => put.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Keys.ShouldBeEmpty();
         IngestDb.AssetCount(Database, world).ShouldBe(0);
         harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
     }

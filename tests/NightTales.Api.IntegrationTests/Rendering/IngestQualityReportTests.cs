@@ -99,7 +99,10 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
         IngestDb.Report(Database, world, "->>'schema'").ShouldBe("-");
         IngestDb.Report(Database, world, "->'images'->>'canary'").ShouldBe("-");
         IngestDb.AssetCount(Database, world).ShouldBe(0);
-        IngestDb.Episode(Database, world).ShouldBe("story_approved|-");
+        IngestDb.Episode(Database, world).ShouldBe(
+            "rendering|-",
+            "the wholesale rollback leaves the episode where the seed put it: no partial write, no half-applied "
+            + "episode move");
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
         IngestDb.AuditCount(Database, world).ShouldBe(0);
         harness.TempFiles().ShouldBeEmpty();
@@ -120,8 +123,11 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
 
         IngestDb.ReportChecks(Database, world).ShouldBeGreaterThanOrEqualTo(3);
         IngestDb.Report(Database, world, "->'images'->>'canary'").ShouldBe(ImagesCanary);
-        harness.Hooks.Calls.ShouldContain("usage");
-        harness.Hooks.Calls.ShouldContain("images");
-        harness.Hooks.Calls.ShouldContain("kept");
+
+        // The ingest path of IRenderTerminalHooks is exactly these two, in this order: the images block inside the
+        // final transaction (before the verdict is stored), the kept-video moderation rows after the row turned
+        // `succeeded` and before the outbox event. RecordImageUsageAsync belongs to the poll path's terminal
+        // `failed` status (09.6.3-T1 step 5/6b), never to an ingested render.
+        harness.Hooks.Calls.ShouldBe(["images", "kept"]);
     }
 }

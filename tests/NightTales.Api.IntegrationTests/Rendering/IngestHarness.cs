@@ -25,6 +25,7 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.Storage;
 using NightTales.RenderNode.Contract;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -394,6 +395,9 @@ internal enum DownloadBehaviour
 
     /// <summary>Writes the scripted prefix and throws (a destination that refused a write mid-stream, H1).</summary>
     Throw,
+
+    /// <summary>Answers a scripted mapped failure and writes nothing (a transient, deferred or not-ready node).</summary>
+    Failure,
 }
 
 /// <summary>One scripted answer of <see cref="FakeRenderDownloadClient"/>.</summary>
@@ -431,6 +435,9 @@ internal sealed class ServedOutput
 
     /// <summary>The exception a <see cref="DownloadBehaviour.Throw"/> answer throws.</summary>
     public Exception? Throws { get; init; }
+
+    /// <summary>The mapped failure a <see cref="DownloadBehaviour.Failure"/> answer returns.</summary>
+    public RenderClientFailure? Failure { get; init; }
 }
 
 /// <summary>One recorded download call and what it did.</summary>
@@ -580,6 +587,29 @@ internal sealed class FakeRenderDownloadClient : IRenderDownloadClient
         return Enqueue(RenderOutputKind.Video, served);
     }
 
+    /// <summary>
+    /// Scripts a video answer that fails without streaming a byte: the node answered transiently, deferred, or
+    /// reported the output not ready (09.6.2-T1's mapped failures — the ingest's retried download kinds).
+    /// </summary>
+    /// <param name="failure">The mapped failure the client returns.</param>
+    /// <param name="declaredBytes">The size the node's body still declares for the file.</param>
+    /// <returns>The scripted answer, for the body builder.</returns>
+    public ServedOutput ServeVideoFailure(RenderClientFailure failure, long declaredBytes = 4096)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+
+        var served = new ServedOutput
+        {
+            DeclaredBytes = declaredBytes,
+            DeclaredSha256 = GeneratedSha256(declaredBytes),
+            ContentType = IngestRenderOutputJob.VideoContentType,
+            Behaviour = DownloadBehaviour.Failure,
+            Failure = failure,
+        };
+
+        return Enqueue(RenderOutputKind.Video, served);
+    }
+
     /// <summary>Scripts a subtitle answer streaming a literal SRT.</summary>
     /// <param name="text">The SRT body.</param>
     /// <param name="cues">The cue count the node declares for it.</param>
@@ -649,6 +679,16 @@ internal sealed class FakeRenderDownloadClient : IRenderDownloadClient
         if (OnBeforeWrite is { } hook)
         {
             await hook(kind);
+        }
+
+        if (served.Behaviour == DownloadBehaviour.Failure)
+        {
+            var failure = served.Failure
+                ?? throw new InvalidOperationException("A Failure answer carries no RenderClientFailure.");
+
+            call.Outcome = failure.OutcomeCode;
+
+            return RenderClientErrors.ToError(failure);
         }
 
         if (served.Behaviour == DownloadBehaviour.OutputAbsent)
@@ -836,6 +876,7 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
     /// <summary>The largest object this store keeps for a content comparison.</summary>
     private const int MaxCapturedBytes = 1024 * 1024;
 
+    private readonly Lock _gate = new();
     private readonly Dictionary<(string Bucket, string Key), BlobPut> _objects = [];
 
     /// <summary>Every accepted (or refused) PUT, in order.</summary>
@@ -847,11 +888,29 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
     /// <summary>When set, every PUT answers this error instead of storing (the store is unavailable).</summary>
     public Error? PutFailure { get; set; }
 
+    /// <summary>When set, a PUT of exactly this key answers this error instead of storing (one object refused).</summary>
+    public Dictionary<string, Error> PutFailures { get; } = [];
+
+    /// <summary>
+    /// When set, every PUT pauses on it before answering. Two deliveries of one job that were both scripted to
+    /// meet here are then both inside the final-transaction section of AC8's race.
+    /// </summary>
+    public Barrier? PutBarrier { get; set; }
+
     /// <summary>When set, every DELETE answers this error.</summary>
     public Error? DeleteFailure { get; set; }
 
     /// <summary>The keys currently stored.</summary>
-    public IReadOnlyList<string> Keys => [.. _objects.Keys.Select(entry => entry.Key)];
+    public IReadOnlyList<string> Keys
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _objects.Keys.Select(entry => entry.Key)];
+            }
+        }
+    }
 
     /// <inheritdoc />
     public async Task<ErrorOr<BlobInfo>> PutAsync(
@@ -862,6 +921,16 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
         CancellationToken cancellationToken)
     {
         order.Add($"blob.put:{key}");
+
+        if (PutBarrier is { } barrier)
+        {
+            barrier.SignalAndWait(cancellationToken);
+        }
+
+        if (PutFailures.TryGetValue(key, out var refused))
+        {
+            return refused;
+        }
 
         if (PutFailure is { } failure)
         {
@@ -881,8 +950,11 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
             sha256,
             bytes.Length <= MaxCapturedBytes ? bytes : null);
 
-        _objects[(bucket, key)] = put;
-        Puts.Add(put);
+        lock (_gate)
+        {
+            _objects[(bucket, key)] = put;
+            Puts.Add(put);
+        }
 
         return new BlobInfo(bytes.Length, sha256);
     }
@@ -913,21 +985,30 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
     public Task<ErrorOr<Success>> DeleteAsync(string bucket, string key, CancellationToken cancellationToken)
     {
         order.Add($"blob.delete:{key}");
-        Deletes.Add((bucket, key));
 
-        if (DeleteFailure is { } failure)
+        lock (_gate)
         {
-            return Task.FromResult<ErrorOr<Success>>(failure);
-        }
+            Deletes.Add((bucket, key));
 
-        _objects.Remove((bucket, key));
+            if (DeleteFailure is { } failure)
+            {
+                return Task.FromResult<ErrorOr<Success>>(failure);
+            }
+
+            _objects.Remove((bucket, key));
+        }
 
         return Task.FromResult<ErrorOr<Success>>(Result.Success);
     }
 
     /// <inheritdoc />
-    public Task<ErrorOr<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken) =>
-        Task.FromResult<ErrorOr<bool>>(_objects.ContainsKey((bucket, key)));
+    public Task<ErrorOr<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult<ErrorOr<bool>>(_objects.ContainsKey((bucket, key)));
+        }
+    }
 
     /// <inheritdoc />
     public async IAsyncEnumerable<string> ListKeysAsync(
@@ -1071,10 +1152,13 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
     public List<(Guid ReservationId, string Reason)> Refunds { get; } = [];
 
     /// <summary>The verdict the ledger answers for a settlement.</summary>
-    public ErrorOr<Success> Settle { get; init; } = Result.Success;
+    public ErrorOr<Success> Settle { get; set; } = Result.Success;
 
-    /// <summary>The exception the ledger throws instead of answering.</summary>
-    public Exception? SettleThrows { get; init; }
+    /// <summary>The exception the ledger throws instead of answering a settlement.</summary>
+    public Exception? SettleThrows { get; set; }
+
+    /// <summary>The exception the ledger throws instead of answering a refund.</summary>
+    public Exception? RefundThrows { get; set; }
 
     /// <inheritdoc />
     public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>
@@ -1118,6 +1202,11 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
     public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
     {
         Refunds.Add((reservationId.Value, reason));
+
+        if (RefundThrows is { } failure)
+        {
+            throw failure;
+        }
 
         return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
     }
@@ -1201,7 +1290,7 @@ internal static class IngestDb
         SqlProbe.QueryStrings(
             database,
             "SELECT kind || '|' || storage_key || '|' || content_type || '|' || size_bytes::text || '|' || sha256 "
-            + "|| '|' || coalesce(duration_sec::text, '-') || '|' "
+            + "|| '|' || coalesce(duration_sec::text, '-') || '|' || "
             + $"(retention_until = '{IngestTime.Literal(retentionUntil)}'::timestamptz)::text "
             + $"FROM assets WHERE episode_id = '{world.EpisodeId}' ORDER BY kind");
 
@@ -1229,16 +1318,19 @@ internal static class IngestDb
             database,
             $"SELECT count(*) FROM outbox_messages WHERE type = '{type}' AND user_id = '{world.UserId}'");
 
-    /// <summary>The success event's payload as <c>renderJobId|episodeId|has-sha256|member-count</c> (ids only, AC1).</summary>
+    /// <summary>
+    /// The success event's payload as <c>renderJobId|episodeId|has-sha256|has-storageKey|member-names</c>: the
+    /// names, sorted, are what makes "ids only" checkable (AC1 — no blob key, no URL, no content).
+    /// </summary>
     /// <param name="database">The class database.</param>
     /// <param name="world">The seeded world.</param>
     /// <returns>The rendered payload verdict.</returns>
     public static string SucceededPayload(TestDatabase database, IngestWorld world) =>
         SqlProbe.ScalarText(
             database,
-            "SELECT payload->>'renderJobId' || '|' || payload->>'episodeId' || '|' || (payload ? 'sha256')::text "
+            "SELECT (payload->>'renderJobId') || '|' || (payload->>'episodeId') || '|' || (payload ? 'sha256')::text "
             + "|| '|' || (payload ? 'storageKey')::text || '|' "
-            + "|| (SELECT count(*)::text FROM jsonb_object_keys(payload)) "
+            + "|| (SELECT string_agg(k, ',' ORDER BY k) FROM jsonb_object_keys(payload) AS k(key)) "
             + $"FROM outbox_messages WHERE type = 'render_succeeded.v1' AND user_id = '{world.UserId}'");
 
     /// <summary>The failure event's payload as <c>renderJobId|code|final</c>.</summary>
@@ -1248,8 +1340,21 @@ internal static class IngestDb
     public static string FailedPayload(TestDatabase database, IngestWorld world) =>
         SqlProbe.ScalarText(
             database,
-            "SELECT payload->>'renderJobId' || '|' || payload->>'errorCode' || '|' || payload->>'final' "
+            "SELECT (payload->>'renderJobId') || '|' || (payload->>'errorCode') || '|' || (payload->>'final') "
             + $"FROM outbox_messages WHERE type = 'render_failed.v1' AND user_id = '{world.UserId}'");
+
+    /// <summary>
+    /// Every <c>render_jobs</c> row of the episode as <c>id|attempt|status</c>, ordered by attempt — the probe
+    /// the retry verdict is read with (a transient code on attempt 1 queues an <c>attempt = 2</c> row).
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The seeded world.</param>
+    /// <returns>One string per row of the episode.</returns>
+    public static List<string> JobRows(TestDatabase database, IngestWorld world) =>
+        SqlProbe.QueryStrings(
+            database,
+            "SELECT id::text || '|' || attempt::text || '|' || status FROM render_jobs "
+            + $"WHERE episode_id = '{world.EpisodeId}' ORDER BY attempt");
 
     /// <summary>Every audit row of the attempt: action, actor, scopes, entity and the video hash it names.</summary>
     /// <param name="database">The class database.</param>
@@ -1526,5 +1631,12 @@ internal sealed class IngestHarness : IAsyncDisposable
         services.RemoveAll<IImageCostEstimator>();
         services.AddSingleton<IImageCostEstimator>(Money);
         services.AddLogging(logging => logging.AddProvider(Logs));
+
+        // The readiness prober is the Worker's own BackgroundService and writes its 0-byte marker object through
+        // whatever IBlobStore the host resolves — which here is the recorder. Left in place, every "the ingest
+        // wrote nothing" assertion would see the marker (`_health/storage-ready.txt`) instead of the ingest's own
+        // work. 09 README D13 ships the removal for exactly this (`StorageHealthTests.WithoutProber`), and the
+        // prober has no part in the ingest's graph.
+        services.WithoutStorageHealthProbe();
     }
 }
