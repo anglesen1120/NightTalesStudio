@@ -9,6 +9,10 @@
     <PackageVersion Include="ErrorOr" Version="2.1.1" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <!-- 06.1.2-T1 (06 README G8/D9): the YouTube OAuth and Data API client. Both are Apache-2.0 and
+         on the same 1.76 train; `Google.Apis.YouTube.v3` pins `Google.Apis.Core` transitively. -->
+    <PackageVersion Include="Google.Apis.Auth" Version="1.76.0" />
+    <PackageVersion Include="Google.Apis.YouTube.v3" Version="1.76.0.4262" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.25" />
     <PackageVersion Include="Hangfire.Core" Version="1.8.25" />
     <PackageVersion Include="Hangfire.NetCore" Version="1.8.25" />

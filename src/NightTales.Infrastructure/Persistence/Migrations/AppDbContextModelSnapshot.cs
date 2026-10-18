@@ -942,6 +942,74 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.OAuthState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BrowserNonceHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("browser_nonce_hash");
+
+                    b.Property<string>("CodeVerifierProtected")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("code_verifier_protected");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("OAuthClientId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("oauth_client_id");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<Guid>("RefreshFamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("refresh_family_id");
+
+                    b.Property<string>("StateHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_oauth_states");
+
+                    b.HasIndex("StateHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_oauth_states_state_hash");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_oauth_states_user_created");
+
+                    b.ToTable("oauth_states", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_oauth_states_platform", "platform IN ('youtube','tiktok')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Publishing.PlatformQuotaUsage", b =>
                 {
                     b.Property<string>("Platform")

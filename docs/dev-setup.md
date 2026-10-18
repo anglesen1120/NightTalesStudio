@@ -359,6 +359,20 @@ Rules for any change that runs at start-up:
   to 1–3600 s, 1–1440, 1–10080, 1–1000 and 1–64), so no placeholder is needed and the `WorkerHost` harness inherits the
   defaults; both `appsettings.json` files carry the values next to the existing `Render` keys, and only the Worker binds
   and validates the section (`ValidateOnStart`).
+  06.1.2-T1 adds the `YouTube` connect-flow keys `ActiveClientId`, `Clients:<id>:SecretRef`, `RedirectUri`, `Scopes`,
+  `AuthorizationEndpoint`, `TokenEndpoint`, `RevokeEndpoint`, `ApiBaseUrl`, `Pkce`, `OAuthStateMinutes` and
+  `Http:TimeoutSeconds` (next to 06.3.1-T1's `Quota`). The Api `appsettings.json` carries a complete non-secret set —
+  the `SecretRef` is a secret-manager *name*, never a secret — so the Api host and the build-time OpenAPI generator
+  boot with no override. `AddYouTubePublishing` binds and validates the section on start, and the Api already binds it
+  through `AddPersistence` (06.3.1-T1), so this call adds only the second validator and never a second binding or a
+  second `ValidateOnStart`. The Worker composes `AddPersistence` only, so it keeps the quota-only validation it had and
+  needs no placeholder anywhere. The client secret is deliberately **not** a start-up key:
+  `ConfigurationSecretProvider` reads `YOUTUBE_CLIENT_SECRET` (the last path segment of e.g.
+  `nts/<env>/api/YOUTUBE_CLIENT_SECRET`) when a connect runs, so a missing secret fails that request with 503
+  `service_unavailable` and never the host. Each environment overrides `YouTube:ActiveClientId`,
+  `YouTube:Clients:<id>:SecretRef` and `YouTube:RedirectUri`; the redirect URI must equal the one registered on that
+  environment's Google OAuth client (06.1.1-T1: `https://<env origin>/api/v1/channels/youtube/callback`). The
+  integration suite points the four endpoint keys and `ApiBaseUrl` at `FakeGoogleServer` by configuration (README D19).
 - A new way of starting a host adds a row to this table.
 - **`FETCHER_API_TOKEN` (02.5.2-T2) is a conditional required secret**: it is required only when
   `Fetcher:Internal:Enabled=true` (committed default `false` in the Api `appsettings.json`), must be at

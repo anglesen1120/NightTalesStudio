@@ -121,6 +121,14 @@ public interface IAppDbContext
     DbSet<PlatformQuotaUsage> PlatformQuotaUsage { get; }
 
     /// <summary>
+    /// The connect attempts of 06.1.2-T1 (<c>oauth_states</c>): written by <c>ConnectYouTubeHandler</c> and
+    /// claimed by the anonymous callback through <c>IOAuthStateStore</c> (raw SQL, single-use). Deliberately
+    /// not <c>IUserOwned</c>: the callback has no principal, so the row is addressed by its hashed state and
+    /// the browser nonce instead of the tenant filter (06 README D3/F01, YR10).
+    /// </summary>
+    DbSet<OAuthState> OAuthStates { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction

@@ -22,6 +22,10 @@
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="EFCore.NamingConventions" />
+    <!-- 06.1.2-T1 (06 README G8/D9): `GoogleYouTubeClient` — the token/revoke form posts and
+         `channels.list` through `Google.Apis.YouTube.v3`. -->
+    <PackageReference Include="Google.Apis.Auth" />
+    <PackageReference Include="Google.Apis.YouTube.v3" />
     <PackageReference Include="Hangfire.Core" />
     <PackageReference Include="Hangfire.NetCore" />
     <PackageReference Include="Hangfire.PostgreSql" />
