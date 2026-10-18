@@ -12,6 +12,12 @@ Replaced text (verbatim), the tail of the Session 59 web bullet:
 
 Outcome: 10.6.1-T2 is delivered and awaiting merge (PR #251, Session 65, tier T2 gates closed); the web-next pointer in the Resume block now names **10.6.2-T1** (unblocked: the video approve/reject routes merged #249 `ee3de595`, which the pin does not carry).
 
+### Superseded web Resume bullet (2026-10-19, replaced by the Session 65 close-out)
+
+Replaced text (verbatim):
+
+- **Web (Session 59 closed):** **10.6.1-T1** render timeline, failure panel and skipped scenes on `/episodes/:id` merged as #235 (`994f9cce`, tip `6830d73e`, Session 59; web lane, FE only; `web/openapi.json` not re-pinned, `RenderJobSummaryDto` lacks only `images`). Local web gate exit 0 on `2bdcef63`, e2e stubbed 18/18, CI refused (billing, CI-01, owner treats as pass). Open items S59-1..S59-6 (§Open findings); S59-1 (no "Edit scenes" from a `failed` episode, needs a backend change or an owner decision) is logged for deferred owner review, the merge does not ratify it. Next (web): **10.6.2-T1** (video approve/reject UI, now unblocked — the routes merged #249 `ee3de595`), which needs its own `web/openapi.json` re-pin; **10.6.1-T2** make video + cancel render is delivered and awaiting merge (PR #251, tier T2 gates closed, §Open tasks).
+
 ### Superseded Session 64 close-out wording (2026-10-19, replaced by the 09.7.1-T1 close-out)
 
 Replaced text (verbatim):
