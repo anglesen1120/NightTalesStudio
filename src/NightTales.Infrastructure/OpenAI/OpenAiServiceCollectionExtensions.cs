@@ -114,6 +114,11 @@ public static class OpenAiServiceCollectionExtensions
         services.TryAddSingleton<IdeaCostEstimator>();
         services.TryAddSingleton<IIdeaCostEstimator>(provider => provider.GetRequiredService<IdeaCostEstimator>());
         services.TryAddSingleton<IIdeaGenerator, OpenAiIdeaGenerator>();
+
+        // 02.8.1-T2: the novelty judge over the same client, catalog and bound. One paid attempt per call — the
+        // retry is the Application checker's — and it carries no instrument of its own (the task's metric list is
+        // the lexical/judge scores the checker records, not a duration of this step).
+        services.TryAddSingleton<IIdeaNoveltyJudge, OpenAiIdeaNoveltyJudge>();
     }
 
     /// <summary>

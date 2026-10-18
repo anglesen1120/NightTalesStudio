@@ -54,8 +54,7 @@ public sealed class IdeaPlannerInjectionTests(TestDatabase database) : Integrati
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        text.Requests.Count.ShouldBe(1);
-        var call = text.Requests[0];
+        var call = IdeaCalls(text).ShouldHaveSingleItem();
 
         // The payload is material of the data object, never part of the instructions the model must obey.
         call.SystemPrompt.ShouldNotContain(fixture.Canary);
@@ -99,8 +98,7 @@ public sealed class IdeaPlannerInjectionTests(TestDatabase database) : Integrati
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        text.Requests.Count.ShouldBe(1);
-        var call = text.Requests[0];
+        var call = IdeaCalls(text).ShouldHaveSingleItem();
 
         // The payload is material of the data object, never part of the instructions the model must obey.
         call.SystemPrompt.ShouldNotContain(fixture.Canary);
@@ -129,7 +127,7 @@ public sealed class IdeaPlannerInjectionTests(TestDatabase database) : Integrati
     {
         IdeaCount(Database, world.SeriesId).ShouldBe(1, "the payload asked for an empty batch; one idea is stored");
         Render(IdeaRows(Database, world.SeriesId)).ShouldBe(
-            "Một ý tưởng bình thường|proposed|true|true|setup>clue>twist",
+            "Một ý tưởng bình thường|picked|true|true|setup>clue>twist",
             "exactly the answer's candidate, nothing the payload asked for");
         IdeasContaining(Database, world.SeriesId, fixture.Canary)
             .ShouldBe(0, "nothing the payload returned was executed or persisted");

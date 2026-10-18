@@ -299,7 +299,7 @@ prompts/
 Job outcome codes (on `generation_runs.error_code`, `story_sources.error_code` and in `EpisodeUpdated`; never an HTTP response):
 - story: `story_invalid_output`, `story_moderated`, `story_generation_failed`, `story_generation_cancelled` (system/admin/account-deletion cancel; there is no user cancel route in P [OPEN] 10.5.2)
 - fact sheet: `fact_sheet_invalid_output`, `fact_sheet_moderated`, `fact_sheet_generation_failed`
-- series-level: `bible_proposal_invalid_output`, `bible_proposal_moderated`, `bible_proposal_generation_failed`, `ideas_invalid_output`, `ideas_moderated`, `ideas_generation_failed`, `find_sources_generation_failed`
+- series-level: `bible_proposal_invalid_output`, `bible_proposal_moderated`, `bible_proposal_generation_failed`, `ideas_invalid_output`, `ideas_moderated`, `ideas_generation_failed`, `ideas_no_idea` (every candidate rejected by novelty/policy, 02.8.1-T2; non-HTTP outcome), `find_sources_generation_failed`
 - A refusal on a series-level run writes a `moderation_events` row with `stage = <kind>` (D12 stage values extended: `bible_proposal`, `ideas`, `find_sources`).
 - sources: `source_unreachable`, `source_too_large`, `source_blocked_by_robots`, `source_unsupported_type`, `source_no_text`, `source_domain_not_allowed` (redirect hop)
 - platform: `provider_funds_exhausted` (12.8.3, as a pause reason)

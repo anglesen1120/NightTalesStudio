@@ -552,6 +552,12 @@ public static class ErrorCodes
     /// <summary>Series-level run outcome (ideas): provider error or unavailable (02 D8).</summary>
     public const string IdeasGenerationFailed = "ideas_generation_failed";
 
+    /// <summary>Series-level run outcome (ideas): every candidate was rejected by a rule, so nothing was picked (02.8.1-T2 plan §4 U2).</summary>
+    public const string IdeasNoIdea = "ideas_no_idea";
+
+    /// <summary>Idea state conflict (02.8.1-T2, IDEA-S52-2): the idea is not <c>picked</c>, so it cannot be linked to an episode.</summary>
+    public const string IdeaInvalidState = "idea_invalid_state";
+
     /// <summary>The price catalog has no row active at the run's queue time: the <c>OpenAi:Pricing</c> seed has not run (02 T111, 02.2.4-T1).</summary>
     public const string PriceCatalogEmpty = "price_catalog_empty";
 

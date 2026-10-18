@@ -29,7 +29,7 @@ public sealed record IdeaNoveltyDetail(
 /// pass found and the corpus entry that produced it.
 /// </summary>
 /// <param name="Score">The highest similarity, 0…1 (0 when the corpus is empty).</param>
-/// <param name="MaxOverlapKind">What the overlapping entry was: <c>episode</c> or <c>idea</c>.</param>
+/// <param name="MaxOverlapKind">What the overlapping entry was: <c>episode</c> or <c>pending_idea</c> (the corpus entry's own kind label).</param>
 /// <param name="MaxOverlapId">The id of the overlapping entry, or <see langword="null"/> when nothing overlapped.</param>
 public sealed record IdeaNoveltyLexical(
     [property: JsonPropertyName("score")][property: JsonRequired] decimal Score,

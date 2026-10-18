@@ -29,4 +29,19 @@ public interface IIdeaCostEstimator
     /// <c>prompt_not_shipped</c> when the release does not carry the step prompt.
     /// </returns>
     Task<ErrorOr<UsageBound>> WorstCaseAsync(string priceVersion, CancellationToken ct);
+
+    /// <summary>The bound of one idea-novelty judge call at the rates and the limits of <paramref name="priceVersion"/>.</summary>
+    /// <remarks>
+    /// 02.8.1-T2 adds the judge's own bound: the checker calls <see cref="IBudgetGuard"/> with it before every
+    /// judge dispatch (attempt 1 and the one retry), so a refusal propagates as the run's spend-cap error before a
+    /// second paid call is sent. Its <c>MaxOutputTokens</c> is the version's
+    /// <c>limits.novelty.max_output_tokens</c> (fallback 400), the cap the judge's request sends.
+    /// </remarks>
+    /// <param name="priceVersion">The run's <c>price_versions.version</c> as text (<c>RunContext.PriceVersion</c>).</param>
+    /// <param name="ct">Cancels the price-version lookup.</param>
+    /// <returns>
+    /// The bound, or <c>price_catalog_empty</c> when the run names no usable version, or
+    /// <c>prompt_not_shipped</c> when the release does not carry the novelty step prompt.
+    /// </returns>
+    Task<ErrorOr<UsageBound>> NoveltyWorstCaseAsync(string priceVersion, CancellationToken ct);
 }

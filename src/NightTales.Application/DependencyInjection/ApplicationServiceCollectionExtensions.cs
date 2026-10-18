@@ -160,15 +160,16 @@ public static class ApplicationServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the idea step of one autopilot slot (02.8.1-T1, plan §4 U1): the planner and the instruments of
-    /// its batch. The Worker calls it, next to the job that runs a tick.
+    /// Registers the idea step of one autopilot slot (02.8.1-T1, plan §4 U1): the planner, the two checkers of
+    /// its 02.8.1-T2 steps, and the instruments of its batch. The Worker calls it, next to the job that runs a tick.
     /// </summary>
     /// <remarks>
     /// Worker-only, like <see cref="AddBibleProposalGeneration"/>: the planner's one paid call goes through
-    /// <c>IIdeaGenerator</c>, which is composed with the OpenAI text adapter (<c>AddOpenAiTextClient</c>), and the
-    /// Api has no text client. Everything else the planner takes is registered by persistence
-    /// (<c>Autopilot:Ideas</c>: the count, the ceiling and <c>IdeaLimits</c>, as their plain values) or by the
-    /// usage metering both hosts compose, so this method adds only the two types of this feature.
+    /// <c>IIdeaGenerator</c> and the novelty checker's through <c>IIdeaNoveltyJudge</c>, both composed with the
+    /// OpenAI text adapter (<c>AddOpenAiTextClient</c>), and the Api has no text client. Everything else the three
+    /// take is registered by persistence (<c>Autopilot:Ideas</c>: the count, the ceiling, <c>IdeaLimits</c> and the
+    /// three 02.8.1-T2 sections, as their plain values) or by the usage metering both hosts compose, so this method
+    /// adds only the types of this feature.
     /// </remarks>
     /// <param name="services">The composition root's service collection.</param>
     /// <returns>The same collection, for chaining.</returns>
@@ -178,6 +179,12 @@ public static class ApplicationServiceCollectionExtensions
 
         services.TryAddSingleton<IdeaMetrics>();
         services.TryAddScoped<IIdeaPlanner, IdeaPlanner>();
+
+        // 02.8.1-T2: the planner's two steps of the same paid tick. They are registered here, not with the
+        // scoped readers of `AddPersistence`, for the same reason as the planner: the novelty checker takes the
+        // Worker-only `IIdeaNoveltyJudge` and both take the instrument above, which the Api host has neither of.
+        services.TryAddScoped<IIdeaNoveltyChecker, IdeaNoveltyChecker>();
+        services.TryAddScoped<IIdeaPolicyChecker, IdeaPolicyChecker>();
 
         return services;
     }

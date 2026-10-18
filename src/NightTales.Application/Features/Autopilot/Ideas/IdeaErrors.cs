@@ -77,11 +77,32 @@ public static class IdeaErrors
         Error.Failure(ErrorCodes.SpendCapReached, "The platform spend cap refused another generation attempt.");
 
     /// <summary>
+    /// The run failed <c>ideas_no_idea</c> (02.8.1-T2 plan §4 U2): the model answered a valid batch, and every
+    /// candidate of it was rejected by a rule — the novelty thresholds, the content policy, or the variety guard
+    /// of 02.8.4-T1 — so nothing was picked.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Reason"/> travels in the description, in the closed <c>IdeaRejectionReason</c> vocabulary (the
+    /// most common reason of the batch, ties alphabetical), so the caller records and alerts on a stable code and
+    /// never on idea text (D19). The code is a job outcome of <c>generation_runs.error_code</c>, never an HTTP
+    /// response.
+    /// </remarks>
+    /// <param name="reason">The batch's most common rejection reason; one of the <see cref="IdeaRejectionReason"/> constants.</param>
+    /// <returns>The error the caller records on its run.</returns>
+    /// <exception cref="ArgumentException"><paramref name="reason"/> is blank.</exception>
+    public static Error NoIdea(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        return Error.Failure(ErrorCodes.IdeasNoIdea, $"No candidate survived the checks ({reason}).");
+    }
+
+    /// <summary>
     /// 409: the episode already has an idea — the partial unique index <c>UX_episode_ideas_episode</c> refused the
     /// write — or this idea cannot be used (it is not picked, or it is already used). The two are one class of
     /// answer: the state of the idea/episode pair does not allow the transition. 02.8.3-T1 treats it as a bug
     /// rather than a user error (plan §4 U4).
     /// </summary>
     public static Error EpisodeAlreadyUsed { get; } =
-        Error.Conflict(EpisodeIdea.InvalidStateCode, "This episode already has an idea, or the idea cannot be used.");
+        Error.Conflict(ErrorCodes.IdeaInvalidState, "This episode already has an idea, or the idea cannot be used.");
 }
