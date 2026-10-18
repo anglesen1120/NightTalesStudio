@@ -379,6 +379,22 @@ internal static class SeedPrevious
                     '{"sub_genre":"x","setting":"x","opening":"x","twist_type":"x","narrator_mode":"x","beats":["a","b","c"],"beat_signature":"a>b>c"}'::jsonb,
                     'proposed', now(), now())
             """),
+        (
+            // 06.1.2-T1: the table the `_06_OAuthStates` migration creates. Same rule as above: skipped while
+            // the previous schema lacks it, so the row lands only on a schema that has the table. It is one
+            // unused, unexpired connect attempt of the seed user — the row needs no parent beyond `users`,
+            // because it is not `IUserOwned` — and the caller's purge index (`user_id, created_at DESC`) sees
+            // real values for both of its columns. The next migration is exercised over this row, and the
+            // callback's claim (`used_at IS NULL AND expires_at > now()`) still finds it usable.
+            "oauth_states",
+            """
+            INSERT INTO oauth_states (id, user_id, platform, state_hash, code_verifier_protected, oauth_client_id,
+                                      refresh_family_id, browser_nonce_hash, created_at, expires_at)
+            VALUES ('01920000-0000-7000-8000-00000000001b', '01920000-0000-7000-8000-000000000001', 'youtube',
+                    'seed-state-hash-aaaa', 'seed-verifier-protected-aaaa', 'seed-client',
+                    '01920000-0000-7000-8000-00000000001c', 'seed-nonce-hash-aaaa',
+                    now(), now() + interval '10 minutes')
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

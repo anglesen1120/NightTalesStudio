@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Domain.Stories.Structure;
 
 namespace NightTales.Infrastructure.Autopilot;
 
@@ -13,7 +14,8 @@ namespace NightTales.Infrastructure.Autopilot;
 /// planner options as plain singletons, and the scoped context/history readers. 02.8.1-T2 adds the same for
 /// <c>Autopilot:Ideas:{Novelty,Weights,Policy}</c> and the corpus reader; the two Application checkers stay with
 /// the planner in <c>AddIdeaGeneration</c>, because only the Worker's host has the judge and the instrument they
-/// take.
+/// take. 02.8.4-T1 adds the <c>Autopilot:Variety</c> section and the story-time structure plan provider the
+/// writer data object's <c>structure_plan</c> is built from.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -87,6 +89,22 @@ public static class AutopilotIdeasServiceCollectionExtensions
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaWeightsOptions>>().Value.ToWeights());
 
         services.TryAddScoped<IIdeaCorpusProvider, IdeaCorpusProvider>();
+
+        // 02.8.4-T1: the variety guard's window, template window, tag-share cap and rotation floor, plus the
+        // story-time structure plan the writer data object carries. The section validates on start like the idea
+        // sections above: an impossible window or cap would silently change every rejection and every steering
+        // suggestion of a paid run. The Application reader takes the plain Domain options value, exactly like the
+        // planner options above, because Application cannot reference Infrastructure's section class; the provider
+        // is scoped with the read model it queries.
+        services.AddOptions<VarietyOptionsSection>()
+            .BindConfiguration(VarietyOptionsSection.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<VarietyOptionsSection>, VarietyOptionsValidator>());
+
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<VarietyOptionsSection>>().Value.ToOptions());
+
+        services.TryAddScoped<IStructurePlanProvider, StructurePlanProvider>();
 
         return services;
     }

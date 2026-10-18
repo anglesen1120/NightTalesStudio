@@ -9,16 +9,19 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
+using NightTales.Application.Features.Stories;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Bible;
+using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Structure;
 using NightTales.Domain.Usage;
@@ -351,6 +354,11 @@ internal static class IdeaPlannerHarness
     /// The <c>Autopilot:Ideas:Policy:FailClosed</c> mode (02.8.1-T2): what an unavailable moderator decides.
     /// <see langword="null"/> keeps the shipped <see langword="false"/>.
     /// </param>
+    /// <param name="varietyEnabled">
+    /// The <c>Autopilot:Variety:Enabled</c> switch (02.8.4-T1): <see langword="false"/> turns the guard's
+    /// rejections and its penalty off, while its window, its cap and its steering stay the real ones.
+    /// <see langword="null"/> keeps the shipped <see langword="true"/>.
+    /// </param>
     /// <param name="logs">
     /// A <see cref="TestLogSink"/> to observe the run's own log events (D19): when one is passed the host is
     /// started <see cref="WorkerHost.WithTelemetry"/> and the sink is registered like the production one, so the
@@ -370,6 +378,7 @@ internal static class IdeaPlannerHarness
         bool neutralNovelty = true,
         bool? moderationEnabled = null,
         bool? failClosed = null,
+        bool? varietyEnabled = null,
         TestLogSink? logs = null)
     {
         var host = new WorkerHost(database, new FakeClock(Start)).ConfigureServices(services =>
@@ -428,6 +437,14 @@ internal static class IdeaPlannerHarness
             host.WithSetting(
                 $"{IdeaPolicyOptions.SectionName}:{nameof(IdeaPolicyOptions.FailClosed)}",
                 closed ? "true" : "false");
+        }
+
+        if (varietyEnabled is { } variety)
+        {
+            // The section name is spelled out rather than read off the options type: `VarietyOptions` is the
+            // Domain record 02.8.4-T1 registers, and its `Enabled` switch is the only value these tests override
+            // (the window, the cap and the rotation floor stay at the shipped defaults).
+            host.WithSetting("Autopilot:Variety:Enabled", variety ? "true" : "false");
         }
 
         for (var index = 0; index < (framingLexicon?.Count ?? 0); index++)
@@ -625,6 +642,33 @@ internal static class IdeaPlannerHarness
     internal static IdeaV1 IdeaWithLogline(string title, string logline) =>
         new(title, logline, "Đêm ấy có tiếng gõ cửa lúc nửa đêm.", "một ngôi nhà cũ bên sông", Structure, DefaultBeats);
 
+    /// <summary>
+    /// One <c>ideas.v1</c> idea of the <see cref="DistinctIdea"/> shape whose D3 structure is supplied by the
+    /// caller (02.8.4-T1), so a test can put a batch under the variety guard's window without hand-writing the
+    /// five texts.
+    /// </summary>
+    /// <param name="title">The episode title; unique per candidate, because the guard's history is the series'.</param>
+    /// <param name="subGenre">The candidate's <c>sub_genre</c> value, as the model wrote it.</param>
+    /// <param name="opening">The candidate's <c>opening</c> value, as the model wrote it.</param>
+    /// <param name="twistType">The candidate's <c>twist_type</c> value, as the model wrote it.</param>
+    /// <param name="settingTag">The candidate's <c>setting</c> tag; the default one when omitted.</param>
+    /// <param name="beats">The outline; three valid beats by default.</param>
+    /// <returns>The wire idea.</returns>
+    internal static IdeaV1 IdeaWithStructure(
+        string title,
+        string subGenre,
+        string opening,
+        string twistType,
+        string? settingTag = null,
+        IReadOnlyList<string>? beats = null) =>
+        new(
+            title,
+            $"Lời giới thiệu riêng về {title}.",
+            $"Móc riêng về {title}.",
+            $"Bối cảnh riêng về {title}",
+            new IdeaStructureV1(subGenre, settingTag ?? "ngôi nhà cũ", opening, twistType, "first_person"),
+            beats ?? DefaultBeats);
+
     /// <summary>The <c>ideas.v1</c> answer of one batch.</summary>
     /// <param name="ideas">The ideas, in the model's order.</param>
     /// <returns>The answer document.</returns>
@@ -754,6 +798,78 @@ internal static class IdeaPlannerHarness
         return SeedApprovedEpisodeAsync(database, world, candidate.Title, $"{candidate.Logline} {candidate.Setting}");
     }
 
+    /// <summary>
+    /// Seeds one approved episode the variety guard can read (02.8.4-T1): the fixture's real approval first, then
+    /// a rewrite of the version's <c>title</c>, <c>created_at</c> and whole <c>content</c> document. The content
+    /// is written through <see cref="StoryContentJson"/> — the same shape the writer stores — so
+    /// <c>EpisodeStructureHistory</c> derives the D3 tags and the beat signature from it exactly as it does in
+    /// production, and the row's <c>created_at</c> is what orders it inside the window (newest first).
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="title">The approved episode's title.</param>
+    /// <param name="createdAt">The version's creation instant: the guard's window order.</param>
+    /// <param name="tags">The D3 tags the stored structure block carries.</param>
+    /// <param name="beats">The beats of the stored paragraphs, in order.</param>
+    /// <returns>The episode id.</returns>
+    internal static async Task<Guid> SeedStructuredHistoryAsync(
+        TestDatabase database,
+        World world,
+        string title,
+        DateTimeOffset createdAt,
+        StoryStructureTags tags,
+        IReadOnlyList<string> beats)
+    {
+        var episodeId = await NightTales.Api.IntegrationTests.SeriesBible.SeriesBibleHarness
+            .SeedApprovedEpisodeAsync(
+                database,
+                new NightTales.Api.IntegrationTests.SeriesBible.World(world.UserId, world.SeriesId));
+
+        var content = HistoryContent(title, tags, beats);
+
+        SqlProbe.Execute(
+            database,
+            $"""
+             UPDATE story_versions
+             SET title = '{Quote(title)}',
+                 created_at = '{createdAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)}',
+                 content = '{Quote(content)}'::jsonb
+             WHERE episode_id = '{Pg(episodeId)}'
+             """);
+
+        return episodeId;
+    }
+
+    /// <summary>
+    /// The stored <c>story.v1</c> document of a seeded history episode: the guard reads only its
+    /// <c>structure</c> block and the beats of its paragraphs, so the rest of the draft is the shortest valid one.
+    /// </summary>
+    /// <param name="title">The draft's title (the version's title as well).</param>
+    /// <param name="tags">The tags the structure block carries.</param>
+    /// <param name="beats">The beats of the paragraphs, in order.</param>
+    /// <returns>The document text.</returns>
+    private static string HistoryContent(string title, StoryStructureTags tags, IReadOnlyList<string> beats)
+    {
+        StorySegmentV1[] paragraphs =
+        [
+            .. beats.Select(beat => new StorySegmentV1($"Đoạn {beat}.", ["beat keyword"], [], beat)),
+        ];
+
+        return StoryContentJson.Write(
+            new StoryContentV1(
+                title,
+                new StorySegmentV1("Mở đầu.", ["hook keyword"], []),
+                paragraphs,
+                new StorySegmentV1("Kết.", ["ending keyword"], []),
+                "Một chuyện ma nhẹ nhàng về căn nhà bên sông.",
+                ["truyện ma"],
+                ["supernatural"],
+                new StoryStructureV1(tags.SubGenre, tags.Setting, tags.Opening, tags.TwistType, tags.NarratorMode)),
+            // A plain `IEnumerable<FactSourceRef>` argument, never `[]`: the empty collection expression is
+            // ambiguous between this overload and the `JsonArray` one.
+            Array.Empty<FactSourceRef>());
+    }
+
     /// <summary>One <c>proposed</c> idea of an earlier run of the series, the corpus' second source.</summary>
     /// <param name="database">The class database.</param>
     /// <param name="world">The world.</param>
@@ -873,6 +989,31 @@ internal static class IdeaPlannerHarness
     internal static bool DataObjectContains(TextCallRequest request, string value) =>
         request.UserDataJson.Contains(value, StringComparison.Ordinal);
 
+    /// <summary>
+    /// One steering block of the captured request's data object (02.8.4-T1) as <c>&lt;member&gt;=&lt;value&gt;</c>
+    /// segments, members in ordinal order and array members comma-joined; <c>-</c> when the key is absent.
+    /// </summary>
+    /// <param name="request">The captured call.</param>
+    /// <param name="property">The block to read, <c>required_tags</c> or <c>forbidden_tags</c>.</param>
+    /// <returns>The block's readable rendering, or <c>-</c> when the data object omits it.</returns>
+    internal static string DataObjectSteering(TextCallRequest request, string property)
+    {
+        using var document = JsonDocument.Parse(request.UserDataJson);
+        if (!document.RootElement.TryGetProperty(property, out var block)
+            || block.ValueKind != JsonValueKind.Object)
+        {
+            return "-";
+        }
+
+        return string.Join(
+            "|",
+            block.EnumerateObject()
+                .OrderBy(member => member.Name, StringComparer.Ordinal)
+                .Select(member => member.Name + "=" + (member.Value.ValueKind == JsonValueKind.Array
+                    ? string.Join(",", member.Value.EnumerateArray().Select(item => item.GetString() ?? string.Empty))
+                    : member.Value.GetString() ?? string.Empty)));
+    }
+
     // ---------------------------------------------------------------- probes
 
     /// <summary>
@@ -977,6 +1118,23 @@ internal static class IdeaPlannerHarness
             database,
             $"""
              SELECT status || '|' || coalesce(rejected_reason, '-') || '|' || {Number("score")} || '|' || {Number("similarity")}
+             FROM episode_ideas WHERE id = '{Pg(ideaId)}'
+             """);
+
+    /// <summary>
+    /// One idea row's D3 structure block, as stored after the shared mapper ran (02.8.4-T1, IDEA-S52-1):
+    /// <c>sub_genre|setting|opening|twist_type|narrator_mode</c>.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="ideaId">The idea.</param>
+    /// <returns>The five stored values, empty members included.</returns>
+    internal static string IdeaTags(TestDatabase database, Guid ideaId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT coalesce(structure->>'sub_genre', '') || '|' || coalesce(structure->>'setting', '')
+                 || '|' || coalesce(structure->>'opening', '') || '|' || coalesce(structure->>'twist_type', '')
+                 || '|' || coalesce(structure->>'narrator_mode', '')
              FROM episode_ideas WHERE id = '{Pg(ideaId)}'
              """);
 
