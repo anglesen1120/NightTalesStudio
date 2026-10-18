@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 56 Next bullet (2026-10-18, replaced by Session 60)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 56 closed):** **02.8.1-T2** idea novelty (lexical + one judge call per batch, degrades to lexical-only), content-policy pre-check (banned themes, moderation, true-crime framing), scoring and pick in `IdeaPlanner`, `MarkUsedAsync` as one atomic conditional update and `idea_invalid_state` 409 merged as #232 (`523f9cde`, tip `5f30b680`, `feature/02.8.1-T2-s56`, from `develop` `54ece48c`; no migration, no route, `openapi.json` unchanged; CI refused: CI-01 (`build-test` job `117488018497`, billing annotation), owner treats as pass; full remote gate `GATE_RC=0` on `eb03c3e7` (Ubuntu arm64), the tip adds docs only; T3 gates closed). Variety is a seam (`VarietyPenalty = 0`, 02.8.4-T1 not merged). Open items: §Open tasks rows S56-1..S56-5 (calibration of `novelty.max_output_tokens`, `FailClosed`, confusables, anonymous-scope corpus, small items). Lane next: **02.8.3-T1** (autopilot job: reads `autopilot_settings`, owns the run row and the budget reservation, runs the planner under `ISystemContext.For(owner)`) and **02.8.4-T1** (variety guard).
+
 ### Superseded Session 58 rows (2026-10-18, replaced at the Session 58 close-out)
 
 Replaced text (verbatim):

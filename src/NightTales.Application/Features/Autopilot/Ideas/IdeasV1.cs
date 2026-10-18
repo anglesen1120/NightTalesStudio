@@ -39,9 +39,10 @@ public sealed record IdeasV1(IReadOnlyList<IdeaV1> Ideas)
 /// beat outline, exactly as the model wrote them.
 /// </summary>
 /// <remarks>
-/// The five structure values are the model's own short strings, not vocabulary ids: the D3 vocabulary mapping
-/// (<c>other:&lt;text&gt;</c>) belongs to the story writer's path and is not applied here — the idea prompt asks
-/// for vocabulary values and 02.8.4-T1's variety guard reads them as they stand.
+/// The five structure values are the model's own short strings, exactly as it wrote them: this DTO never
+/// repairs one. The D3 vocabulary mapping (<c>other:&lt;text&gt;</c>) is applied by the planner before the row
+/// is created (02.8.4-T1, IDEA-S52-1: <c>IdeaStructureMapper</c> maps the three vocabulary dimensions with the
+/// shared <c>StructureVocabMapper</c>), and the variety guard then reads the mapped values as they stand.
 /// </remarks>
 /// <param name="Title">The episode title.</param>
 /// <param name="Logline">The one-line premise.</param>

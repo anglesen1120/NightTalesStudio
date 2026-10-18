@@ -1,4 +1,5 @@
 using NightTales.Domain.Series.Bible;
+using NightTales.Domain.Stories.Structure;
 
 namespace NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 
