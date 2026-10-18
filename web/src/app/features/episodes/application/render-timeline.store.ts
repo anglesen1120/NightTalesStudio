@@ -1,15 +1,28 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { MatDialogRef } from '@angular/material/dialog';
+import { firstValueFrom } from 'rxjs';
+import { AppErrorMapper } from '@core/errors';
+import type { AppError } from '@core/errors';
 import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
+import { ConfirmDialog } from '@shared/ui';
+import type { ConfirmDialogComponent } from '@shared/ui/confirm-dialog/confirm-dialog';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { RenderFailure, RenderJob, RenderStatus, RenderTimelineStep, SubStage } from '../domain/render.model';
-import { EpisodeDetailStore } from './episode-detail.store';
+import { RenderRepository } from '../domain/render.repository';
+import { EpisodeDetailStore, isAppError } from './episode-detail.store';
 import { imageDetailCode } from './render-failure';
 import { EMPTY_JOB, clampPercent, isGuaranteedStage, isSubStage, renderTimeline } from './render-stage';
 
 /** The statuses a job is still being worked on in (WD2): the only ones that arm the elapsed-time clock. */
 const ACTIVE_STATUSES: readonly RenderStatus[] = ['queued', 'submitted', 'running', 'ingesting'];
+
+/**
+ * The statuses the server accepts a cancel in (09.6.4-T1:33): a `queued` job cancels at once, `submitted`/`running`
+ * record the request, and `ingesting` or a terminal status is refused with 409 — so the button is never shown there.
+ */
+const CANCELLABLE_STATUSES: readonly RenderStatus[] = ['queued', 'submitted', 'running'];
 
 /** WB2: a `queued` job with no `submitted_at` for this long is "waiting for a free studio slot", not an error. */
 export const WAITING_FOR_SLOT_SEC = 30;
@@ -60,6 +73,9 @@ export class RenderTimelineStore {
   private readonly detail = inject(EpisodeDetailStore);
   private readonly realtime = inject(RealtimeService);
   private readonly document = inject(DOCUMENT);
+  private readonly repo = inject(RenderRepository);
+  private readonly dialogs = inject(ConfirmDialog);
+  private readonly mapper = inject(AppErrorMapper);
 
   /** The episode the page armed this store for; a signal, so a `:id` reuse restarts everything derived from it. */
   private readonly episodeId = signal<string | null>(null);
@@ -177,6 +193,32 @@ export class RenderTimelineStore {
     return episode !== null && episode.status === 'rendering' && episode.renderJob === null;
   });
 
+  /**
+   * A job the server would accept a cancel for: `queued`, `submitted` or `running` only. It mirrors 09.6.4-T1's
+   * accepted set exactly, so the cancel affordance is never shown where the answer is 409 `episode_invalid_state`.
+   */
+  readonly cancellable = computed(() => {
+    const status = this.job()?.status;
+    return status !== undefined && CANCELLABLE_STATUSES.includes(status);
+  });
+
+  private readonly cancellingState = signal(false);
+  private readonly cancelErrorState = signal<AppError | null>(null);
+
+  /**
+   * `true` from the accepted `DELETE` until the job leaves the cancellable set (the detail reports `cancelled`, a
+   * terminal status, or the episode left `rendering`). Nothing is painted on the 204: this is the only local state
+   * the cancel has, and it dies with the page (the server's cancel stands, F2).
+   */
+  readonly cancelling = this.cancellingState.asReadonly();
+
+  /** The mapped failure of the last cancel, shown as `errors.<code>` beside the button; `null` while there is none. */
+  readonly cancelError = this.cancelErrorState.asReadonly();
+
+  /** Bumped by every cancel and by teardown: an answer carrying an older value writes nothing. */
+  private callSeq = 0;
+  private confirmRef: MatDialogRef<ConfirmDialogComponent, boolean> | null = null;
+
   private subscription: RealtimeSubscription | null = null;
   private tick: number | null = null;
   private destroyed = false;
@@ -194,8 +236,19 @@ export class RenderTimelineStore {
       if (job === null) return;
       untracked(() => { this.stampQueuedSince(job); });
     });
+    effect(() => {
+      // "Cancelling…" is bounded by the state it was asked for: once the job is no longer cancellable — the detail
+      // reports `cancelled` or another terminal status, the episode left `rendering`, or it returned to
+      // `story_approved` — the hold is released. The terminal view is the detail's, never a status written here.
+      const cancellable = this.cancellable();
+      untracked(() => { if (!cancellable && this.cancellingState()) this.cancellingState.set(false); });
+    });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
+      this.callSeq++;
+      this.confirmRef?.close(false);
+      this.confirmRef = null;
+      this.cancellingState.set(false);
       this.document.removeEventListener('visibilitychange', this.onVisibility);
       this.subscription?.unsubscribe();
       this.subscription = null;
@@ -236,6 +289,59 @@ export class RenderTimelineStore {
   refresh(): void {
     if (this.destroyed) return;
     void this.detail.refetch();
+  }
+
+  /**
+   * Stops the render: one confirm, then one `DELETE /render-jobs/{id}` (no `If-Match`, no `Idempotency-Key` — the
+   * route is server-idempotent). A 204 writes **no** status: the job keeps the stage the server last reported and the
+   * button reads `render.cancel.busy` until the detail moves the episode out of the cancellable set (a `queued` job
+   * usually reaches `cancelled` on the next refetch, F2). A 409 (the render already ingested, or another tab
+   * cancelled first) and a 404 re-read the episode and surface the mapped `errors.<code>` against the honest server
+   * state; a lost response restores the idle button with its message. A second call while one is in flight is a no-op.
+   */
+  async cancel(): Promise<void> {
+    const job = this.job();
+    const episodeId = this.current()?.id ?? null;
+    if (this.destroyed || job === null || episodeId === null || !this.cancellable() || this.cancellingState() || this.confirmRef !== null) return;
+    const call = ++this.callSeq;
+    this.cancelErrorState.set(null);
+    if (!(await this.confirmCancel())) return;
+    // The job may have moved on while the dialog was open (the poller's terminal event, a refetch): the server's
+    // current state decides, and a job that already left the cancellable set is never sent a cancel.
+    if (this.staleCancel(episodeId, call) || !this.cancellable()) return;
+    this.cancellingState.set(true);
+    try {
+      await this.repo.cancelRender(job.renderJobId);
+      if (this.staleCancel(episodeId, call)) return;
+      // 204: nothing is painted. The hold above is released by the detail's own status (the effect in the constructor).
+    } catch (cause) {
+      if (this.staleCancel(episodeId, call)) return;
+      const error = isAppError(cause) ? cause : this.mapper.from(cause);
+      this.cancellingState.set(false);
+      this.cancelErrorState.set(error);
+      // A refusal or a missing job means this tab's view is the stale one: re-read it and render the server's state
+      // (`cancelled`/`story_approved`) instead of leaving an error over a job that is already gone.
+      if (error.status === 409 || error.status === 404) this.refresh();
+    }
+  }
+
+  /** One `ConfirmDialog` per click (destructive — the design frame's danger action), with the empty cost slot (D14). */
+  private async confirmCancel(): Promise<boolean> {
+    const ref = this.dialogs.confirm({
+      titleKey: 'episodes.render.cancel.title',
+      bodyKey: 'episodes.render.cancel.body',
+      confirmLabelKey: 'episodes.render.cancel.confirm',
+      destructive: true,
+    });
+    this.confirmRef = ref;
+    const accepted = (await firstValueFrom(ref.afterClosed())) ?? false;
+    this.confirmRef = null;
+    return accepted;
+  }
+
+  /** True when the answer belongs to a superseded cancel, another episode or a torn-down page: it writes nothing. */
+  private staleCancel(episodeId: string, call: number): boolean {
+    return this.destroyed || call !== this.callSeq || (this.current()?.id ?? null) !== episodeId;
   }
 
   /** Keeps `submittedAt` or a terminal status from leaving a stale baseline behind (the Design's `queuedSince` rule). */

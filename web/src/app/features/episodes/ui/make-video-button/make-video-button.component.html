@@ -1,0 +1,6 @@
+<button mat-flat-button type="button" data-testid="make-video" [disableRipple]="true" [attr.aria-disabled]="disabled() || busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" [attr.aria-describedby]="disabled() && reasonKey() ? reasonId : null" (click)="onRequest($event)">
+  {{ (busy() ? 'episodes.render.make.inProgress' : labelKey()) | transloco }}
+</button>
+@if (disabled() && reasonKey(); as reason) {
+  <p class="reason" [id]="reasonId">{{ reason | transloco }}</p>
+}

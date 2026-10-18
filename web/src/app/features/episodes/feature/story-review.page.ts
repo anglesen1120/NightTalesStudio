@@ -6,7 +6,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { AppErrorMapper } from '@core/errors';
 import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
-import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip } from '@shared/ui';
+import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, RetryCountdown, StatusChip } from '@shared/ui';
 import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { ParsedAddress, SegmentAddress } from '@shared/util/segment-address';
 import { catchError, combineLatest, firstValueFrom, map, of, switchMap } from 'rxjs';
@@ -16,11 +16,13 @@ import { ApprovalStore } from '../application/approval.store';
 import { EPISODE_GATE } from '../application/episode-gate';
 import type { GateState } from '../domain/episode-gate';
 import { ResearchStore } from '../application/research.store';
+import { MakeVideoStore } from '../application/make-video.store';
 import { RenderTimelineStore } from '../application/render-timeline.store';
 import { GENERIC_TITLE_KEY, failureCopy } from '../application/render-failure';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { FailureCopy } from '../domain/render.model';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
+import { MakeVideoButtonComponent } from '../ui/make-video-button/make-video-button.component';
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import { RenderFailureComponent } from '../ui/render-failure/render-failure.component';
 import { RenderTimelineComponent } from '../ui/render-timeline/render-timeline.component';
@@ -83,8 +85,8 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent, RenderTimelineComponent, RenderFailureComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, RenderTimelineStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
+  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent, RenderTimelineComponent, RenderFailureComponent, MakeVideoButtonComponent, RetryCountdown],
+  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, RenderTimelineStore, MakeVideoStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -95,6 +97,12 @@ export class StoryReviewPage {
   protected readonly approval = inject(ApprovalStore);
   /** The render timeline of this episode (WD1/F5): component-scoped, so its subscription, tick and baseline die with the page. */
   protected readonly renderStore = inject(RenderTimelineStore);
+  /**
+   * The "Make video" command (10.6.1-T2). Component-scoped like the timeline, not route-scoped: the held idempotency
+   * intent and the in-flight state must die with this page, and the same instance feeds the header button and the
+   * failure panel's retry (one store, one intent, one set of disabled reasons).
+   */
+  protected readonly makeVideo = inject(MakeVideoStore);
   /** Component-owned so the gate and its reads are discarded when this editor is destroyed. */
   private readonly researchGate = inject(EPISODE_GATE);
   private readonly research = inject(ResearchStore);
@@ -319,9 +327,29 @@ export class StoryReviewPage {
       ? { titleKey: GENERIC_TITLE_KEY, bodyKeys: [], actionKeys: [] }
       : failureCopy(failure.code, failure.scenes);
   });
-  /** The actions a failed render offers: the server's own `nextActions`, minus `retry_render` (10.6.1-T2 binds that one). */
-  protected readonly renderActions = computed<readonly string[]>(() =>
-    (this.episode()?.nextActions ?? []).filter((action) => action !== 'retry_render'));
+  /** The actions a failed render offers: the server's own `nextActions`, unfiltered — 10.6.1-T2 binds the retry. */
+  protected readonly renderActions = computed<readonly string[]>(() => this.episode()?.nextActions ?? []);
+  /**
+   * The one make-video message the view shows (D9: the server's `detail` is never read): the catalogue leaf the store
+   * resolved (its `errors.unknown_error` for the 428/422 client-bug answers), or — after a 412 whose refetch landed —
+   * the retry prompt. A single computed, so one refusal is announced once; the keyword flags themselves live in
+   * `StoryEditorStore` (WR6), never here.
+   */
+  protected readonly makeVideoErrorKey = computed(() => {
+    const key = this.makeVideo.errorKey();
+    if (key !== null) return key;
+    return this.makeVideo.needsRefresh() ? 'errors.episode_conflict' : null;
+  });
+  /** The correlation line a client-bug answer carries (plan U6/`errors.unknown.trace`); `null` when there is none. */
+  protected readonly makeVideoTrace = computed(() => {
+    const error = this.makeVideo.error();
+    return error === null ? null : this.mapper.traceFooter(error);
+  });
+  /** A refused cancel, mapped to its `errors.<code>` copy; `null` while none is pending. */
+  protected readonly cancelErrorKey = computed(() => {
+    const error = this.renderStore.cancelError();
+    return error === null ? null : this.mapper.messageKey(error);
+  });
   /** The read-only research gate (02 F13): `not_applicable` and an unloaded gate are `open`. */
   protected readonly researchGateState = computed<GateState>(() => this.researchGate());
   /** Only the two blocking states disable "Write story"; the server stays the ultimate authority (a 409 on generate). */
@@ -333,7 +361,15 @@ export class StoryReviewPage {
   protected readonly gateHintKey = computed(() => this.researchGateState() === 'sources_insufficient'
     ? 'episodes.research.gate.sourcesInsufficient'
     : 'episodes.research.gate.sheetNotApproved');
-  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && action !== 'reopen_story' && Object.hasOwn(ACTION_KEYS, action)));
+  /**
+   * The read-only notice's inert action list: the server's `nextActions` minus the ones this page renders as real
+   * controls — `edit_story`/`reopen_story` (the header and the versions panel own them) and `render`/`retry_render`,
+   * which 10.6.1-T2 renders as the live `nts-make-video-button` (the header button and the failure panel's retry); a
+   * disabled duplicate here would be a second, dead control for the same command.
+   */
+  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) =>
+    action !== 'edit_story' && action !== 'reopen_story' && action !== 'render' && action !== 'retry_render' &&
+    Object.hasOwn(ACTION_KEYS, action)));
   protected readonly versionsOpen = computed(() => this.routeState()[1].get('panel') === 'versions');
   protected readonly versionCount = computed(() => this.store.snapshot()?.version ?? null);
   protected readonly versionIds = computed(() => {

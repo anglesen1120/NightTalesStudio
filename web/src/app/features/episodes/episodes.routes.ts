@@ -6,6 +6,7 @@ import { HttpStoryVersionRepository } from './data-access/http-story-version.rep
 import { HttpResearchRepository } from './data-access/http-research.repository';
 import { HttpSourceFinderRepository } from './data-access/http-source-finder.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
+import { RenderHttpRepository } from './data-access/render-http.repository';
 import { dirtyStoryGuard } from './guards/dirty-story.guard';
 import { dirtyResearchGuard } from './guards/dirty-research.guard';
 import { EpisodesRepository } from './domain/episodes.repository';
@@ -14,6 +15,7 @@ import { StoryVersionRepository } from './domain/story-version.repository';
 import { ResearchRepository } from './domain/research.repository';
 import { SeriesOptionsRepository } from './domain/series-options.repository';
 import { SourceFinderRepository } from './domain/source-finder.repository';
+import { RenderRepository } from './domain/render.repository';
 
 // The repository bindings and the `episodes` scope live on the route (lazy chunk). The page-scoped EpisodeListStore is
 // provided on EpisodesListPage itself, so it is destroyed with the component, not cached with the route injector.
@@ -52,6 +54,7 @@ export const episodesRoutes: Routes = [
       { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
       { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
+      { provide: RenderRepository, useClass: RenderHttpRepository },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],

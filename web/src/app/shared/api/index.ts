@@ -30,6 +30,9 @@ export type { BibleStructureV1 } from './models/bible-structure-v-1';
 export type { BibleUpdateResponse } from './models/bible-update-response';
 export type { CatalogResponseOfStyleTemplateListItemDto } from './models/catalog-response-of-style-template-list-item-dto';
 export type { CatalogResponseOfVoiceListItemDto } from './models/catalog-response-of-voice-list-item-dto';
+export type { ChannelConnectionDto } from './models/channel-connection-dto';
+export type { ChannelListResponse } from './models/channel-list-response';
+export type { ConnectChannelResponse } from './models/connect-channel-response';
 export type { ConsentAcceptance } from './models/consent-acceptance';
 export type { CreateEpisodeRequest } from './models/create-episode-request';
 export type { CreateSeriesCommand } from './models/create-series-command';
@@ -123,6 +126,7 @@ export { SourceEndpointsClient } from './services/source-endpoints-client';
 export { SourceFinderEndpointsClient } from './services/source-finder-endpoints-client';
 export { SeriesBibleClient } from './services/series-bible-client';
 export { HubEndpointsClient } from './services/hub-endpoints-client';
+export { PublishingEndpointsClient } from './services/publishing-endpoints-client';
 
 export type { ApiV1SeriesSeriesIdEpisodesPost$Params as ApiV1SeriesSeriesIdEpisodesPost$Params } from './fn/episode-endpoints/api-v-1-series-series-id-episodes-post';
 export { apiV1SeriesSeriesIdEpisodesPost as apiV1SeriesSeriesIdEpisodesPost } from './fn/episode-endpoints/api-v-1-series-series-id-episodes-post';
@@ -160,6 +164,8 @@ export type { ApiV1EpisodesIdVideoUrlGet$Params as ApiV1EpisodesIdVideoUrlGet$Pa
 export { apiV1EpisodesIdVideoUrlGet as apiV1EpisodesIdVideoUrlGet } from './fn/episode-video-endpoints/api-v-1-episodes-id-video-url-get';
 export type { ApiV1EpisodesIdRenderPost$Params as ApiV1EpisodesIdRenderPost$Params } from './fn/rendering-endpoints/api-v-1-episodes-id-render-post';
 export { apiV1EpisodesIdRenderPost as apiV1EpisodesIdRenderPost } from './fn/rendering-endpoints/api-v-1-episodes-id-render-post';
+export type { ApiV1RenderJobsIdDelete$Params as ApiV1RenderJobsIdDelete$Params } from './fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
+export { apiV1RenderJobsIdDelete as apiV1RenderJobsIdDelete } from './fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
 export type { ApiV1PublishingYoutubeEtaGet$Params as ApiV1PublishingYoutubeEtaGet$Params } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
 export { apiV1PublishingYoutubeEtaGet as apiV1PublishingYoutubeEtaGet } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
 export type { ApiV1AuthLoginPost$Params as ApiV1AuthLoginPost$Params } from './fn/auth-endpoints/api-v-1-auth-login-post';
@@ -224,3 +230,9 @@ export type { ApiV1SeriesIdBibleProposalDismissPost$Params as ApiV1SeriesIdBible
 export { apiV1SeriesIdBibleProposalDismissPost as apiV1SeriesIdBibleProposalDismissPost } from './fn/series-bible/api-v-1-series-id-bible-proposal-dismiss-post';
 export type { ApiV1HubsTicketPost$Params as ApiV1HubsTicketPost$Params } from './fn/hub-endpoints/api-v-1-hubs-ticket-post';
 export { apiV1HubsTicketPost as apiV1HubsTicketPost } from './fn/hub-endpoints/api-v-1-hubs-ticket-post';
+export type { ApiV1ChannelsPlatformConnectPost$Params as ApiV1ChannelsPlatformConnectPost$Params } from './fn/publishing-endpoints/api-v-1-channels-platform-connect-post';
+export { apiV1ChannelsPlatformConnectPost as apiV1ChannelsPlatformConnectPost } from './fn/publishing-endpoints/api-v-1-channels-platform-connect-post';
+export type { ApiV1ChannelsGet$Params as ApiV1ChannelsGet$Params } from './fn/publishing-endpoints/api-v-1-channels-get';
+export { apiV1ChannelsGet as apiV1ChannelsGet } from './fn/publishing-endpoints/api-v-1-channels-get';
+export type { ApiV1ChannelsPlatformCallbackGet$Params as ApiV1ChannelsPlatformCallbackGet$Params } from './fn/publishing-endpoints/api-v-1-channels-platform-callback-get';
+export { apiV1ChannelsPlatformCallbackGet as apiV1ChannelsPlatformCallbackGet } from './fn/publishing-endpoints/api-v-1-channels-platform-callback-get';

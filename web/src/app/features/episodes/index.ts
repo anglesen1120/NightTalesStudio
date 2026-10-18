@@ -6,6 +6,10 @@
 // models, the tone palette and the repository binding.
 export { provideEpisodesRepository } from './episodes.providers';
 export { EpisodesRepository } from './domain/episodes.repository';
+// The render command port (10.6.1-T2): the "Make video" / cancel half of `/episodes/:id`, exposed so a feature that
+// drives a render from a route of its own binds the port instead of reaching into `data-access/` (README D2). Its
+// adapter is bound by `episodes.routes.ts` on the `:id` route, beside `EpisodesRepository`.
+export { RenderRepository } from './domain/render.repository';
 // `EPISODE_STATUSES` travels with `EpisodeStatus`: the dashboard de-duplicates drifting statuses by this enum order
 // (10.4.1-T1 contract item 2), and re-declaring the order there would let the two copies drift apart.
 export { EPISODE_STATUSES, type EpisodeListItem, type EpisodeStatus } from './domain/episode.model';
