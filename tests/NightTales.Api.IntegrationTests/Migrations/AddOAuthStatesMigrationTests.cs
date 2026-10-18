@@ -17,8 +17,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// single-use connect attempt per row, claimed by one atomic statement from an anonymous callback. <c>Up</c> is
 /// expand-only — one <c>CreateTable</c>, its unique <c>state_hash</c> index and the
 /// <c>(user_id, created_at DESC)</c> purge index, no other schema change — and <c>Down</c> drops the table and
-/// nothing else. 06.1.2-T2 appended <c>_06_ChannelConnections</c> after it, so the newest migration's test
-/// (<c>AddChannelConnectionsMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this
+/// nothing else. 09.7.1-T1 appended <c>_09_EpisodeVideoReview</c> after it, so the newest migration's test
+/// (<c>AddEpisodeVideoReviewMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this
 /// class finds its own migration by name.
 /// </summary>
 [Trait("Category", "Integration")]

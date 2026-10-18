@@ -25,6 +25,8 @@ internal sealed class EpisodeConfiguration : IEntityTypeConfiguration<Episode>
         builder.Property(episode => episode.LengthTier).HasEnumCheck();
         builder.Property(episode => episode.Status).HasEnumCheck();
         builder.Property(episode => episode.ApprovedAt).HasColumnName("approved_at").HasColumnType("timestamptz");
+        builder.Property(episode => episode.ReadyAt).HasColumnName("ready_at").HasColumnType("timestamptz");
+        builder.Property(episode => episode.VideoRejectReason).HasColumnName("video_reject_reason").HasMaxLength(500);
 
         // NTS-922-SEC-001 (09 W3 CR-46): the alternate key (id, user_id) every same-owner FK of this
         // table targets, so a child row can never point at another user's parent (see SeriesConfiguration).
