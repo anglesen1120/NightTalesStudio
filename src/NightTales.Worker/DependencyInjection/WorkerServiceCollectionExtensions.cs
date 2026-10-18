@@ -435,8 +435,10 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RenderMetricsRefresher>());
 
         // 09.6.3-T1 (09 README BD7, WF07/W12): the render submit/poll graph the Worker runs — the jobs, the
-        // retry policy, the failure recorder, the render instruments and the `render_requested.v1` consumer
-        // that queues SubmitRenderJob. It is composed only here: the Api never schedules jobs (D12).
+        // retry policy, the failure recorder, the render instruments, the `render_requested.v1` consumer
+        // that queues SubmitRenderJob and 09.6.4-T1's `render_cancel_requested.v1` consumer that asks the node
+        // to cancel the adapter task. It is composed only here: the Api never schedules jobs and never holds a
+        // node client on a cancel path (D11/D12).
         services.AddRenderJobs();
 
         // The `Render` cadence and bounds of that graph. Every key has a default; an out-of-range value fails
