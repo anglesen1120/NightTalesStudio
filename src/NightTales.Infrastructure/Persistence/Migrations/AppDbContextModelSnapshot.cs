@@ -845,6 +845,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("length_tier");
 
+                    b.Property<DateTimeOffset?>("ReadyAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("ready_at");
+
                     b.Property<Guid>("SeriesId")
                         .HasColumnType("uuid")
                         .HasColumnName("series_id");
@@ -872,6 +876,11 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
+
+                    b.Property<string>("VideoRejectReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("video_reject_reason");
 
                     b.HasKey("Id")
                         .HasName("pk_episodes");

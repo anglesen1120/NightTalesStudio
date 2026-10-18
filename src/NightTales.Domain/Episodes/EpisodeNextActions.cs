@@ -42,7 +42,7 @@ public enum EpisodeNextAction
     /// <summary><c>video_review → ready</c>: accept the rendered video (09.7.1-T1).</summary>
     ApproveVideo,
 
-    /// <summary><c>video_review → story_review | rendering</c>: reject the video, with or without a re-render (09.7.1-T1).</summary>
+    /// <summary><c>video_review → story_review | story_approved</c>: reject the video, with or without a re-render — the re-render starts later in the Worker (09.7.1-T1, WT3).</summary>
     RejectVideo,
 
     /// <summary><c>ready → scheduled</c>: open the publication flow for the approved video (06.2.1-T1).</summary>
