@@ -74,6 +74,17 @@ public sealed class YouTubeOptions
     public string ApiBaseUrl { get; set; } = "https://www.googleapis.com";
 
     /// <summary>
+    /// The resumable-upload endpoint root (06.2.3-T1): an absolute http(s) URL <em>with</em> its <c>upload/youtube/v3/</c>
+    /// path, to which the client appends <c>videos?uploadType=resumable</c>. The session URI Google answers must live on
+    /// this URL's scheme, host and port, so the host is the only egress target of an upload (README D19). The
+    /// validator requires it; the integration suite points it at <c>FakeGoogleServer</c>.
+    /// </summary>
+    public string UploadBaseUrl { get; set; } = "https://www.googleapis.com/upload/youtube/v3/";
+
+    /// <summary>The resumable-upload tuning (06.2.3-T1).</summary>
+    public YouTubeUploadOptions Upload { get; set; } = new();
+
+    /// <summary>
     /// Whether the flow carries PKCE S256 (default true, F12). The fallback to <see langword="false"/> is a
     /// configuration change, not a code edit, and it must match the staging observation recorded in
     /// <c>docs/ops/youtube-oauth-setup.md</c>. Restart-only (see the class remarks).
@@ -185,4 +196,23 @@ public sealed class YouTubeQuotaOptions
 {
     /// <summary>Units the platform grants per Pacific day. The day row seeds its limit from this value once.</summary>
     public int UnitsPerDay { get; set; } = 100;
+}
+
+/// <summary>The <c>YouTube:Upload</c> settings (06.2.3-T1, 06 README G7/G8).</summary>
+public sealed class YouTubeUploadOptions
+{
+    /// <summary>One chunk's size in bytes (default 10 MiB, G8). Must be a positive multiple of 256 KiB (G7); the validator refuses anything else.</summary>
+    public int ChunkSizeBytes { get; set; } = 10 * 1024 * 1024;
+
+    /// <summary>How many times one chunk is re-sent after a transport failure or a 5xx before the call answers <c>youtube_transport</c> (1..10).</summary>
+    public int MaxChunkRetries { get; set; } = 3;
+
+    /// <summary>The timeout of the session-creating call in seconds (1..600).</summary>
+    public int StartTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>The timeout of one probe in seconds (1..600).</summary>
+    public int ProbeTimeoutSeconds { get; set; } = 15;
+
+    /// <summary>The timeout of one chunk request in seconds (1..3600).</summary>
+    public int ChunkTimeoutSeconds { get; set; } = 100;
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Abstractions.Security;
@@ -36,7 +37,8 @@ public static class PublishingServiceCollectionExtensions
     /// <summary>
     /// Binds and validates <see cref="YouTubeOptions"/> once, then registers <see cref="ISecretProvider"/>
     /// (configuration-backed), <see cref="IOAuthClientResolver"/> (the configured client map),
-    /// <see cref="IYouTubeClient"/> (Google) and the named clients <c>youtube-oauth</c> and <c>youtube-api</c>.
+    /// <see cref="IYouTubeClient"/> (Google) and the named clients <c>youtube-oauth</c>, <c>youtube-api</c> and
+    /// <c>youtube-upload</c>.
     /// </summary>
     /// <remarks>
     /// The host must already register <see cref="NightTales.Domain.Common.IClock"/> and the HTTP client factory
@@ -102,6 +104,21 @@ public static class PublishingServiceCollectionExtensions
         // ConfigurableHttpClient carries `YouTube:Http:TimeoutSeconds` (see GoogleYouTubeClient).
         services.AddHttpClient(GoogleYouTubeClient.ApiHttpClientName)
             .ConfigurePrimaryHttpMessageHandler(CreateTransport);
+
+        // The resumable session's three calls (06.2.3-T1): the same transport, but no shared timeout — each call
+        // arms its own linked deadline from `YouTube:Upload:*`, so one slow chunk cannot spend another's budget —
+        // and the same bounded body. The session URI is a capability and it is the request URI, so the framework's
+        // own request logging for this client is switched off: a line must never carry it.
+        services.AddHttpClient(GoogleYouTubeClient.UploadHttpClientName, (_, client) =>
+            {
+                client.Timeout = Timeout.InfiniteTimeSpan;
+                client.MaxResponseContentBufferSize = GoogleYouTubeClient.MaxResponseContentBytes;
+            })
+            .ConfigurePrimaryHttpMessageHandler(CreateTransport);
+
+        services.AddLogging(logging => logging.AddFilter(
+            $"System.Net.Http.HttpClient.{GoogleYouTubeClient.UploadHttpClientName}",
+            LogLevel.None));
 
         return services;
     }
@@ -202,5 +219,6 @@ internal sealed class YouTubeOptionsValidation(IHostEnvironment environment) : I
         new(nameof(YouTubeOptions.TokenEndpoint), options.TokenEndpoint),
         new(nameof(YouTubeOptions.RevokeEndpoint), options.RevokeEndpoint),
         new(nameof(YouTubeOptions.ApiBaseUrl), options.ApiBaseUrl),
+        new(nameof(YouTubeOptions.UploadBaseUrl), options.UploadBaseUrl),
     ];
 }

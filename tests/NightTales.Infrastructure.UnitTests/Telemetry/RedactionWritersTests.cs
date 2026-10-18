@@ -201,6 +201,33 @@ public sealed class RedactionWritersTests
     }
 
     [Fact]
+    public void Processor_masks_the_resumable_session_handle_and_keeps_the_harmless_query()
+    {
+        using var source = new ActivitySource("nts.test.upload.redaction");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = static s => s.Name == "nts.test.upload.redaction",
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(listener);
+        using var activity = source.StartActivity("upload").ShouldNotBeNull();
+
+        // An HttpClient span's URL is the one place a resumable session URI reaches: `upload_id` is a bearer
+        // capability for that upload (06.2.3-T1), so the frozen list carries it — while `uploadType`, which is the
+        // same value on every call, stays readable.
+        activity.SetTag(
+            "url.full",
+            $"https://www.googleapis.com/upload/youtube/v3/videos?upload_id={Raw}&uploadType=resumable");
+
+        new RedactingActivityProcessor(Options).OnEnd(activity);
+
+        var full = activity.GetTagItem("url.full").ShouldBeOfType<string>();
+        full.ShouldNotContain(Raw);
+        full.ShouldStartWith("https://www.googleapis.com/upload/youtube/v3/videos?upload_id=<redacted>");
+        full.ShouldEndWith("&uploadType=resumable");
+    }
+
+    [Fact]
     public void Sanitizer_masks_listed_values_in_the_message_inner_message_and_stack_trace()
     {
         var thrown = Throw(new InvalidOperationException(

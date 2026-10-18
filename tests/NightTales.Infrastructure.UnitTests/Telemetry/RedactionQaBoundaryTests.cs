@@ -67,7 +67,9 @@ public sealed class RedactionQaBoundaryTests
 
         var options = RedactionOptions.Resolve(configuration);
 
-        options.QueryKeys.ShouldBe(["access_token", "ticket", "token", "code", "state", "sig", "Apikey"], ignoreOrder: true);
+        options.QueryKeys.ShouldBe(
+            ["access_token", "ticket", "token", "code", "state", "upload_id", "sig", "Apikey"],
+            ignoreOrder: true);
         QueryStringRedactor.Redact("?APIKEY=raw&token=raw", options.QueryKeys).ShouldBe("?APIKEY=<redacted>&token=<redacted>");
     }
 }

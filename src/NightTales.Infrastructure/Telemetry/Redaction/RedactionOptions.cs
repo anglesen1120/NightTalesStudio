@@ -4,8 +4,9 @@ namespace NightTales.Infrastructure.Telemetry.Redaction;
 
 /// <summary>
 /// The one redaction list both writers share — the Serilog enricher and the OpenTelemetry activity processor
-/// (09.9.3-T2, 09 README BD12/BD16). The five query keys of BD12 are frozen: configuration can only add to
-/// them, so no deployment can switch the redaction of a credential off.
+/// (09.9.3-T2, 09 README BD12/BD16). The five query keys of BD12 are frozen, and the resumable-upload session
+/// handle is frozen with them (06.2.3-T1): configuration can only add to the list, so no deployment can switch the
+/// redaction of a credential off.
 /// </summary>
 public sealed class RedactionOptions
 {
@@ -18,8 +19,13 @@ public sealed class RedactionOptions
     /// <summary>The configuration key that adds header names to the default list.</summary>
     public const string HeadersKey = "Logging:RedactionHeaders";
 
-    /// <summary>The BD12 query keys — never configurable away.</summary>
-    public static readonly IReadOnlyList<string> FrozenQueryKeys = ["access_token", "ticket", "token", "code", "state"];
+    /// <summary>
+    /// The BD12 query keys plus the resumable-upload session handle — never configurable away. A session URI is a
+    /// bearer capability for the upload it names (06.2.3-T1), so <c>upload_id</c> is masked wherever a URL is
+    /// written — the <c>url.full</c> span tag of an <c>HttpClient</c> call included.
+    /// </summary>
+    public static readonly IReadOnlyList<string> FrozenQueryKeys =
+        ["access_token", "ticket", "token", "code", "state", "upload_id"];
 
     /// <summary>The default header names whose values are masked.</summary>
     public static readonly IReadOnlyList<string> DefaultHeaders = ["authorization", "cookie", "set-cookie"];
