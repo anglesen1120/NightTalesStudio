@@ -18,8 +18,15 @@ namespace NightTales.Application.Abstractions.Rendering;
 /// not as a failed job (05 D10).
 /// </para>
 /// <para>
-/// A transport failure mid-stream leaves a partial file in <paramref name="destination"/>: the caller owns
-/// that stream and discards it (the ingest retries from scratch, idempotent by the SHA-256 it compares).
+/// <b>The destination keeps whatever the client already wrote on <em>every</em> error</b> (09.6.2-T1 Notes
+/// H1): the client never truncates and never rewinds it, so a failed attempt — a cap trip, an unexpected
+/// content type, a stall, a terminated redirect, an <c>IOException</c> raised by the destination itself or the
+/// caller's cancellation — leaves partial bytes in it. The caller therefore owns two obligations: it downloads
+/// into a temp file and commits that file only after this call succeeded, and it compares the returned
+/// <see cref="DownloadResult.Bytes"/> and <see cref="DownloadResult.Sha256"/> with the adapter's own report
+/// itself. Both the destination's <c>IOException</c> and the <c>OperationCanceledException</c> of a cancelled
+/// attempt surface from this call and leave the same partial file to discard; the ingest retries from scratch,
+/// idempotent by the SHA-256 it compares.
 /// </para>
 /// </remarks>
 public interface IRenderDownloadClient
@@ -28,7 +35,8 @@ public interface IRenderDownloadClient
     /// <param name="node">The node the task was submitted to.</param>
     /// <param name="taskId">The adapter's task id.</param>
     /// <param name="kind">Which route to read; each kind has its own expected content type.</param>
-    /// <param name="destination">The stream the bytes are written to; never rewinded, never closed.</param>
+    /// <param name="destination">The stream the bytes are written to; never rewinded, never closed, and left
+    /// holding whatever was written when the call fails (H1).</param>
     /// <param name="maxBytes">The cap of this kind (<c>Render:MaxVideoBytes</c> or <c>Render:MaxSubtitleBytes</c>).</param>
     /// <param name="ct">The caller's cancellation.</param>
     /// <returns>The bytes written and their SHA-256, or a mapped failure.</returns>

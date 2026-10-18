@@ -24,6 +24,7 @@ using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
 using NightTales.Application.Features.Stories.Review;
 using NightTales.Application.Rendering;
+using NightTales.Application.Rendering.Quality;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes.Events;
@@ -438,6 +439,21 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RenderOptions>, RenderOptionsValidation>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderOptions>>().Value);
+
+        // 09.6.3-T2 (WT45/WT52/WT56): the ingest's spool directory (`Render:Ingest`) and the retention stamped on
+        // an asset of an episode the owner has not approved (`Assets:UnapprovedRetentionDays`). Both sections have
+        // in-code defaults; an unusable directory fails the boot instead of the first download, and the bound
+        // value is exposed as the snapshot the ingest job takes.
+        services.AddOptions<RenderIngestOptions>()
+            .BindConfiguration(RenderIngestOptions.SectionName)
+            .BindConfiguration(RenderIngestOptions.RetentionSectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RenderIngestOptions>, RenderIngestOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderIngestOptions>>().Value);
+
+        // The ingest job takes the bound render-quality policy value (05 D10), which `AddRenderQuality`
+        // registers only as `IOptions<RenderQualityPolicy>`.
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderQualityPolicy>>().Value);
 
         // `SubmitRenderJob` reschedules a render after `RenderNodes:HealthPollSeconds` when no node is
         // dispatchable, so the bound value of that section is exposed the same way.

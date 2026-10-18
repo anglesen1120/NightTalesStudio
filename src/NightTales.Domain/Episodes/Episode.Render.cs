@@ -57,6 +57,52 @@ public sealed partial class Episode
     public ErrorOr<Success> RenderSucceeded(DateTimeOffset now) => MoveOutOfRendering(EpisodeStatus.VideoReview, now);
 
     /// <summary>
+    /// Points the episode at the stored video asset of its last render (BD5 step 9, WT45), so
+    /// <c>video_review</c> and every later read (<c>GET /episodes/{id}</c>, 09.7.1-T1's approve, 10.6.2-T1's review)
+    /// can resolve the episode's video through <c>final_video_asset_id</c> instead of looking for an asset by kind.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is written in the same transaction as <see cref="RenderSucceeded"/> (the ingest's step 9), so the two calls
+    /// may arrive in either order; both <c>rendering</c> and <c>video_review</c> therefore accept it. Any other state
+    /// is 409: attaching a video to a <c>draft</c> or a <c>story_approved</c> episode would make a render look
+    /// approved before its story is.
+    /// </para>
+    /// <para>
+    /// A repeat of the same asset is a no-op <c>Success</c> without a write, because the ingest of 09.6.3-T2 is
+    /// delivered at least once and its retry re-runs this step. A <em>different</em> asset replaces the pointer: a
+    /// re-render of the episode stores a new video and this is what makes it the current one.
+    /// </para>
+    /// </remarks>
+    /// <param name="finalVideoAssetId">The accepting <c>assets</c> row of this episode.</param>
+    /// <param name="now">The Worker's clock reading.</param>
+    /// <returns><c>Success</c>, the 400 of an empty id, or the 409 of any other state.</returns>
+    public ErrorOr<Success> AttachFinalVideo(Guid finalVideoAssetId, DateTimeOffset now)
+    {
+        if (finalVideoAssetId == Guid.Empty)
+        {
+            return Error.Validation(
+                "final_video_asset_id_required",
+                "The final video is an assets row of this episode (BD7).");
+        }
+
+        if (Status is not (EpisodeStatus.Rendering or EpisodeStatus.VideoReview))
+        {
+            return Error.Conflict(InvalidStateCode, "The episode is not rendering, so it has no new render to keep.");
+        }
+
+        if (FinalVideoAssetId == finalVideoAssetId)
+        {
+            return Result.Success;
+        }
+
+        FinalVideoAssetId = finalVideoAssetId;
+        UpdatedAt = now;
+
+        return Result.Success;
+    }
+
+    /// <summary>
     /// The shared body of the two terminal render transitions: it writes the target status and the stamp, and it
     /// answers <c>Success</c> for a repeat of the target state.
     /// </summary>

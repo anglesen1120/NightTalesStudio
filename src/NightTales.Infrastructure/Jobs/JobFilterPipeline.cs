@@ -20,10 +20,18 @@ public static class JobFilterPipeline
 
     /// <summary>
     /// The filter chain of one host: <paramref name="extra"/> first (the harness's state observer),
-    /// then the <see cref="JobPolicyAttribute"/> retry provider and Hangfire's own global filters.
+    /// then the telemetry and attempt providers, the <see cref="JobPolicyAttribute"/> retry provider and
+    /// Hangfire's own global filters.
     /// </summary>
     public static IJobFilterProvider Compose(params IJobFilterProvider[] extra) =>
-        new JobFilterProviderCollection([.. extra, new JobTelemetryFilterProvider(), new JobPolicyFilterProvider(), JobFilterProviders.Providers]);
+        new JobFilterProviderCollection(
+            [
+                .. extra,
+                new JobTelemetryFilterProvider(),
+                new JobAttemptFilterProvider(),
+                new JobPolicyFilterProvider(),
+                JobFilterProviders.Providers,
+            ]);
 
     /// <summary>
     /// Removes Hangfire's global <see cref="AutomaticRetryAttribute"/> (10 attempts) once per process,
