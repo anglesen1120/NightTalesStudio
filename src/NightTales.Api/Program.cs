@@ -20,6 +20,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.Usage;
+using NightTales.Infrastructure.Publishing;
 using NightTales.Infrastructure.Rendering;
 using NightTales.Infrastructure.Storage;
 using NightTales.Infrastructure.Telemetry;
@@ -137,6 +138,13 @@ try
     // Worker BackgroundService; what the Api composes here is the pinned-TLS transport and the two clients.
     builder.Services.AddRenderNodes(builder.Configuration);
     builder.Services.AddRenderClients(builder.Configuration);
+
+    // 06.1.2-T1 (06 README D11, 06.1 connect plan §Infrastructure): the YouTube OAuth client resolution —
+    // the active client's secret read through the secret provider — and the Google authorization-code client
+    // the connect and callback handlers resolve, both pinned to the named HttpClient of `YouTube:Http`.
+    // The options bind with their validator, so an empty `ActiveClientId`, a `Clients` entry without a
+    // `SecretRef` or a scope outside the two URIs fails the boot instead of the first connect.
+    builder.Services.AddYouTubePublishing(builder.Configuration);
 
     // 09.3.2-T1 step 6: the bearer scheme over the same key.
     builder.Services.AddNightTalesJwtBearer();
@@ -360,6 +368,11 @@ try
     // 06.3.1-T1 (06 README D9): GET /api/v1/publishing/youtube/eta reports the platform's remaining daily
     // YouTube upload units. The route is gated by the youtube_publish feature flag and needs a session.
     app.MapYouTubeEtaEndpoints();
+
+    // 06.1.2-T1 (06 README D3, 06.1 connect plan §5.1): the channel routes — POST /api/v1/channels/{platform}/connect
+    // mints the state/PKCE pair and answers Google's authorization URL, GET /api/v1/channels/{platform}/callback
+    // claims that state anonymously and answers one of two fixed relative paths.
+    app.MapPublishingEndpoints();
 
     app.Run();
 }

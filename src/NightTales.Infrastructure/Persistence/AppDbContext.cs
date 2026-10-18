@@ -150,6 +150,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<PlatformQuotaUsage> PlatformQuotaUsage => Set<PlatformQuotaUsage>();
 
+    /// <summary>
+    /// The single-use OAuth connect states of 06.1.2-T1 (<c>oauth_states</c>): inserted by the connect command and
+    /// claimed by one atomic <c>UPDATE … RETURNING</c> in the callback, which carries no principal. The row is not
+    /// <c>IUserOwned</c>, so the D10 tenant filter does not apply and every read names its own predicate.
+    /// </summary>
+    public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 

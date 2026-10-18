@@ -46,6 +46,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     private readonly List<KeyValuePair<string, string?>> _settings = [];
     private readonly List<ILoggerProvider> _logProviders = [];
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
+    private string? _environment;
 
     /// <summary>The default draft moderator; tests may script its verdicts before the host starts.</summary>
     public FakeContentModerator Moderator { get; } = new();
@@ -81,6 +82,21 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         _settings.Add(new KeyValuePair<string, string?>(key, value));
+
+        return this;
+    }
+
+    /// <summary>
+    /// Pins the host's environment (default: whatever the test process resolves). A test whose options
+    /// validator carries an environment-dependent rule — an <c>https://</c> endpoint unless Development,
+    /// say — states the environment it exercises instead of inheriting one (06.1.2-T1's
+    /// <c>YouTubeOptionsValidator</c> accepts a loopback address in Development).
+    /// </summary>
+    /// <param name="environment">The environment name, for example <c>Development</c>.</param>
+    public ApiFactory WithEnvironment(string environment)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(environment);
+        _environment = environment;
 
         return this;
     }
@@ -257,6 +273,15 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public HttpClient AnonymousClient() => CreateClient();
 
     /// <summary>
+    /// An anonymous <em>browser</em> client: it does not follow a redirect, so the <c>302</c> a route answers
+    /// and everything it carries (the <c>Location</c>, the cache and referrer headers, a cookie it clears)
+    /// stay observable. The default client follows one, which would replace the redirect with the answer to
+    /// its target.
+    /// </summary>
+    public HttpClient AnonymousBrowser() =>
+        CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+    /// <summary>
     /// The host of <c>Program</c> with the settings a real deployment always has — the connection
     /// string, required start-up configuration and the run's Data Protection KEK — and no
     /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>. Moderation and the fact
@@ -352,6 +377,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         builder.UseSetting(
             $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
             database.ConnectionString);
+
+        if (_environment is not null)
+        {
+            builder.UseEnvironment(_environment);
+        }
 
         ApplyRequiredStartupSettings(builder);
 
