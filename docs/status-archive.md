@@ -4,6 +4,22 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 59 PR-open) line (2026-10-18, replaced when #235 merged as 994f9cce)
+
+Replaced text (verbatim):
+
+- **Web (Session 59, PR open):** **10.6.1-T1** render timeline on `/episodes/:id` (three guaranteed stages `queued → running → ingesting`, percent bar, node sub-step, elapsed time, the 30 s "waiting for a free studio slot" notice, failure panel with the skipped scenes) in PR #235 (`feature/10.6.1-T1-s59`, from `develop` `c50d4844`; web lane, FE only, no backend change). `web/openapi.json` is NOT re-pinned: `RenderJobSummaryDto` carries every render field except `images`, which the mapper reads defensively (task Notes O-2, 03.4.2-T1). T2 gates closed (QA agent, code review, perf+security review, one `judge_batch` triage, fixes, delta review `all closed`); local web gate exit 0 on `2bdcef63` (3439 tests); stubbed e2e 18/18 (vi + en, axe light/dark, 360 px, reduced motion, CSP/Trusted Types); CI: see the PR FINAL-REPORT. Open items: §Open findings S59-1..S59-6. Next (web): **10.6.1-T2** (make video, cancel, retry; binds the disabled `(retry)`), coordinator to assign.
+
+Outcome: 10.6.1-T1 merged as #235 (`994f9cce`, tip `6830d73e`, Session 59) by the coordinator; `git merge-base --is-ancestor 6830d73eab624916b150f02ff04130843cfb8261 origin/develop` true.
+
+### Superseded backend Next (Session 42 closed) line (2026-10-18, moved out when the Session 59 PR opened)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 42 closed):** **02.6.3-T2** proposal job on `StoryApproved` + `POST /api/v1/series/{id}/bible/proposal/accept|dismiss` + autopilot auto-accept merged as #213 (`cd68697c`, branch tip `621277cf`; no migration; CI refused: CI-01, owner treats as pass; final full remote gate `GATE_RC=0` on `cb8bed25` (Ubuntu arm64), later commits add docs only; T3 gates and delta review closed; rulings R1–R5 in the task Notes). Open items: BIBLE-6…BIBLE-11 and BIBLE-4 (a) (`first_episode_id` is not stamped by any T2 writer). `web/openapi.json` is NOT re-pinned in this PR (correct for S42): the web half was re-pinned in **10.5.7-T1** (Session 48, PR #217) from `develop` `be4d36f5`; **02.8.3-T1** still reads the `series.bible_proposal_accepted` audit rows. QA A8 real-stack smoke was not run.
+
+Outcome: 02.6.3-T2 is merged (#213, `cd68697c`); the line moved here only to keep the Resume block short.
+
 ### Superseded web Next (Session 48 PR-open) line (2026-10-17, replaced when #217 merged as cc505ba5)
 
 Replaced text (verbatim):

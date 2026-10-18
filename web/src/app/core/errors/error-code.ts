@@ -93,6 +93,16 @@ export const ERROR_CODES = {
   service_unavailable: { status: 503, kind: 'server' },
   network_error: { status: 0, kind: 'network' },
   unknown_error: { status: 500, kind: 'unknown' },
+  // Render job outcomes (README WD2/WC6): job failure codes, never HTTP responses; 500 only places them in the server kind.
+  image_moderated: { status: 500, kind: 'server' },
+  image_generation_failed: { status: 500, kind: 'server' },
+  tts_failed: { status: 500, kind: 'server' },
+  render_quality_failed: { status: 500, kind: 'server' },
+  render_node_error: { status: 500, kind: 'server' },
+  render_assembly_failed: { status: 500, kind: 'server' },
+  render_lost: { status: 500, kind: 'server' },
+  render_timeout: { status: 500, kind: 'server' },
+  render_output_invalid: { status: 500, kind: 'server' },
 } as const satisfies Readonly<Record<string, ErrorCodeEntry>>;
 
 export type KnownErrorCode = keyof typeof ERROR_CODES;

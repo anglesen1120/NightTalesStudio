@@ -1,3 +1,4 @@
+import type { RenderJob } from './render.model';
 import type { StorySnapshot } from './story.model';
 
 /** The 11 wire statuses of an episode, in enum order (plan F19). */
@@ -86,6 +87,8 @@ export interface EpisodeDetail {
   readonly hasCurrentStory: boolean;
   readonly currentStory: StorySnapshot | null;
   readonly nextActions: readonly string[];
+  /** The newest render job (F5/F6): `null` when the episode has never rendered. Mapping lives in the episode mapper. */
+  readonly renderJob: RenderJob | null;
 }
 
 export interface SeriesSummary {

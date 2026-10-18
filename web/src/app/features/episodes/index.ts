@@ -10,3 +10,8 @@ export { EpisodesRepository } from './domain/episodes.repository';
 // (10.4.1-T1 contract item 2), and re-declaring the order there would let the two copies drift apart.
 export { EPISODE_STATUSES, type EpisodeListItem, type EpisodeStatus } from './domain/episode.model';
 export { EPISODE_STATUS_TONE, type EpisodeStatusTone } from './ui/episode-list.view-model';
+// The render half of the domain and the folder's shared scene list (10.6.1-T1): another feature reads a skipped-scene
+// list off `EpisodeDetail.renderJob` (10.6.2-T1's review banner) and renders it with this component. The timeline and
+// failure components stay private to this feature: only `/episodes/:id` shows them.
+export type { RenderImages, RenderJob, SkippedScene } from './domain/render.model';
+export { SkippedScenesComponent } from './ui/skipped-scenes/skipped-scenes.component';
