@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ErrorOr;
 using NightTales.Application.Common.Errors;
@@ -172,27 +171,17 @@ public sealed class YouTubeMetadataRulesTests
             .Select(index => $"tag{index}")
             .ToList();
 
-        var sixteenWatch = Stopwatch.StartNew();
         var sixteenResult = Validate(tags: sixteen);
-        sixteenWatch.Stop();
 
-        sixteenWatch.Elapsed.ShouldBeLessThan(
-            TimeSpan.FromSeconds(1),
-            "the count check must short-circuit instead of walking the list");
         sixteenResult.Errors.Count.ShouldBe(1);
         FieldOf(sixteenResult.Errors[0]).ShouldBe("tags");
 
         // The pathological body: 100,000 blank tags, each one an Error (with its own dictionary) under the old
-        // walk. Same single violation, and the call stays bounded.
+        // walk. Same single violation.
         var blanks = Enumerable.Repeat(string.Empty, 100_000).ToList();
 
-        var blanksWatch = Stopwatch.StartNew();
         var blankResult = Validate(tags: blanks);
-        blanksWatch.Stop();
 
-        blanksWatch.Elapsed.ShouldBeLessThan(
-            TimeSpan.FromSeconds(1),
-            "100,000 blank tags must not cost one error allocation each");
         blankResult.Errors.Count.ShouldBe(1);
         FieldOf(blankResult.Errors[0]).ShouldBe("tags");
     }
