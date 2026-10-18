@@ -4,6 +4,16 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume rows (2026-10-18, replaced when Session 57 opened the 09.6.3-T2 PR)
+
+Replaced text (verbatim):
+
+Resume bullet (Session 50 closed backend, removed to keep the Resume block at 15 lines of live state when the Session 57 bullet was added):
+
+- **Backend (Session 50 closed):** **02.5.6-T2** similarity threshold calibration merged as #221 (`94b640f2`, tip `e6a6dc9e`, code tip `c214c06e`, from `develop` `be4d36f5`, merged develop `3bf0d380` and `82d2fe31`; no migration, no route, no job; CI refused: CI-01 (`build-test` job `117380902460`, billing annotation), owner treats as pass; final full remote gate `GATE_RC=0` on `2f50b903` (Ubuntu arm64), the tip adds docs only; T2 gates closed: QA, code review, perf+security review, one `judge_batch` triage, delta review PASS). An 80-sample fixture, an offline harness and a committed report, by the decision rules 1–6 (rule 3 amended by the owner 2026-10-17): `Similarity:N` vi/en 10/8 → 14/14, `WarnAbove` 0.05 → 0.02, `BlockAbove` 0.15 → 0.45, fact threshold (both keys) → 0.05, `Perf:BudgetMs` 500 → 163 (`appsettings.json` of Api and Worker). Live behaviour change: the fact-sheet verbatim-copy rule drops a fact scoring above 0.05 (was 0.15) at n = 14; facts under 14 tokens are never dropped (CAL-S50-6). Open items: §Open tasks `CAL-S50-1`…`CAL-S50-6` (partial copying between 0.02 and 0.45 only warns, dead key, perf load, recalibrate, F18, short facts), each with a hand-over in the 02.8.2-T3, 02.5.3-T2 or 02.5.6-T2 Notes. Lane next: the TL assigns CAL-S50-3/-4; **02.8.2-T3** reads the 0.02 / 0.45 values.
+
+Also replaced in place, not moved (kept live, amended): the Session 55 backend bullet — its poller sentence gained "(lifted by 09.6.3-T2, PR PR-NUM)" and its trailing sentence `Next (backend): 09.6.3-T2 (ingest + `IngestRenderOutputJob`).` was dropped, because the Session 57 bullet now carries the lane's current state. The 09.6.2-T1 H1 row and the render-ingest-enqueuer row say closed.
+
 ### Superseded Session 60 rows (2026-10-18, replaced at the Session 60 close-out)
 
 Replaced text (verbatim):
