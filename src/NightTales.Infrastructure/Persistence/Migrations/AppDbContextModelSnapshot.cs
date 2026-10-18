@@ -1204,6 +1204,13 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("worker_node_id");
 
+                    b.Property<decimal>("WorstCaseUsd")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(12, 6)
+                        .HasColumnType("numeric(12,6)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("worst_case_usd");
+
                     b.HasKey("Id")
                         .HasName("pk_render_jobs");
 

@@ -22,7 +22,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// "one idea per episode" (plan §3.1) a database rule, and the three same-owner foreign keys of 09 W3
 /// CR-46. Up is expand-only (create table and indexes plus the raw <c>SET NULL (episode_id)</c> rewrite);
 /// the series and run keys cascade, and the episode key clears only its own column, so deleting the
-/// episode an idea became records the pick without losing the row (plan §5).
+/// episode an idea became records the pick without losing the row (plan §5). 09.6.3-T1 appended a migration
+/// after this one, so this class no longer owns the last-migration check (<c>AddRenderJobWorstCaseUsdMigrationTests</c>
+/// does) and finds its own migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -90,11 +92,13 @@ public sealed class AddEpisodeIdeasMigrationTests(TestDatabase database) : Integ
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 09.6.3-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (AddRenderJobWorstCaseUsdMigrationTests does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

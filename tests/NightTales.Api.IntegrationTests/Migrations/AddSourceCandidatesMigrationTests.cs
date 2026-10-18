@@ -83,7 +83,7 @@ public sealed class AddSourceCandidatesMigrationTests(TestDatabase database) : I
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
         // 02.8.1-T1 appended a migration after this one, so this class no longer owns the last-migration
-        // check (AddEpisodeIdeasMigrationTests does); it still proves its own migration is compiled in.
+        // check (AddRenderJobWorstCaseUsdMigrationTests does); it still proves its own migration is compiled in.
         migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(

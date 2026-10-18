@@ -1,4 +1,5 @@
 using NightTales.Application.Common.Errors;
+using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
@@ -9,8 +10,9 @@ using EpisodeAggregate = NightTales.Domain.Episodes.Episode;
 namespace NightTales.Domain.UnitTests.Rendering;
 
 /// <summary>
-/// The BD5 state machine of <see cref="RenderJob"/> (09.6.1-T1): creation, the adapter's submit/progress/fail calls, the
-/// two cancellation steps, and the outbox event the command writes.
+/// The BD5 state machine of <see cref="RenderJob"/> (09.6.1-T1): creation with the reserved bound, the adapter's
+/// submit/progress/fail calls, the poll re-schedule, the two cancellation steps, and the two outbox events the
+/// aggregate raises (<c>render_requested.v1</c> from the command, <c>render_failed.v1</c> from the Worker).
 /// </summary>
 /// <remarks>
 /// Every method takes the clock reading as an argument, so the whole file is deterministic. The two episode tests drive
@@ -39,6 +41,7 @@ public sealed class RenderJobTests
         job.EpisodeId.ShouldBe(EpisodeId);
         job.StoryVersionId.ShouldBe(StoryVersionId);
         job.ReservationId.ShouldBe(reservationId);
+        job.WorstCaseUsd.ShouldBe(1.25m, "the bound the reservation was taken for is the row's own value");
         job.Status.ShouldBe(RenderJobStatus.Queued);
         job.Stage.ShouldBe(RenderJob.QueuedStage);
         job.Percent.ShouldBe((short)0);
@@ -297,13 +300,99 @@ public sealed class RenderJobTests
         RenderJob.OutcomeCodes.ShouldBe(RenderOutcomeCodes.All);
     }
 
-    private static RenderJob Create(Guid? id = null, Guid? reservationId = null) =>
+    [Fact]
+    public void ReschedulePoll_MovesTheClaimInstant_OnlyWhileThePollerWatches()
+    {
+        // The distance is the caller's (BD7 step 3/6: `now + Render:PollSeconds`, or the adapter's own
+        // `Deferred.RetryAfter`), never the fixed PollInterval the two write paths use.
+        var interval = TimeSpan.FromSeconds(25);
+        var job = Submitted();
+        job.UpdateProgress("voice", 40, FixedNow).IsError.ShouldBeFalse();
+        var later = FixedNow + TimeSpan.FromSeconds(30);
+
+        var again = job.ReschedulePoll(later, interval);
+
+        again.IsError.ShouldBeFalse();
+        job.Stage.ShouldBe("voice", "the poll recorded no progress, so nothing but the claim instant moves");
+        job.Percent.ShouldBe((short)40);
+        job.NextPollAt.ShouldBe(later + interval);
+
+        // The adapter's `deferred` answer on a job nobody reported progress for: the stage stays `queued` and only
+        // the next poll moves, which is what keeps the claim query from re-reading the same oldest rows every tick.
+        var fresh = Submitted();
+        fresh.ReschedulePoll(FixedNow, RenderJob.PollInterval).IsError.ShouldBeFalse();
+        fresh.Stage.ShouldBe(RenderJob.QueuedStage);
+        fresh.NextPollAt.ShouldBe(FixedNow + RenderJob.PollInterval);
+
+        // A non-positive interval is refused before the state is even looked at: it would pin the row at the same
+        // instant and spin every tick over it.
+        foreach (var refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1) })
+        {
+            var invalid = Submitted().ReschedulePoll(FixedNow, refused);
+
+            invalid.IsError.ShouldBeTrue();
+            invalid.FirstError.Code.ShouldBe(RenderJob.ValidationFailedCode);
+            invalid.FirstError.Metadata!["field"].ShouldBe("interval");
+        }
+
+        var queued = Create();
+        queued.ReschedulePoll(FixedNow, interval).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+
+        var ingesting = Submitted();
+        ingesting.MarkIngesting(FixedNow).IsError.ShouldBeFalse();
+        var tooLate = ingesting.ReschedulePoll(FixedNow, interval);
+        tooLate.IsError.ShouldBeTrue();
+        tooLate.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+        ingesting.NextPollAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void RaiseFailed_IsValidOnlyOnAFailedJob_AndWritesNoState()
+    {
+        var queued = Create();
+        var early = queued.RaiseFailed(final: true);
+
+        early.IsError.ShouldBeTrue();
+        early.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+
+        // The only event on the job is the one Create raised (BD5 step 10): a queued job has no terminal failure
+        // to report, so the refused call must not have added a second event of its own.
+        queued.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RenderRequested>();
+        queued.DomainEvents.OfType<RenderFailed>().ShouldBeEmpty();
+
+        var job = Submitted();
+        job.Fail("render_node_error", FixedNow).IsError.ShouldBeFalse();
+        job.ClearDomainEvents();
+
+        var raised = job.RaiseFailed(final: false);
+
+        raised.IsError.ShouldBeFalse();
+        job.Status.ShouldBe(RenderJobStatus.Failed, "the method reports the state Fail decided; it never writes one");
+        var failed = job.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RenderFailed>();
+        failed.EpisodeId.ShouldBe(EpisodeId);
+        failed.RenderJobId.ShouldBe(job.Id);
+        failed.ErrorCode.ShouldBe("render_node_error");
+        failed.Attempt.ShouldBe(1);
+        failed.Final.ShouldBeFalse();
+        failed.OccurredAt.ShouldBe(FixedNow, "the instant Fail stored is the instant the event carries");
+
+        // The payload is ids, the catalogued code, the attempt and the retry verdict (D11/D19): nothing that could
+        // carry content, so the outbox row of a failure stays as content-free as the request that started it.
+        typeof(RenderFailed).GetProperties().Select(property => property.PropertyType)
+            .ShouldAllBe(type => type == typeof(Guid) || type == typeof(string) || type == typeof(int)
+                || type == typeof(bool) || type == typeof(DateTimeOffset));
+        typeof(RenderFailed).GetCustomAttributes(typeof(OutboxEventAttribute), inherit: false)
+            .Cast<OutboxEventAttribute>().Single().Name.ShouldBe("render_failed.v1");
+    }
+
+    private static RenderJob Create(Guid? id = null, Guid? reservationId = null, decimal worstCaseUsd = 1.25m) =>
         RenderJob.Create(
             id ?? Guid.CreateVersion7(),
             UserId,
             EpisodeId,
             StoryVersionId,
             reservationId ?? Guid.CreateVersion7(),
+            worstCaseUsd,
             Params(),
             1,
             FixedNow).Value;
