@@ -148,6 +148,7 @@ export function episodeDetail(overrides: Partial<EpisodeDetail> = {}): EpisodeDe
     hasCurrentStory: false,
     currentStory: null,
     nextActions: [],
+    renderJob: null,
     ...overrides,
   };
 }

@@ -1,4 +1,13 @@
 {
+  "image_moderated": "Hình ảnh bị chặn bởi kiểm duyệt",
+  "image_generation_failed": "Không tạo được hình ảnh cho các cảnh",
+  "tts_failed": "Không tạo được giọng đọc",
+  "render_quality_failed": "Video chưa đạt kiểm tra chất lượng",
+  "render_node_error": "Dịch vụ dựng video gặp lỗi",
+  "render_assembly_failed": "Không ghép được video",
+  "render_lost": "Không tìm thấy tác vụ dựng video",
+  "render_timeout": "Tác vụ dựng video quá thời gian chờ",
+  "render_output_invalid": "Video đã dựng không sử dụng được",
   "validation_failed": "Một số trường chưa hợp lệ. Hãy kiểm tra và thử lại.",
   "voice_language_mismatch": "Ngôn ngữ giọng đọc không khớp với ngôn ngữ của series.",
   "story_invalid_content": "Truyện có nội dung chưa hợp lệ. Hãy kiểm tra các phần được đánh dấu.",
