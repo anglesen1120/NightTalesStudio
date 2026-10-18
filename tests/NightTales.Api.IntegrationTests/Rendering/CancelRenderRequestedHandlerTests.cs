@@ -105,71 +105,47 @@ public sealed class CancelRenderRequestedHandlerTests(TestDatabase database) : I
         var job = await SeedJobAsync(world, status: "submitted", cancelRequested: true);
         var messageId = await SeedCancelMessageAsync(world, job.RenderJobId);
 
-        // 05 D4: a task the adapter already finished answers 200 as a no-op, and the client reports it as the same
-        // success as a 202 — the handler must treat it as a delivered cancel, not as an error to retry.
-        var render = new FakeRenderClient().EnqueueCancel(Result.Success);
+        // 05 D4: a task the adapter already finished answers 200 and a task the node no longer knows answers a 404
+        // adapter_task_unknown; the client maps the first to the same Success as a 202 (the fake cannot tell the two
+        // apart) and the second to a terminal failure (render_lost, Alert false). The handler must swallow either as
+        // a delivered cancel — never retry it, never fail, refund or write the row — so this pins the terminal half
+        // of that mapping with the closest answer the fake can script distinctly.
+        var render = new FakeRenderClient().EnqueueFailure(
+            RenderClientMethod.Cancel,
+            new RenderClientFailure(
+                RenderClientFailureKind.TerminalFailure,
+                RenderOutcomeCodes.RenderLost,
+                Detail: null,
+                Alert: false,
+                RetryAfter: null));
         var money = new RecordingMoney();
         await using var host = await StartHostAsync(render, money);
 
+        var xmin = JobXmin(job);
+
         (await host.RunOutboxOnceAsync(Ct)).ShouldBe(1);
 
-        render.CancelCalls.ShouldBe(1);
+        render.CancelCalls.ShouldBe(1, "the delivery asked the node once and swallowed its terminal answer");
+        render.DeleteCalls.ShouldBe(0, "a swallowed cancel never deletes the adapter task (05 D4)");
+        JobXmin(job).ShouldBe(xmin, "a swallowed terminal answer writes nothing to the row");
         AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
-        money.Refunds.ShouldBeEmpty();
+        money.Refunds.ShouldBeEmpty("only the poller's terminal cancelled refunds");
+
+        // Delivered at the first attempt and never retried: the terminal answer is the no-op a 200 is.
+        (await ScalarAsync(
+                "SELECT attempts::text || '|' || (processed_at IS NOT NULL)::text "
+                + $"FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldBe("0|true", "a terminal cancel answer is processed at once, never scheduled for a retry");
         await AssertDeliveredAsync(messageId);
     }
 
     [Fact]
-    public async Task AdapterCancel_Deferred_ThrowsForOutboxRetry()
-    {
-        var world = await SeedWorldAsync();
-        var job = await SeedJobAsync(world, status: "submitted", cancelRequested: true);
-        var messageId = await SeedCancelMessageAsync(world, job.RenderJobId);
-        var render = new FakeRenderClient().EnqueueFailure(
-            RenderClientMethod.Cancel,
-            new RenderClientFailure(
-                RenderClientFailureKind.Deferred,
-                RenderOutcomeCodes.RenderNodeError,
-                "scripted",
-                Alert: false,
-                RetryAfter: TimeSpan.FromSeconds(5)));
-        var money = new RecordingMoney();
-        await using var host = await StartHostAsync(render, money);
+    public Task AdapterCancel_Deferred_ThrowsForOutboxRetry() =>
+        AssertRetryableThrowsForOutboxRetryAsync(RenderClientFailureKind.Deferred, TimeSpan.FromSeconds(5));
 
-        (await host.RunOutboxOnceAsync(Ct)).ShouldBe(1);
-
-        // The dispatcher caught the handler's throw and recorded the retry: the message is due again, unprocessed,
-        // and the reason it stores is the handler's own message.
-        (await ScalarAsync(
-                "SELECT attempts::text || '|' || (processed_at IS NOT NULL)::text "
-                + $"FROM outbox_messages WHERE id = '{messageId}'"))
-            .ShouldBe("1|false", "one failed delivery was recorded and the message stays pending for the backoff");
-        (await ScalarAsync($"SELECT coalesce(error, '-') FROM outbox_messages WHERE id = '{messageId}'"))
-            .ShouldContain("the outbox retries it", Case.Sensitive, "the stored reason is the handler's throw");
-        (await ScalarAsync(
-                $"SELECT (next_attempt_at > '{Start:O}'::timestamptz)::text FROM outbox_messages WHERE id = '{messageId}'"))
-            .ShouldBe("true", "the retry is scheduled after the delivery instant");
-
-        // A node that cannot take the cancel leaves the render untouched: the row keeps its request and is never
-        // failed by it (the 60-minute watchdog decides it, BD8).
-        AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
-        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
-            .ShouldBe(1L, "the failed delivery created no retry row");
-        render.DeleteCalls.ShouldBe(0);
-
-        // The throw itself, outside the dispatcher: the handler is the thing the outbox retries.
-        using var scope = host.CreateScope();
-        var handler = scope.ServiceProvider.GetRequiredService<RenderCancelRequestedHandler>();
-        var thrown = await CaptureAsync(handler.HandleAsync(
-            new RenderCancelRequested(job.RenderJobId, world.EpisodeId, world.UserId, Start),
-            new OutboxContext(messageId, world.UserId, 1, Start),
-            Ct).AsTask());
-
-        thrown.ShouldBeOfType<InvalidOperationException>();
-        thrown!.Message.ShouldContain("outbox retries it", Case.Sensitive);
-        render.CancelCalls.ShouldBe(2, "the direct call is a second, idempotent cancel of the same task");
-        money.Refunds.ShouldBeEmpty("a deferred cancel never refunds");
-    }
+    [Fact]
+    public Task AdapterCancel_TransientFailure_ThrowsForOutboxRetry() =>
+        AssertRetryableThrowsForOutboxRetryAsync(RenderClientFailureKind.TransientFailure, retryAfter: null);
 
     [Fact]
     public async Task AdapterCancel_TerminalFailure_DoesNotFailTheJob()
@@ -274,6 +250,182 @@ public sealed class CancelRenderRequestedHandlerTests(TestDatabase database) : I
         AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
         money.Refunds.ShouldBeEmpty();
         await AssertDeliveredAsync(messageId);
+    }
+
+    [Fact]
+    public async Task AdapterCancel_Skips_WhenTheNodeRowIsMissing()
+    {
+        // The row names a worker_node_id no node row answers (the node was removed while the attempt was in flight):
+        // its task can never be reached again, so the cancel is skipped, the delivery still commits, and nothing is
+        // retried. The control row delivered in the same pass — the same message, the same handler, a node row that
+        // exists — reaches the node exactly once, so the skip below is a real branch, not a delivery that never ran.
+        var controlWorld = await SeedWorldAsync();
+        var controlJob = await SeedJobAsync(controlWorld, status: "submitted", cancelRequested: true);
+        var controlMessageId = await SeedCancelMessageAsync(controlWorld, controlJob.RenderJobId);
+
+        var goneWorld = await SeedWorldAsync();
+        var dangling = new World(goneWorld.UserId, goneWorld.EpisodeId, goneWorld.StoryVersionId, Guid.CreateVersion7());
+        var goneJob = await SeedJobAsync(dangling, status: "submitted", cancelRequested: true);
+        var goneMessageId = await SeedCancelMessageAsync(goneWorld, goneJob.RenderJobId);
+
+        var render = new FakeRenderClient().EnqueueCancel(Result.Success);
+        var money = new RecordingMoney();
+        await using var host = await StartHostAsync(render, money);
+
+        var goneXmin = JobXmin(goneJob);
+
+        (await host.RunOutboxOnceAsync(Ct)).ShouldBe(2, "both seeded deliveries ran");
+
+        // Positive control: the row whose node exists is asked to cancel exactly once...
+        render.CancelCalls.ShouldBe(1, "only the attempt with a live node row reaches the node");
+        render.Calls.ShouldHaveSingleItem().TaskId.ShouldBe(controlJob.TaskId);
+        // ...so the node-missing row's silence is a skip, not a delivery that never happened.
+        JobXmin(goneJob).ShouldBe(goneXmin, "the skip wrote nothing to the row");
+        AssertJob(goneJob, status: "submitted", errorCode: null, cancelRequested: true);
+        money.Refunds.ShouldBeEmpty();
+        await AssertDeliveredAsync(controlMessageId);
+        await AssertDeliveredAsync(goneMessageId);
+    }
+
+    [Fact]
+    public async Task AdapterCancel_UnmappedError_ThrowsForOutboxRetry()
+    {
+        // An answer the client could not map to a RenderClientFailure (no typed failure in its metadata) is drift:
+        // the handler rethrows instead of guessing, and the outbox's attempt budget bounds the retries.
+        var world = await SeedWorldAsync();
+        var job = await SeedJobAsync(world, status: "submitted", cancelRequested: true);
+        var messageId = await SeedCancelMessageAsync(world, job.RenderJobId);
+        var render = new FakeRenderClient().EnqueueCancel(
+            Error.Unexpected("adapter_unknown_shape", "not a mapped render failure"));
+        var money = new RecordingMoney();
+        await using var host = await StartHostAsync(render, money);
+
+        (await host.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+
+        (await ScalarAsync(
+                "SELECT attempts::text || '|' || (processed_at IS NOT NULL)::text "
+                + $"FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldBe("1|false", "an unmapped answer is retried, not swallowed");
+        (await ScalarAsync($"SELECT coalesce(error, '-') FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldContain("unmapped error", Case.Sensitive, "the stored reason names the unmapped answer");
+
+        AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
+        money.Refunds.ShouldBeEmpty();
+
+        // The throw itself, outside the dispatcher.
+        using var scope = host.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<RenderCancelRequestedHandler>();
+        var thrown = await CaptureAsync(handler.HandleAsync(
+            new RenderCancelRequested(job.RenderJobId, world.EpisodeId, world.UserId, Start),
+            new OutboxContext(messageId, world.UserId, 1, Start),
+            Ct).AsTask());
+
+        thrown.ShouldBeOfType<InvalidOperationException>();
+        thrown!.Message.ShouldContain("unmapped error", Case.Sensitive);
+        render.CancelCalls.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task AdapterCancel_UnexpectedKind_ThrowsForOutboxRetry()
+    {
+        // The output kinds cannot come from a cancel call: such an answer is adapter drift, so the handler rethrows
+        // for the outbox to bound instead of treating it as a no-op or a retry. The kind is scripted directly because
+        // the fake carries the same failure typing the real client does.
+        var world = await SeedWorldAsync();
+        var job = await SeedJobAsync(world, status: "submitted", cancelRequested: true);
+        var messageId = await SeedCancelMessageAsync(world, job.RenderJobId);
+        var render = new FakeRenderClient().EnqueueFailure(
+            RenderClientMethod.Cancel,
+            new RenderClientFailure(
+                RenderClientFailureKind.OutputNotReady,
+                OutcomeCode: null,
+                Detail: "scripted",
+                Alert: false,
+                RetryAfter: null));
+        var money = new RecordingMoney();
+        await using var host = await StartHostAsync(render, money);
+
+        (await host.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+
+        (await ScalarAsync(
+                "SELECT attempts::text || '|' || (processed_at IS NOT NULL)::text "
+                + $"FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldBe("1|false", "an unexpected kind is retried, not swallowed");
+        (await ScalarAsync($"SELECT coalesce(error, '-') FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldContain("cannot answer with", Case.Sensitive, "the stored reason names the impossible kind");
+
+        AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
+        money.Refunds.ShouldBeEmpty();
+
+        // The throw itself, outside the dispatcher.
+        using var scope = host.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<RenderCancelRequestedHandler>();
+        var thrown = await CaptureAsync(handler.HandleAsync(
+            new RenderCancelRequested(job.RenderJobId, world.EpisodeId, world.UserId, Start),
+            new OutboxContext(messageId, world.UserId, 1, Start),
+            Ct).AsTask());
+
+        thrown.ShouldBeOfType<InvalidOperationException>();
+        thrown!.Message.ShouldContain("cannot answer with", Case.Sensitive);
+        render.CancelCalls.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// A deferred (a busy node) and a transient (a restart, a transport error, a 5xx) cancel answer share one
+    /// branch: the handler throws so the dispatcher retries this delivery with backoff (D11) instead of failing,
+    /// refunding or writing the row, and the outbox keeps the message pending with its own throw stored.
+    /// </summary>
+    /// <param name="kind">The retryable kind the node answered with.</param>
+    /// <param name="retryAfter">The adapter's own wait, when the kind carries one.</param>
+    private async Task AssertRetryableThrowsForOutboxRetryAsync(RenderClientFailureKind kind, TimeSpan? retryAfter)
+    {
+        var world = await SeedWorldAsync();
+        var job = await SeedJobAsync(world, status: "submitted", cancelRequested: true);
+        var messageId = await SeedCancelMessageAsync(world, job.RenderJobId);
+        var render = new FakeRenderClient().EnqueueFailure(
+            RenderClientMethod.Cancel,
+            new RenderClientFailure(
+                kind,
+                RenderOutcomeCodes.RenderNodeError,
+                "scripted",
+                Alert: false,
+                retryAfter));
+        var money = new RecordingMoney();
+        await using var host = await StartHostAsync(render, money);
+
+        (await host.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+
+        // The dispatcher caught the handler's throw and recorded the retry: the message is due again, unprocessed,
+        // and the reason it stores is the handler's own message.
+        (await ScalarAsync(
+                "SELECT attempts::text || '|' || (processed_at IS NOT NULL)::text "
+                + $"FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldBe("1|false", "one failed delivery was recorded and the message stays pending for the backoff");
+        (await ScalarAsync($"SELECT coalesce(error, '-') FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldContain("the outbox retries it", Case.Sensitive, "the stored reason is the handler's throw");
+        (await ScalarAsync(
+                $"SELECT (next_attempt_at > '{Start:O}'::timestamptz)::text FROM outbox_messages WHERE id = '{messageId}'"))
+            .ShouldBe("true", "the retry is scheduled after the delivery instant");
+
+        // A node that cannot take the cancel leaves the render untouched: the row keeps its request and is never
+        // failed by it (the 60-minute watchdog decides it, BD8).
+        AssertJob(job, status: "submitted", errorCode: null, cancelRequested: true);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "the failed delivery created no retry row");
+        render.DeleteCalls.ShouldBe(0);
+
+        // The throw itself, outside the dispatcher: the handler is the thing the outbox retries.
+        using var scope = host.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<RenderCancelRequestedHandler>();
+        var thrown = await CaptureAsync(handler.HandleAsync(
+            new RenderCancelRequested(job.RenderJobId, world.EpisodeId, world.UserId, Start),
+            new OutboxContext(messageId, world.UserId, 1, Start),
+            Ct).AsTask());
+
+        thrown.ShouldBeOfType<InvalidOperationException>();
+        thrown!.Message.ShouldContain("outbox retries it", Case.Sensitive);
+        render.CancelCalls.ShouldBe(2, "the direct call is a second, idempotent cancel of the same task");
+        money.Refunds.ShouldBeEmpty("a retryable cancel never refunds");
     }
 
     /// <summary>One owner, its episode in <c>rendering</c>, the story version the row points at and a node.</summary>

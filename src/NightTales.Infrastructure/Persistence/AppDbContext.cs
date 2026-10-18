@@ -241,17 +241,39 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <inheritdoc />
     /// <remarks>
     /// <c>SET LOCAL lock_timeout</c> is utility syntax and takes no parameter, so the bound is applied through the
-    /// parameterised <c>set_config('lock_timeout', …, is_local =&gt; true)</c> form. Both statements run in the
-    /// caller's transaction, so the bound reverts with it and the unbounded lock above is untouched.
+    /// parameterised <c>set_config('lock_timeout', …, is_local =&gt; true)</c> form. That setting is transaction-local,
+    /// so it would otherwise stay on for every later statement of the request transaction (the episode
+    /// <c>UPDATE</c>, the audit and outbox inserts, the ledger refund): the value in force is therefore captured
+    /// before the bound is applied and restored right after the lock statement. The restore is skipped when the lock
+    /// itself is refused — such a refusal has already aborted the transaction (<c>25P02</c> on the next statement)
+    /// and the caller rolls the whole transaction back, which reverts the setting with it. Both statements run in
+    /// the caller's transaction, which is required rather than incidental — outside one the bound would die with
+    /// its own statement — and the unbounded lock above is untouched.
     /// </remarks>
     public async Task LockRenderJobForUpdateAsync(
         Guid renderJobId,
         TimeSpan lockTimeout,
         CancellationToken cancellationToken)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockTimeout, TimeSpan.Zero);
+        // Truncated, a bound below one millisecond becomes 0, which the provider reads as "no timeout at all":
+        // the smallest accepted bound is therefore one millisecond, not merely a positive one.
+        ArgumentOutOfRangeException.ThrowIfLessThan(lockTimeout, TimeSpan.FromMilliseconds(1), nameof(lockTimeout));
+
+        // Without a transaction each statement runs in its own implicit one, so an is_local set_config would apply
+        // to its own statement alone and never reach the lock: the port refuses instead of losing the bound, the
+        // way LockUserSourceCapAsync refuses to place a transaction-scoped advisory lock outside a transaction.
+        if (Database.CurrentTransaction is null)
+        {
+            throw new InvalidOperationException(
+                "The bounded render-job lock runs inside the caller's transaction (09 README D5); outside one its lock_timeout would not survive its own statement.");
+        }
 
         var milliseconds = ((long)lockTimeout.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+
+        var previous = await Database
+            .SqlQuery<string>($"SELECT current_setting('lock_timeout') AS \"Value\"")
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         await Database
             .ExecuteSqlInterpolatedAsync(
@@ -260,6 +282,12 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
             .ConfigureAwait(false);
 
         await LockRenderJobForUpdateAsync(renderJobId, cancellationToken).ConfigureAwait(false);
+
+        await Database
+            .ExecuteSqlInterpolatedAsync(
+                $"SELECT set_config('lock_timeout', {previous}, true)",
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

@@ -46,8 +46,12 @@ namespace NightTales.Application.Features.Rendering.Outbox;
 /// (capacity, a restart, a transport error, a 5xx) are thrown so the dispatcher retries this delivery with backoff
 /// (D11, at most ten attempts) while the row keeps <c>cancel_requested_at</c>; a terminal answer — a code the node
 /// refuses, or a task the node no longer knows — is logged and swallowed, because a cancel request must never
-/// fail, refund or write a row: only the poller's terminal path owns the row's outcome. A terminal adapter task
-/// answers 200 as a no-op (05 D4), which is the same success as a 202.
+/// fail, refund or write a row: only the poller's terminal path owns the row's outcome. A terminal answer is an
+/// <c>Error</c> beside the alert line only when it asks for an operator
+/// (<see cref="RenderClientFailure.Alert"/>: a key to rotate, a contract that drifted); an expected one — a task
+/// the node has already dropped, <c>render_lost</c> — keeps the same outcome at <c>Information</c>, and a retried
+/// delivery is <c>Information</c> too because the dispatcher already warns once per attempt with the exception.
+/// A terminal adapter task answers 200 as a no-op (05 D4), which is the same success as a 202.
 /// </para>
 /// <para>
 /// <b>No write and no transaction.</b> This handler reads the row and the node in autocommit queries and opens no
@@ -153,9 +157,11 @@ public sealed partial class RenderCancelRequestedHandler(
             case RenderClientFailureKind.Deferred:
             case RenderClientFailureKind.TransientFailure:
                 // The node is busy, restarting or unreachable: the dispatcher retries this delivery with backoff
-                // (D11, at most ten attempts) instead of spending the request path. The row keeps its cancel
+                // (D11, at most ten attempts) instead of spending the request path. The line is Information, not
+                // Warning: the dispatcher's own outbox.handler.failed (2300) already warns once per attempt with
+                // the exception, so a Warning here would double every attempt. The row keeps its cancel
                 // request; if the node never answers, the 60-minute watchdog eventually fails it (BD8).
-                LogRetryable(job.Id, failure.Kind.ToString(), failure.OutcomeCode);
+                LogRetryable(job.Id, failure.Kind, failure.OutcomeCode);
 
                 throw new InvalidOperationException(
                     $"The cancel call of job '{job.Id}' was answered as '{failure.Kind}' "
@@ -164,13 +170,20 @@ public sealed partial class RenderCancelRequestedHandler(
             case RenderClientFailureKind.TerminalFailure:
                 // A contract, key or idempotency fault, or a task the node no longer knows (render_lost): nothing
                 // is retried and the render job must not be failed by a cancel request — the poller's own
-                // terminal path decides the row's fate on its next tick.
+                // terminal path decides the row's fate on its next tick. Only a fault an operator must be told
+                // about (Alert: a key to rotate, a contract that drifted) is an Error here, with the alert line
+                // beside it; the expected terminal answer — render_lost, a task the node has already dropped — is
+                // the same outcome at Information, so a cancel that meets it is never logged as a fault
+                // (PollRenderJob logs its alert line alone the same way).
                 if (failure.Alert)
                 {
                     LogAdapterAlert(job.Id, failure.OutcomeCode, failure.Detail);
+                    LogTerminalFailure(job.Id, failure.OutcomeCode);
                 }
-
-                LogTerminalFailure(job.Id, failure.OutcomeCode);
+                else
+                {
+                    LogTerminalFailureExpected(job.Id, failure.OutcomeCode);
+                }
 
                 return;
 
@@ -218,9 +231,9 @@ public sealed partial class RenderCancelRequestedHandler(
 
     [LoggerMessage(
         EventId = 6416,
-        Level = LogLevel.Warning,
+        Level = LogLevel.Information,
         Message = "render_cancel_retryable renderJobId={RenderJobId} kind={Kind} code={Code}")]
-    private partial void LogRetryable(Guid renderJobId, string kind, string? code);
+    private partial void LogRetryable(Guid renderJobId, RenderClientFailureKind kind, string? code);
 
     [LoggerMessage(
         EventId = 6417,
@@ -239,4 +252,15 @@ public sealed partial class RenderCancelRequestedHandler(
         Level = LogLevel.Warning,
         Message = "render_cancel_unexpected_failure renderJobId={RenderJobId} kind={Kind} code={Code}")]
     private partial void LogUnexpectedFailure(Guid renderJobId, string kind, string? code);
+
+    // The same outcome as LogTerminalFailure, for the terminal answers an operator need not be told about
+    // (RenderClientFailure.Alert is false for an expected fault: render_lost, a task the node has already
+    // dropped). Two LoggerMessage methods share one message and differ only in level, like LoggingBehavior's
+    // LogRequest/LogRequestWarning (1000/1001), so a query on `render_cancel_terminal_failure` still covers
+    // both and the level says which one an operator must read.
+    [LoggerMessage(
+        EventId = 6420,
+        Level = LogLevel.Information,
+        Message = "render_cancel_terminal_failure renderJobId={RenderJobId} code={Code}")]
+    private partial void LogTerminalFailureExpected(Guid renderJobId, string? code);
 }

@@ -22,7 +22,9 @@ namespace NightTales.Application.Features.Rendering.Commands.CancelRender;
 /// call (mandated by WT55), so an unbounded wait would queue this request behind a node's HTTP call; the wait is
 /// bounded and its refusal answers the existing 409 <c>concurrency_conflict</c> (D5) instead of a 500. The lock
 /// is also what makes the "cancel races the poller" and "double cancel across two API instances" rows of
-/// 09.6.4's failure table true: the loser of the race is refused, and its retry reads the row's new state.
+/// 09.6.4's failure table true: a second <c>DELETE</c> serialised after the first one commits takes the lock,
+/// reads the committed state and answers 204 idempotently, while the 409 is reserved for a wait that expires —
+/// the lock held by the submit across its adapter call, or by another writer.
 /// </para>
 /// <para>
 /// <b>A <c>queued</c> job is cancelled at once.</b> No node ever had the task (<c>adapter_task_id</c> is set by
@@ -135,10 +137,18 @@ public sealed partial class CancelRenderCommandHandler(
 
                 return Result.Success;
 
-            default:
-                // ingesting, succeeded or failed: the aggregate owns the answer — Cancel refuses all three
-                // with the 409 episode_invalid_state (BD8) — and nothing is written here.
+            case RenderJobStatus.Ingesting or RenderJobStatus.Succeeded or RenderJobStatus.Failed:
+                // The aggregate owns the answer — Cancel refuses all three with the 409 episode_invalid_state
+                // (BD8) — and nothing is written here.
                 return job.Cancel(now);
+
+            default:
+                // Not reachable while the statuses above cover every RenderJobStatus member (Cancelled is
+                // answered above too). A member added later must be decided here instead of falling into Cancel,
+                // whose remaining arm would set the row cancelled with no refund, no episode move and no audit
+                // row. Same convention as the layer's other exhaustive switches (IdempotencyBehavior).
+                throw new InvalidOperationException(
+                    $"Unhandled render job status '{job.Status}' for job '{job.Id}'.");
         }
     }
 
@@ -225,7 +235,8 @@ public sealed partial class CancelRenderCommandHandler(
     }
 
     /// <summary>
-    /// Takes the job row's lock as the transaction's first statement, with <see cref="LockWait"/> bounding it.
+    /// Takes the job row's lock as the transaction's first statement, with <see cref="LockWait"/> bounding that
+    /// statement alone.
     /// </summary>
     /// <remarks>
     /// The timeout refusal is mapped here rather than in the pipeline: the D5 mapping covers the
@@ -240,8 +251,9 @@ public sealed partial class CancelRenderCommandHandler(
     {
         try
         {
-            // The bound is the port's, set for this transaction only, so the jobs that take the same lock keep
-            // their unbounded wait (WT55 mandates the submit's long-held lock).
+            // The bound is the port's and covers the lock statement only: the statements that follow it in this
+            // transaction run unbounded, as do the jobs that take the same lock (WT55 mandates the submit's
+            // long-held, unbounded wait).
             await db.LockRenderJobForUpdateAsync(renderJobId, LockWait, cancellationToken).ConfigureAwait(false);
 
             return Result.Success;

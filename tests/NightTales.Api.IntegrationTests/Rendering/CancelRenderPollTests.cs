@@ -72,7 +72,6 @@ public sealed class CancelRenderPollTests(TestDatabase database) : IntegrationTe
         var render = new FakeRenderClient();
         await using var harness = await StartHostAsync(render);
         using var durations = ObserveDurations(harness.Host.Services.GetRequiredService<NightTalesMetrics>());
-        var putsAtStart = harness.Blobs.CountOf(BlobOperation.Put);
 
         // A row whose owner asked for a cancel but whose adapter task is still running keeps running: the request
         // itself never refunds, writes the row or stores anything (WT51).
@@ -99,7 +98,9 @@ public sealed class CancelRenderPollTests(TestDatabase database) : IntegrationTe
         // event: no asset row, no blob, no ingest and no outbox row.
         SqlProbe.Count(Database, $"SELECT count(*) FROM assets WHERE episode_id = '{world.EpisodeId}'")
             .ShouldBe(0L, "the outputs of a cancelled task are never served, so no asset row is created");
-        harness.Blobs.CountOf(BlobOperation.Put).ShouldBe(putsAtStart, "and nothing is stored");
+        harness.Blobs.Calls.ToArray()
+            .Where(call => call.Operation == BlobOperation.Put && call.Key.Contains(world.RenderJobId.ToString("D"), StringComparison.Ordinal))
+            .ShouldBeEmpty("and nothing of this job is stored (a store-wide put count would also see the host's own probes)");
         harness.Ingest.Enqueued.ShouldBeEmpty("a cancelled attempt is never ingested");
         CountOutbox(world).ShouldBe(0, "a cancelled render writes no outbox event (05 D5)");
 
@@ -133,7 +134,6 @@ public sealed class CancelRenderPollTests(TestDatabase database) : IntegrationTe
         var render = new FakeRenderClient();
         await using var harness = await StartHostAsync(render);
         using var durations = ObserveDurations(harness.Host.Services.GetRequiredService<NightTalesMetrics>());
-        var putsAtStart = harness.Blobs.CountOf(BlobOperation.Put);
 
         // The terminal state the adapter reports wins (WT51): the attempt really rendered, so it is ingested and
         // settled instead of being thrown away by the cancel request.
@@ -154,7 +154,9 @@ public sealed class CancelRenderPollTests(TestDatabase database) : IntegrationTe
         EpisodeStatus(world).ShouldBe("rendering", "the episode stays held until the ingest ends it");
         SqlProbe.Count(Database, $"SELECT count(*) FROM assets WHERE episode_id = '{world.EpisodeId}'")
             .ShouldBe(0L, "the poll downloads nothing; the ingest stores the output");
-        harness.Blobs.CountOf(BlobOperation.Put).ShouldBe(putsAtStart);
+        harness.Blobs.Calls.ToArray()
+            .Where(call => call.Operation == BlobOperation.Put && call.Key.Contains(world.RenderJobId.ToString("D"), StringComparison.Ordinal))
+            .ShouldBeEmpty();
     }
 
     [Fact]

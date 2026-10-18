@@ -66,7 +66,7 @@ namespace NightTales.Api.IntegrationTests.Rendering;
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
-public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest(database)
+public sealed class CancelRenderEdgeCaseTests(TestDatabase database) : IntegrationTest(database)
 {
     private const string RenderRequested = "render_requested.v1";
     private const string RenderCancelRequested = "render_cancel_requested.v1";
@@ -139,6 +139,11 @@ public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest
         // terminal paths, SEC-3 in STATUS.md), so this is the one path where a refused refund rolls the cancel
         // back. Neither the feature's endpoint tests nor its unit tests exercise it (the unit tests say so
         // explicitly in their remarks), so what is persisted here is an assumption until it is asserted.
+        //
+        // The status is deliberately not pinned: 12.1.2 will catalogue what a refused-ledger answer maps to, so
+        // this asserts only the invariants an operator cares about — never a 2xx, the row unchanged and still
+        // reserved, no refund committed, no outbox row, the episode still held — never the code. SEC-3 tracks
+        // the refusal posture.
         var refused = await SeedJobAsync("queued");
         var refusingLedger = new ApiLedger(RefundMode.Refused);
         using (var factory = Factory(refusingLedger))
@@ -146,10 +151,11 @@ public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest
         {
             using var response = await DeleteAsync(client, refused.RenderJobId);
             var text = await response.Content.ReadAsStringAsync(Ct);
+            var status = (int)response.StatusCode;
 
-            ((int)response.StatusCode).ShouldBe(500, $"{text} — an unmapped ledger code maps to internal_error");
-            JsonSerializer.Deserialize<ProblemResponse>(text, ProblemResponse.Options)!.Code.ShouldBe("internal_error");
-
+            (status is >= 200 and < 300).ShouldBeFalse($"{status} {text} — a refused refund is never a success");
+            refusingLedger.RefundAttempts.ShouldHaveSingleItem("the handler reached the ledger once before rolling back");
+            refusingLedger.CommittedRefunds.ShouldBeEmpty("a refused refund is never committed");
             AssertUntouched(refused, "a refused refund must leave the row queued and reserved");
         }
 
@@ -160,14 +166,23 @@ public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest
         {
             using var response = await DeleteAsync(client, throwing.RenderJobId);
             var text = await response.Content.ReadAsStringAsync(Ct);
+            var status = (int)response.StatusCode;
 
-            ((int)response.StatusCode).ShouldBe(500, text);
+            (status is >= 200 and < 300).ShouldBeFalse($"{status} {text} — a thrown refund is never a success");
+            throwingLedger.RefundAttempts.ShouldHaveSingleItem("the handler reached the ledger once before the throw");
+            throwingLedger.CommittedRefunds.ShouldBeEmpty("a thrown refund is never committed");
             AssertUntouched(throwing, "a thrown refund must leave the row queued and reserved");
         }
 
         // Both fakes recorded the one attempt each: the rollback is the whole command's, not the ledger's.
         AssertUntouched(refused, "still queued after the refusal");
         AssertUntouched(throwing, "still queued after the throw");
+
+        // Positive control for the two "no committed refund" assertions above: the same fake records a commit the
+        // moment a refund is really applied (the success mode the other tests of this class use).
+        var committingLedger = new ApiLedger();
+        await committingLedger.RefundAsync(new ReservationId(refusingLedger.Reservation), "qa-probe", Ct);
+        committingLedger.CommittedRefunds.ShouldHaveSingleItem().Reason.ShouldBe("qa-probe");
     }
 
     [Fact]
@@ -1133,6 +1148,13 @@ public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest
         /// <summary>The refund calls the command made, in order.</summary>
         public List<(Guid ReservationId, string Reason)> RefundAttempts { get; } = [];
 
+        /// <summary>
+        /// The refunds the ledger actually applied. A refusal answers an error and a throw escapes, so neither is
+        /// ever here; only the success mode records the moment a refund is released — which is what a rolled-back
+        /// cancel must leave empty.
+        /// </summary>
+        public List<(Guid ReservationId, string Reason)> CommittedRefunds { get; } = [];
+
         /// <inheritdoc />
         public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
             Guid userId,
@@ -1162,8 +1184,15 @@ public sealed class CancelRenderQaTests(TestDatabase database) : IntegrationTest
                 RefundMode.Refused => ValueTask.FromResult<ErrorOr<Success>>(
                     Error.Failure("ledger_unavailable", "The ledger cannot release the reservation now.")),
                 RefundMode.Throws => throw new InvalidOperationException("scripted ledger failure"),
-                _ => ValueTask.FromResult<ErrorOr<Success>>(Result.Success),
+                _ => Commit(reservationId, reason),
             };
+        }
+
+        private ValueTask<ErrorOr<Success>> Commit(ReservationId reservationId, string reason)
+        {
+            CommittedRefunds.Add((reservationId.Value, reason));
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
         }
     }
 }
