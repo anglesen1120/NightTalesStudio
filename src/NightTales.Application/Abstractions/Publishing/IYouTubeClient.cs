@@ -97,10 +97,12 @@ public interface IYouTubeClient
     /// Streams <paramref name="content"/> to an open session in chunks that are a multiple of 256 KB except the last
     /// (G7), from the stream's <em>current</em> position, which the caller positioned with
     /// <c>UploadStreamPositioning.EnsureAtAsync</c>. The stream is never buffered whole and is not disposed here.
+    /// The resume offset is always below <paramref name="length"/>: a seekable stream already at or past the end is
+    /// a caller bug and is refused without a Google call (<c>youtube_upload_failed</c>, not transport).
     /// </summary>
     /// <param name="accessToken">The access token; never logged.</param>
     /// <param name="sessionUri">The URI <see cref="StartUploadAsync"/> returned; opaque, never logged.</param>
-    /// <param name="content">The object stream, positioned at the resume offset.</param>
+    /// <param name="content">The object stream, positioned at the resume offset, below <paramref name="length"/>.</param>
     /// <param name="length">The object's total size in bytes.</param>
     /// <param name="progress">Receives the cumulative bytes Google confirmed, monotonically non-decreasing.</param>
     /// <param name="ct">The caller's cancellation token.</param>

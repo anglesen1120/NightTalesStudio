@@ -94,8 +94,10 @@ public sealed class YouTubeUploadHardeningTests
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(YouTubeErrorCodes.Transport);
 
-        // One MiB chunk = four 256 KiB steps, the caller's three retries, and the pass that completes it (SEC-5).
-        const int expected = (YouTubeUploadHarness.ChunkSizeBytes / 262144) + 3 + 1;
+        // One MiB chunk = four 256 KiB steps, plus the caller's three retries for every step and for the pass that
+        // completes it: 4 + 5 * 3 = 19 (SEC-5).
+        const int steps = YouTubeUploadHarness.ChunkSizeBytes / 262144;
+        const int expected = steps + ((steps + 1) * 3);
 
         harness.Google.ChunkRequests.ShouldBe(expected);
     }
@@ -153,6 +155,100 @@ public sealed class YouTubeUploadHardeningTests
         YouTubeFailure.From(result.FirstError)!.IsTransport.ShouldBeFalse();
 
         harness.Google.SessionCreateCalls.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("video/mp4")]
+    [InlineData("application/octet-stream")]
+    [InlineData("video/*")]
+    [InlineData("video/x-matroska")]
+    public async Task StartUpload_WithAMediaTypeThisClassAccepts_CreatesTheSession(string mimeType)
+    {
+        await using var harness = await YouTubeUploadHarness.StartAsync(cancellationToken: Ct);
+
+        var request = YouTubeUploadHarness.Request(YouTubeUploadHarness.PayloadLength);
+        request = request with { MimeType = mimeType };
+
+        var session = await harness.Client.StartUploadAsync(
+            YouTubeUploadHarness.AccessToken, request, YouTubeUploadHarness.PayloadLength, Ct);
+
+        // Every RFC 9110 token pair is a value this class sends as given, the wildcard subtype included (N2).
+        session.IsError.ShouldBeFalse();
+        harness.Google.SessionCreateCalls.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData("video/mp4\n")]
+    [InlineData("video/mp4\r\nX-Canary: 1")]
+    [InlineData("video/mp4; charset=utf-8")]
+    [InlineData("")]
+    public async Task StartUpload_WithAMimeTypeThatIsNotATokenPair_IsRefusedWithoutASessionCreate(string mimeType)
+    {
+        await using var harness = await YouTubeUploadHarness.StartAsync(cancellationToken: Ct);
+
+        var request = YouTubeUploadHarness.Request(YouTubeUploadHarness.PayloadLength);
+        request = request with { MimeType = mimeType };
+
+        var result = await harness.Client.StartUploadAsync(
+            YouTubeUploadHarness.AccessToken, request, YouTubeUploadHarness.PayloadLength, Ct);
+
+        // A trailing newline is not a media type: the anchors are absolute, so the header-injection shape is refused
+        // here rather than by the transport (N1).
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(YouTubeErrorCodes.UploadFailed);
+        YouTubeFailure.From(result.FirstError)!.IsTransport.ShouldBeFalse();
+
+        harness.Google.SessionCreateCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task StartUpload_WithAnUnpairedSurrogateInTheDescriptionOrATag_IsRefusedWithoutASessionCreate()
+    {
+        await using var harness = await YouTubeUploadHarness.StartAsync(cancellationToken: Ct);
+
+        var template = YouTubeUploadHarness.Request(YouTubeUploadHarness.PayloadLength);
+
+        var inDescription = template with { Description = "canary \ud800 description" };
+        var inTag = template with { Tags = ["nighttales", "audiobook\udfff"] };
+
+        foreach (var request in new[] { inDescription, inTag })
+        {
+            var result = await harness.Client.StartUploadAsync(
+                YouTubeUploadHarness.AccessToken, request, YouTubeUploadHarness.PayloadLength, Ct);
+
+            result.IsError.ShouldBeTrue();
+            result.FirstError.Code.ShouldBe(YouTubeErrorCodes.UploadFailed);
+            YouTubeFailure.From(result.FirstError)!.IsTransport.ShouldBeFalse();
+        }
+
+        harness.Google.SessionCreateCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ResumeUpload_AgainstAServerConfirmingOneStepPerPass_Completes()
+    {
+        await using var harness = await YouTubeUploadHarness.StartAsync(cancellationToken: Ct);
+
+        // A legitimate peer that acknowledges exactly one 256 KiB step per PUT: the slowest progress the protocol
+        // allows, so it exercises the pass budget from below and must not trip it (SEC-5, N7).
+        harness.Google.Scenario = UploadScenario.None.WithChunkProgressBytes(262144);
+
+        var session = await harness.StartUploadAsync(YouTubeUploadHarness.PayloadLength, cancellationToken: Ct);
+        session.IsError.ShouldBeFalse();
+
+        await using var content = YouTubeUploadHarness.Payload(YouTubeUploadHarness.PayloadLength);
+
+        var result = await harness.ResumeUploadAsync(
+            session.Value, content, YouTubeUploadHarness.PayloadLength, cancellationToken: Ct);
+
+        result.IsError.ShouldBeFalse();
+        result.Value.VideoId.ShouldNotBeNullOrWhiteSpace();
+
+        // Three 1 MiB chunks at four steps each and a 0.5 MiB chunk at two: one pass per step, no retry.
+        const int stepsPerChunk = YouTubeUploadHarness.ChunkSizeBytes / 262144;
+        const int expected = (3 * stepsPerChunk) + 2;
+
+        harness.Google.ChunkRequests.ShouldBe(expected);
     }
 
     [Fact]

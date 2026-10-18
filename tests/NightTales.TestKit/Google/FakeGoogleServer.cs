@@ -903,13 +903,9 @@ public sealed class FakeGoogleServer : IAsyncDisposable
             return;
         }
 
-        if (range.End + 1 >= range.Total)
-        {
-            await WriteJsonAsync(context, StatusCodes.Status200OK, new { }).ConfigureAwait(false);
-
-            return;
-        }
-
+        // The request declared the end of the object but the session does not hold all of it: Google answers the
+        // session's real position, never a completion. A body shorter than the range it declared is what leaves it
+        // incomplete, which is why a 2xx without an id is the shape the client maps to Transport.
         await WriteRangeAsync(context, held).ConfigureAwait(false);
     }
 

@@ -328,7 +328,10 @@ public sealed partial class GoogleYouTubeClient(
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or FormatException)
         {
             // A title or description with an unpaired surrogate makes the writer throw (SEC-7): the request is
-            // refused as a caller bug, never as a retryable transport failure.
+            // refused as a caller bug, never as a retryable transport failure. The type name is the only thing
+            // about the exception that may travel — a message can carry the text it refused (N5).
+            LogUploadBodyRefused(logger, OperationStart, ex.GetType().Name);
+
             return UploadRefusedBeforeTheCall();
         }
 
@@ -384,6 +387,15 @@ public sealed partial class GoogleYouTubeClient(
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The offset this call resumes from is always strictly inside the object: a seekable stream answers with its
+    /// own <see cref="Stream.Position"/>, which must be less than <paramref name="length"/> — a stream already at
+    /// or past the end is a caller bug (the caller positioned it, or read the object already), so it is refused with
+    /// the non-transport <c>youtube_upload_failed</c> and no Google call, never probed and never uploaded from an
+    /// offset the stream cannot serve (C6). A stream that cannot seek is asked once with a
+    /// <c>bytes */total</c> probe, and the offset it learns is likewise below <paramref name="length"/>: a probe
+    /// answers <c>Complete</c> when the session holds every byte, which this member returns as the video id.
+    /// </remarks>
     public async Task<ErrorOr<UploadResult>> ResumeUploadAsync(
         string accessToken,
         Uri sessionUri,
@@ -468,15 +480,21 @@ public sealed partial class GoogleYouTubeClient(
                 var attempt = 0;
 
                 // SEC-5: a peer that answers `Range` one byte further along on every PUT would otherwise let one
-                // chunk issue a request per byte. The budget is what the chunk can legitimately need — one pass per
-                // 256 KiB step, the caller's retry budget, and the pass that completes it — and it never resets.
-                var maxPasses = (chunkLength / NonFinalChunkStepBytes) + maxRetries + 1;
+                // chunk issue a request per byte. The budget is what the chunk can legitimately need: one pass per
+                // 256 KiB step, plus the caller's retry budget for every step and for the pass that completes it.
+                // It is per chunk and never resets, so a progressing-but-flaky peer keeps its retries per step.
+                var steps = chunkLength / NonFinalChunkStepBytes;
+                var budget = (long)steps + ((long)(steps + 1) * maxRetries);
+
+                var maxPasses = budget > int.MaxValue ? int.MaxValue : (int)budget;
                 var passes = 0;
 
                 while (true)
                 {
                     if (passes >= maxPasses)
                     {
+                        LogUploadPassBudget(logger, OperationResume, passes, maxPasses);
+
                         return YouTubeError(YouTubeErrorCodes.Transport, null, null, isTransport: true);
                     }
 
@@ -1615,8 +1633,15 @@ public sealed partial class GoogleYouTubeClient(
     [GeneratedRegex("^bytes=0-(\\d+)$", RegexOptions.CultureInvariant)]
     private static partial Regex ResumeRangeRegex();
 
-    /// <summary>The strict shape of a media type this class will put in a header (SEC-7).</summary>
-    [GeneratedRegex("^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// The strict shape of a media type this class will put in a header (SEC-7): <c>type/subtype</c>, each half one
+    /// or more RFC 9110 token characters (<c>!#$%&amp;'*+-.^_`|~</c> and the alphanumerics), so <c>video/*</c> is a
+    /// value this class accepts and a trailing newline is not — the anchors are absolute (<c>\z</c>), because
+    /// <c>$</c> alone also matches before a final <c>\n</c> (N1).
+    /// </summary>
+    [GeneratedRegex(
+        "^[A-Za-z0-9!#$%&'*+\\-.^_`|~]+/[A-Za-z0-9!#$%&'*+\\-.^_`|~]+\\z",
+        RegexOptions.CultureInvariant)]
     private static partial Regex MediaTypeRegex();
 
     [LoggerMessage(EventId = 2372, Level = LogLevel.Information, Message = "youtube.oauth.response operation={Operation} status={StatusCode}")]
@@ -1645,4 +1670,10 @@ public sealed partial class GoogleYouTubeClient(
 
     [LoggerMessage(EventId = 2380, Level = LogLevel.Warning, Message = "youtube.upload.short-stream operation={Operation} bytesSent={BytesSent} length={Length}")]
     private static partial void LogUploadShortStream(ILogger logger, string operation, long bytesSent, long length);
+
+    [LoggerMessage(EventId = 2381, Level = LogLevel.Warning, Message = "youtube.upload.body-refused operation={Operation} exception={ExceptionType}")]
+    private static partial void LogUploadBodyRefused(ILogger logger, string operation, string exceptionType);
+
+    [LoggerMessage(EventId = 2382, Level = LogLevel.Warning, Message = "youtube.upload.pass-budget operation={Operation} passes={Passes} maxPasses={MaxPasses}")]
+    private static partial void LogUploadPassBudget(ILogger logger, string operation, int passes, int maxPasses);
 }
