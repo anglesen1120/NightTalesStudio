@@ -128,7 +128,9 @@ public sealed partial class CreatePublicationHandler(
         // non-blank after trimming or refused as a tag.
         var title = command.Title.Trim();
         // A JSON null element deserializes to a null string: treat it as blank so the domain refuses it (400), never an NRE (500).
-        var tags = command.Tags.Select(tag => (tag ?? string.Empty).Trim()).ToList();
+        var tags = command.Tags.Count > YouTubeMetadataRules.TagsMaxCount
+            ? command.Tags
+            : command.Tags.Select(tag => (tag ?? string.Empty).Trim()).ToList();
         var description = YouTubeMetadataRules.AppendAttribution(command.Description.Trim(), attribution);
 
         var valid = YouTubeMetadataRules.Validate(
@@ -150,9 +152,19 @@ public sealed partial class CreatePublicationHandler(
 
         if (command.AutopilotAuthorizationId is { } authorizationId)
         {
+            // The authorization is per series and, when it records one, per channel: the text the owner accepted
+            // names the series and the channel title (02.8.3-T2 stores channel_connection_id, and a change of the
+            // series' default channel revokes it), so an authorization of another series — or one bound to
+            // another channel — is refused exactly like a revoked or unknown one: the same 400 on the same
+            // field, never an existence oracle. The channel column is nullable (02's table predates
+            // channel_connections, so it is a placeholder the constraint never reached): a row without one is
+            // not bound to a different channel, only a recorded mismatch is refused.
             var authorizationExists = await db.SeriesAutopilotAuthorizations
                 .AnyAsync(
-                    row => row.Id == authorizationId && row.RevokedAt == null,
+                    row => row.Id == authorizationId
+                        && row.RevokedAt == null
+                        && row.SeriesId == episode.SeriesId
+                        && (row.ChannelConnectionId == null || row.ChannelConnectionId == connection.Id),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -224,6 +236,12 @@ public sealed partial class CreatePublicationHandler(
         catch (DbUpdateException exception) when (CreatePublicationConflict.IsEpisodeForeignKeyViolation(exception))
         {
             // The episode was deleted between the read and the insert: the 404 the read would have answered.
+            return Errors.NotFound();
+        }
+        catch (DbUpdateException exception) when (CreatePublicationConflict.IsChannelConnectionForeignKeyViolation(exception))
+        {
+            // The connection was hard-deleted between the read and the flush: the same race class as the episode
+            // key above, and the same 404 the tenant-filtered read would have answered (06 CR-9).
             return Errors.NotFound();
         }
 

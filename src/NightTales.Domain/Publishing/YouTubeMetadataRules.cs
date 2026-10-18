@@ -17,7 +17,9 @@ namespace NightTales.Domain.Publishing;
 /// <see cref="ErrorType.Validation"/> error per broken rule, each carrying the request field in
 /// <c>metadata["field"]</c> — <c>title</c>, <c>description</c>, <c>tags</c>, <c>privacy</c> or <c>publishAt</c> —
 /// so 09.1.4-T1's writer answers 400 <c>validation_failed</c> with a complete <c>errors</c> map instead of
-/// making the client fix one field per round trip.
+/// making the client fix one field per round trip. The one exception is an over-long tag list, which answers with
+/// the count violation alone: it is bounded only by the request body, so walking it would cost one error per
+/// element (see <see cref="ValidateTags"/>).
 /// </para>
 /// <para>
 /// <b>Characters versus bytes.</b> YouTube counts characters, and a surrogate pair is one character: the title
@@ -281,12 +283,19 @@ public static class YouTubeMetadataRules
         }
     }
 
-    /// <summary>The tag rules of F09/D6: at most 15 tags, each 1–30 characters, G4-length at most 500.</summary>
+    /// <summary>
+    /// The tag rules of F09/D6: at most 15 tags, each 1–30 characters, G4-length at most 500. An over-long list is
+    /// the exception to "every violation": it answers with the count violation alone and returns, because the list
+    /// is bounded only by the request body (1 MiB, ~350k empty elements) and the length pass and the per-tag walk
+    /// below would otherwise touch every element and answer with one <see cref="Error"/> plus its metadata
+    /// dictionary per offending one.
+    /// </summary>
     private static void ValidateTags(IReadOnlyList<string> tags, List<Error> errors)
     {
         if (tags.Count > TagsMaxCount)
         {
             errors.Add(Violation(TagsField, $"A video may carry at most {TagsMaxCount} tags."));
+            return;
         }
 
         if (TagsLength(tags) > TagsMaxLength)

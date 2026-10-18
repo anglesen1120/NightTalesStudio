@@ -22,8 +22,9 @@ namespace NightTales.Application.Features.Publishing.Queries.GetEpisodePublicati
 /// <para>
 /// <b>One round trip for the list.</b> The channel display name is joined in the same <c>SELECT</c> as the
 /// publications, so a page of rows costs one statement rather than one per row — the DTO carries no navigation.
-/// The rows keep the same order the index serves, <c>created_at</c> descending and then id, so two rows created
-/// in the same instant still read back in a stable order.
+/// The order is <c>created_at</c> descending and then id, so two rows created in the same instant still read back
+/// in a stable order. No index carries that ordering: the planner serves the episode and tenant filter from
+/// <c>ix_publications_episode_id_user_id</c> and sorts one episode's rows in memory.
 /// </para>
 /// </remarks>
 /// <param name="readDb">The tenant-filtered read model.</param>

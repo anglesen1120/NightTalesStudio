@@ -196,6 +196,93 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
     }
 
     [Fact]
+    public async Task AutopilotAuthorizationOfAnotherSeries_IsRefused()
+    {
+        var scene = await NewSceneAsync(withRenderJob: false);
+        var otherSeries = await new SeriesBuilder(Database, scene.CurrentUser)
+            .CreateAsync(scene.UserId, ct: TestContext.Current.CancellationToken);
+
+        // Same owner, same channel, another series: the tenant filter lets the row through, so only the series
+        // binding can refuse it — and it must answer like a revoked or unknown one, on the same field.
+        var authorizationId = await SeedAuthorizationAsync(scene, seriesId: otherSeries.Id);
+
+        var refused = await CreateAsync(scene, authorizationId: authorizationId);
+
+        refused.IsError.ShouldBeTrue();
+        refused.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        refused.FirstError.Metadata!["field"].ShouldBe("autopilotAuthorizationId");
+        (await PublicationCountAsync(scene)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task AutopilotAuthorizationOfAnotherChannel_IsRefused()
+    {
+        var scene = await NewSceneAsync(withRenderJob: false);
+        var otherChannel = await new ChannelConnectionBuilder(Database, scene.CurrentUser)
+            .CreateActiveAsync(scene.UserId, ct: TestContext.Current.CancellationToken);
+
+        // Same owner, same series, another channel: the authorization covered a different channel, so it is not
+        // the consent this create relies on.
+        var authorizationId = await SeedAuthorizationAsync(scene, connectionId: otherChannel.Id);
+
+        var refused = await CreateAsync(scene, authorizationId: authorizationId);
+
+        refused.IsError.ShouldBeTrue();
+        refused.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        refused.FirstError.Metadata!["field"].ShouldBe("autopilotAuthorizationId");
+        (await PublicationCountAsync(scene)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task RevokedAuthorization_IsRefusedLikeAnUnknownOne()
+    {
+        var scene = await NewSceneAsync(withRenderJob: false);
+        var revoked = await SeedAuthorizationAsync(scene, revoked: true);
+
+        var refused = await CreateAsync(scene, authorizationId: revoked);
+
+        refused.IsError.ShouldBeTrue();
+        refused.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        refused.FirstError.Metadata!["field"].ShouldBe("autopilotAuthorizationId");
+        (await PublicationCountAsync(scene)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task MatchingAutopilotAuthorization_IsAcceptedAndStamped()
+    {
+        var scene = await NewSceneAsync(autopilotSettings: """{"veto_window_hours":12}""", withRenderJob: false);
+        var authorizationId = await SeedAuthorizationAsync(scene);
+
+        var created = await CreateAsync(scene, publishAt: Now.AddHours(14), authorizationId: authorizationId);
+
+        created.IsError.ShouldBeFalse();
+        // YR1: min(now + 12 h, (now + 14 h) - the 2 h publish lead time) = now + 12 h.
+        created.Value.VetoEndsAt.ShouldBe(Now.AddHours(12));
+
+        var stored = await Database.QueryStringsAsync(
+            $"SELECT autopilot_authorization_id::text FROM publications WHERE episode_id = '{scene.EpisodeId:D}'",
+            TestContext.Current.CancellationToken);
+
+        stored.ShouldBe([authorizationId.ToString("D")]);
+    }
+
+    [Fact]
+    public async Task AuthorizationWithoutAChannel_IsAccepted()
+    {
+        var scene = await NewSceneAsync(autopilotSettings: """{"veto_window_hours":12}""", withRenderJob: false);
+
+        // 02's column is a nullable placeholder (its table predates channel_connections and the FK never landed),
+        // so a live row without a channel is not bound to a *different* channel: only a recorded mismatch is
+        // refused (the API create tests seed the same shape, 06 CR-9).
+        var authorizationId = await SeedAuthorizationAsync(scene, unboundChannel: true);
+
+        var created = await CreateAsync(scene, publishAt: Now.AddHours(14), authorizationId: authorizationId);
+
+        created.IsError.ShouldBeFalse();
+        created.Value.VetoEndsAt.ShouldBe(Now.AddHours(12));
+    }
+
+    [Fact]
     public void Create_AuditProjectionCarriesIdsOnly()
     {
         // 06 README D17: the audit row's data is the three ids and nothing the caller typed. The projection is
@@ -295,20 +382,31 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
     }
 
     /// <summary>
-    /// One live (or revoked) autopilot authorization of the scene's series, written straight into 02's table:
-    /// the handler only reads it, and 02.8.3-T2 owns every write on that path (the same insert the API
-    /// integration test's <c>SeedAuthorizationAsync</c> performs).
+    /// One live (or revoked) autopilot authorization of the scene's series and connection, written straight into
+    /// 02's table: the handler only reads it, and 02.8.3-T2 owns every write on that path (the same insert the API
+    /// integration test's <c>SeedAuthorizationAsync</c> performs). <paramref name="seriesId"/> and
+    /// <paramref name="connectionId"/> default to the scene's own, so a test can seed the same owner's
+    /// authorization of another series or another channel; <paramref name="unboundChannel"/> seeds the shape 02's
+    /// nullable placeholder column allows, an authorization that records no channel at all.
     /// </summary>
-    private async Task<Guid> SeedAuthorizationAsync(Scene scene, bool revoked = false)
+    private async Task<Guid> SeedAuthorizationAsync(
+        Scene scene,
+        bool revoked = false,
+        Guid? seriesId = null,
+        Guid? connectionId = null,
+        bool unboundChannel = false)
     {
         var id = Guid.CreateVersion7();
         var stamp = $"'{Now:O}'::timestamptz";
+        var channel = unboundChannel ? "NULL" : $"'{connectionId ?? scene.ConnectionId}'";
 
         await Database.ExecuteAsync(
             "INSERT INTO series_autopilot_authorizations (id, user_id, series_id, version, text_version, "
-            + "text_hash, topic, cadence, privacy_status, accepted_at, revoked_at, created_at, updated_at) "
-            + $"VALUES ('{id}', '{scene.UserId}', '{scene.SeriesId}', 1, 'pc.v1', '{new string('a', 64)}', "
-            + $"'ghost', 'daily', 'public', {stamp}, {(revoked ? stamp : "NULL")}, {stamp}, {stamp})",
+            + "text_hash, topic, channel_connection_id, cadence, privacy_status, accepted_at, revoked_at, "
+            + "created_at, updated_at) "
+            + $"VALUES ('{id}', '{scene.UserId}', '{seriesId ?? scene.SeriesId}', 1, 'pc.v1', "
+            + $"'{new string('a', 64)}', 'ghost', {channel}, 'daily', 'public', "
+            + $"{stamp}, {(revoked ? stamp : "NULL")}, {stamp}, {stamp})",
             TestContext.Current.CancellationToken);
 
         return id;

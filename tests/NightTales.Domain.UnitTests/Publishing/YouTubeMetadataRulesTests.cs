@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using ErrorOr;
 using NightTales.Application.Common.Errors;
@@ -162,6 +163,63 @@ public sealed class YouTubeMetadataRulesTests
     }
 
     [Fact]
+    public void Tags_OverTheCount_AnswerTheCountViolationAlone()
+    {
+        // The list is bounded only by the request body (1 MiB, ~350k empty elements), so an over-long list must not
+        // cost one Error plus its metadata dictionary per element: the count check short-circuits before the
+        // TagsLength pass and the per-tag walk, and the answer is one violation on "tags".
+        var sixteen = Enumerable.Range(0, YouTubeMetadataRules.TagsMaxCount + 1)
+            .Select(index => $"tag{index}")
+            .ToList();
+
+        var sixteenWatch = Stopwatch.StartNew();
+        var sixteenResult = Validate(tags: sixteen);
+        sixteenWatch.Stop();
+
+        sixteenWatch.Elapsed.ShouldBeLessThan(
+            TimeSpan.FromSeconds(1),
+            "the count check must short-circuit instead of walking the list");
+        sixteenResult.Errors.Count.ShouldBe(1);
+        FieldOf(sixteenResult.Errors[0]).ShouldBe("tags");
+
+        // The pathological body: 100,000 blank tags, each one an Error (with its own dictionary) under the old
+        // walk. Same single violation, and the call stays bounded.
+        var blanks = Enumerable.Repeat(string.Empty, 100_000).ToList();
+
+        var blanksWatch = Stopwatch.StartNew();
+        var blankResult = Validate(tags: blanks);
+        blanksWatch.Stop();
+
+        blanksWatch.Elapsed.ShouldBeLessThan(
+            TimeSpan.FromSeconds(1),
+            "100,000 blank tags must not cost one error allocation each");
+        blankResult.Errors.Count.ShouldBe(1);
+        FieldOf(blankResult.Errors[0]).ShouldBe("tags");
+    }
+
+    [Fact]
+    public void Tags_WithinTheCount_AreStillWalkedTagByTag()
+    {
+        // The short-circuit must not swallow the per-tag rules: up to 15 every element is still checked, so a blank
+        // tag and an over-long tag inside the limit are both refused (a blank tag is not a way to send a shorter
+        // list), while 15 valid tags still pass.
+        var withinLimit = Enumerable.Range(0, YouTubeMetadataRules.TagsMaxCount)
+            .Select(index => $"tag{index}")
+            .ToList();
+        withinLimit[3] = string.Empty;
+        withinLimit[7] = new string('a', YouTubeMetadataRules.TagMaxChars + 1);
+
+        var result = Validate(tags: withinLimit);
+
+        result.IsError.ShouldBeTrue();
+        result.Errors.Count.ShouldBe(2);
+        result.Errors.ShouldAllBe(error => FieldOf(error) == "tags");
+
+        Validate(tags: Enumerable.Range(0, YouTubeMetadataRules.TagsMaxCount).Select(index => $"tag{index}").ToList())
+            .IsError.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Tags_EachTag_IsBoundedAndCarriesNoMarkup()
     {
         // 30 characters, counted the way the title is: 30 astral characters are 30, not 60.
@@ -213,7 +271,9 @@ public sealed class YouTubeMetadataRulesTests
     public void Validate_CollectsEveryViolation_InOneAnswer()
     {
         // The whole point of the writer contract: a client learns all five broken fields from one 400 instead of
-        // fixing them one round trip at a time.
+        // fixing them one round trip at a time. The tag list here is over the count, so it answers the count
+        // violation alone (Tags_OverTheCount_AnswerTheCountViolationAlone pins that); this test asserts the five
+        // distinct fields, not the number of tag errors.
         var result = Validate(
             title: new string('a', YouTubeMetadataRules.TitleMaxChars + 1),
             description: "A <b>keeper</b>",
