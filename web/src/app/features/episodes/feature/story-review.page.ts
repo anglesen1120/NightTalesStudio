@@ -331,14 +331,16 @@ export class StoryReviewPage {
   protected readonly renderActions = computed<readonly string[]>(() => this.episode()?.nextActions ?? []);
   /**
    * The one make-video message the view shows (D9: the server's `detail` is never read): the catalogue leaf the store
-   * resolved (its `errors.unknown_error` for the 428/422 client-bug answers), or — after a 412 whose refetch landed —
-   * the retry prompt. A single computed, so one refusal is announced once; the keyword flags themselves live in
-   * `StoryEditorStore` (WR6), never here.
+   * resolved (its `errors.unknown_error` for the 428/422 client-bug answers). A single computed, so one refusal is
+   * announced once; the store retires it with its cause (the fixed keyword flags, a finished 429 wait), and the keyword
+   * flags themselves live in `StoryEditorStore` (WR6), never here.
    */
   protected readonly makeVideoErrorKey = computed(() => {
-    const key = this.makeVideo.errorKey();
-    if (key !== null) return key;
-    return this.makeVideo.needsRefresh() ? 'errors.episode_conflict' : null;
+    // A refusal describes a command the view that offered it was running. Once the timeline owns the view and the
+    // server offers neither render nor retry any more (C4: the 409 whose refetch brought the job in), the banner would
+    // describe something the user can no longer do. The failure view keeps it: `retry_render` is still the command there.
+    if (this.renderView() && this.makeVideo.labelKey() === null) return null;
+    return this.makeVideo.errorKey();
   });
   /** The correlation line a client-bug answer carries (plan U6/`errors.unknown.trace`); `null` when there is none. */
   protected readonly makeVideoTrace = computed(() => {
@@ -445,6 +447,8 @@ export class StoryReviewPage {
           // The render store is armed for every id in this view (its `start` is idempotent per id): a `:id` reuse drops
           // the previous job's baseline, subscription and tick, and a story-editor episode never renders the timeline.
           this.renderStore.start(id);
+          // C4: the previous episode's make-video message state — its refusal, its 429 wait — is not about this one.
+          this.makeVideo.dismiss();
         });
       }
       const rawAddress = query.get('segment');

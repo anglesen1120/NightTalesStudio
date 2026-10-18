@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next clause (2026-10-19, replaced when the 10.6.1-T2 PR opened)
+
+Replaced text (verbatim), the tail of the Session 59 web bullet:
+
+- ``Next (web): **10.6.1-T2** (make video, cancel, retry; binds the disabled `(retry)`), coordinator to assign.``
+
+Outcome: 10.6.1-T2 is delivered and awaiting merge (PR #TBD, Session 65, tier T2 gates closed); the web-next pointer in the Resume block now names **10.6.2-T1** (unblocked: the video approve/reject routes merged #249 `ee3de595`, which the pin does not carry).
+
 ### Superseded Session 64 close-out wording (2026-10-19, replaced by the 09.7.1-T1 close-out)
 
 Replaced text (verbatim):

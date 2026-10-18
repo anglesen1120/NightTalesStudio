@@ -104,7 +104,7 @@ describe('RenderHttpRepository', () => {
     [null],
     ['/api/v1/episodes/22222222-2222-4222-8222-222222222222'],
     ['/render-jobs/'],
-  ] as const)('render_Location_%s_IsRefusedAsTheClientBugEntry', async (location) => {
+  ] as const)('render_Location_%s_AnswersNoJobIdAsAnAcceptedCommand', async (location) => {
     const { repository, http } = setup();
     const answer = repository.requestRender(EPISODE, '"ep-3"', intent());
     http.expectOne(RENDER_URL).flush(ACCEPTED, {
@@ -112,7 +112,9 @@ describe('RenderHttpRepository', () => {
       statusText: 'Accepted',
       ...(location === null ? {} : { headers: { Location: location } }),
     });
-    await expect(answer).rejects.toMatchObject({ code: 'if_match_required', kind: 'client_bug', status: 428 });
+    // The 202 was accepted — the render is queued and the credit reserved — so the adapter answers no id rather than a
+    // fabricated one, and never a refusal: the caller reads the authoritative episode (PS1/C6).
+    await expect(answer).resolves.toBeNull();
   });
 
   it('render_WhateverTheBodySays_TheJobIdComesFromTheLocationHeaderOnly', async () => {

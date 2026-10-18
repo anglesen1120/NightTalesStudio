@@ -2,7 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { signal } from '@angular/core';
 import type { Signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import type { Observable } from 'rxjs';
 import type { AppError, AppErrorKind } from '@core/errors';
 import { APP_ERROR_DEV_MODE } from '@core/errors/app-error-mapper';
@@ -596,7 +596,7 @@ describe('RenderTimelineStore', () => {
     expect(harness.store.cancelError()).toBeNull();
   });
 
-  it('cancel_ConfirmedOnce_IssuesOneDeleteAndPaintsNoStatus', async () => {
+  it('cancel_ConfirmedOnce_IssuesOneDeleteAndOneRefetchWithoutPaintingStatus', async () => {
     const harness = setup();
     armed(harness, job({ status: 'running', stage: 'voice', percent: 40 }));
     harness.repo.deferCancel();
@@ -617,6 +617,7 @@ describe('RenderTimelineStore', () => {
     // Nothing is painted on the way out: the job keeps the stage the server last reported.
     expect(harness.store.job()?.status).toBe('running');
     expect(harness.store.job()?.stage).toBe('voice');
+    expect(harness.detail.refetchCalls).toEqual([]);
 
     harness.repo.resolveCancel();
     await answer;
@@ -624,13 +625,14 @@ describe('RenderTimelineStore', () => {
     // The 204 keeps the hold: only the detail may move the job out of the cancellable set.
     expect(harness.store.cancelling()).toBe(true);
     expect(harness.store.cancelError()).toBeNull();
+    expect(harness.detail.refetchCalls).toEqual([undefined]);
 
     harness.detail.episodeState.set(episodeDetail({ id: EPISODE_ID, status: 'story_approved', renderJob: null }));
     TestBed.tick();
 
     expect(harness.store.cancelling()).toBe(false);
     expect(harness.store.cancellable()).toBe(false);
-    expect(harness.detail.refetchCalls).toEqual([]);
+    expect(harness.detail.refetchCalls).toEqual([undefined]);
   });
 
   it('cancel_TerminalCancelReportedByTheDetail_ReleasesTheHold', async () => {
@@ -737,9 +739,124 @@ describe('RenderTimelineStore', () => {
     await harness.store.cancel();
     TestBed.tick();
 
-    expect(harness.store.cancelError()?.code).toBe('episode_invalid_state');
+    expect(harness.store.cancelError()).toBeNull();
     expect(harness.store.cancellable()).toBe(false);
     expect(harness.store.job()?.status).toBe('succeeded');
+  });
+
+  it('cancel_JobReplacedWhileConfirmIsOpen_SendsNoDelete', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    const confirmation = new Subject<boolean>();
+    harness.confirm.mockReturnValue({ afterClosed: () => confirmation });
+    const answer = harness.store.cancel();
+    harness.detail.episodeState.set(renderingEpisode(job({ renderJobId: 'job-2', status: 'running' })));
+    TestBed.tick();
+    confirmation.next(true);
+    confirmation.complete();
+    await answer;
+    expect(harness.repo.cancelCalls).toEqual([]);
+    expect(harness.detail.refetchCalls).toEqual([]);
+    expect(harness.store.cancelling()).toBe(false);
+    expect(harness.store.job()?.renderJobId).toBe('job-2');
+  });
+
+  it.each(['ingesting', 'cancelled'] as const)('cancel_JobBecomes_%s_WhileConfirmIsOpen_SendsNoDelete', async (status) => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    const confirmation = new Subject<boolean>();
+    harness.confirm.mockReturnValue({ afterClosed: () => confirmation });
+    const answer = harness.store.cancel();
+    harness.detail.episodeState.set(renderingEpisode(job({ status })));
+    TestBed.tick();
+    confirmation.next(true);
+    confirmation.complete();
+    await answer;
+    expect(harness.repo.cancelCalls).toEqual([]);
+    expect(harness.store.cancelling()).toBe(false);
+  });
+
+  it('cancel_EpisodeChanges_ClearsThePreviousErrorBeforeTheNextDetailArrives', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    harness.repo.willFailCancel(appError('network_error', 0, 'network'));
+    await harness.store.cancel();
+    expect(harness.store.cancelError()?.code).toBe('network_error');
+    harness.store.start(OTHER_EPISODE_ID);
+    expect(harness.store.cancelError()).toBeNull();
+    harness.detail.episodeState.set(renderingEpisode(job({ renderJobId: 'job-2', status: 'running' }), { id: OTHER_EPISODE_ID }));
+    TestBed.tick();
+    expect(harness.store.job()?.renderJobId).toBe('job-2');
+    expect(harness.store.cancelError()).toBeNull();
+  });
+
+  it('cancel_JobChanges_ClearsThePreviousErrorOnTheHealthyJob', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    harness.repo.willFailCancel(appError('concurrency_conflict', 409, 'precondition'));
+    await harness.store.cancel();
+    expect(harness.store.cancelError()?.code).toBe('concurrency_conflict');
+    harness.detail.episodeState.set(renderingEpisode(job({ renderJobId: 'job-2', status: 'queued' })));
+    TestBed.tick();
+    expect(harness.store.cancellable()).toBe(true);
+    expect(harness.store.job()?.renderJobId).toBe('job-2');
+    expect(harness.store.cancelError()).toBeNull();
+  });
+
+  it.each(['ingesting', 'succeeded', 'failed', 'cancelled'] as const)('cancel_RefetchMovesTheJobTo_%s_ClearsThePreviousError', async (status) => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    harness.repo.willFailCancel(appError('concurrency_conflict', 409, 'precondition'));
+    await harness.store.cancel();
+    expect(harness.store.cancelError()?.code).toBe('concurrency_conflict');
+    harness.detail.episodeState.set(renderingEpisode(job({ status })));
+    TestBed.tick();
+    expect(harness.store.cancellable()).toBe(false);
+    expect(harness.store.cancelError()).toBeNull();
+  });
+
+  it('cancel_RefetchRemovesTheJob_ClearsThePreviousError', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    harness.repo.willFailCancel(appError('not_found', 404, 'not_found'));
+    await harness.store.cancel();
+    expect(harness.store.cancelError()?.code).toBe('not_found');
+    harness.detail.episodeState.set(episodeDetail({ id: EPISODE_ID, status: 'story_approved', renderJob: null }));
+    TestBed.tick();
+    expect(harness.store.job()).toBeNull();
+    expect(harness.store.cancelError()).toBeNull();
+  });
+
+  it('cancel_LateRefusalForAnOldJob_DoesNotPutAnErrorOnItsReplacement', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'running' }));
+    harness.repo.deferCancel();
+    const answer = harness.store.cancel();
+    await settle();
+    harness.detail.episodeState.set(renderingEpisode(job({ renderJobId: 'job-2', status: 'running' })));
+    TestBed.tick();
+    harness.repo.rejectCancel(appError('concurrency_conflict', 409, 'precondition'));
+    await answer;
+    expect(harness.store.job()?.renderJobId).toBe('job-2');
+    expect(harness.store.cancelError()).toBeNull();
+    expect(harness.detail.refetchCalls).toEqual([undefined]);
+  });
+
+  it('cancel_AcceptedWithoutARealtimeEvent_UsesOneReadToResolveTheQueuedJob', async () => {
+    const harness = setup();
+    armed(harness, job({ status: 'queued' }));
+    harness.detail.refetch = (options) => {
+      harness.detail.refetchCalls.push(options);
+      harness.detail.episodeState.set(renderingEpisode(job({ status: 'cancelled' })));
+      return Promise.resolve(harness.detail.episodeState());
+    };
+    await harness.store.cancel();
+    TestBed.tick();
+    expect(harness.repo.cancelCalls).toEqual([JOB_ID]);
+    expect(harness.detail.refetchCalls).toEqual([undefined]);
+    expect(harness.store.job()?.status).toBe('cancelled');
+    expect(harness.store.cancelling()).toBe(false);
+    expect(harness.store.cancelError()).toBeNull();
   });
 
   it('cancel_AnswerAfterTeardown_WritesNothing', async () => {

@@ -2037,23 +2037,42 @@ describe('StoryReviewPage make video and cancel wiring (10.6.1-T2)', () => {
     expect(alert.querySelectorAll('nts-retry-countdown')).toHaveLength(0);
   });
 
-  it('binds the failure panel retry to the same make-video store, exactly once per click', async () => {
-    const { root, fixture } = await createRenderPage(episodeDetail({
+  it('binds the failure panel retry to the make-video command and issues exactly one render request per click', async () => {
+    const { root, fixture, renderRepo, confirm } = await createRenderPage(episodeDetail({
       status: 'failed', hasCurrentStory: true, currentStory: snapshot, nextActions: ['retry_render', 'reopen_story'],
       renderJob: renderJobFixture({ status: 'failed', stage: 'ingesting', percent: 100, errorCode: 'render_quality_failed', finishedAt: '2026-10-18T00:00:00Z' }),
-    }));
+    }), { answers: [episodeDetail({ status: 'rendering', hasCurrentStory: true, currentStory: snapshot, nextActions: ['cancel'], renderJob: renderJobFixture({}) })] });
     const retry = [...root.querySelectorAll<HTMLButtonElement>('nts-render-failure button')]
       .find((button) => button.textContent?.includes(episodesVi.render.failure.retry))!;
-    expect(retry.disabled).toBe(false);
-    const makeVideo = fixture.componentRef.injector.get(MakeVideoStore);
-    // The real command is slice A's spec; here the click wiring is the subject, so nothing runs past the assertion.
-    const call = vi.spyOn(makeVideo, 'makeVideo').mockImplementation(() => Promise.resolve());
+    renderRepo.willAcceptRender('job-2');
     retry.click();
-    expect(call).toHaveBeenCalledTimes(1);
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+
+    // The panel's retry is the header button's own command, not a second path to the API: one confirm and one request
+    // through the port, carrying the loaded episode's ETag.
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(renderRepo.requestCalls).toHaveLength(1);
+    expect(renderRepo.requestCalls[0]!.episodeId).toBe(EPISODE_ID);
+    expect(renderRepo.requestCalls[0]!.etag).toBe('"ep-1"');
   });
 
-  it('offers the cancel control while the job is cancellable and routes its click to the store', async () => {
-    const { root, fixture } = await createRenderPage(episodeDetail({
+  it('drops a refusal the refetch answered with a state that offers no render at all', async () => {
+    const { root, fixture, renderRepo } = await createRenderPage(approvedDetail(['render']), {
+      status: 'story_approved', messageKey: (error) => `errors.${error.code}`,
+      answers: [episodeDetail({ status: 'rendering', nextActions: ['cancel'], renderJob: renderJobFixture({}) })],
+    });
+    renderRepo.willFailRender({ code: 'concurrency_conflict', status: 409, kind: 'conflict', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="make-video"]')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+
+    // The refusal described the command of the approved view; the read it triggered brought the timeline in, so a banner
+    // over that new state would describe something the user can no longer do (C4).
+    expect(root.querySelector('nts-render-timeline')).not.toBeNull();
+    expect(root.querySelector('.story-review-page__make-error')).toBeNull();
+  });
+
+  it('offers the cancel control while the job is cancellable and routes its click to one DELETE', async () => {
+    const { root, fixture, renderRepo } = await createRenderPage(episodeDetail({
       status: 'rendering', hasCurrentStory: true, currentStory: snapshot, nextActions: ['cancel'], renderJob: renderJobFixture({}),
     }));
     const button = root.querySelector<HTMLButtonElement>('[data-testid="render-cancel"]');
@@ -2061,11 +2080,32 @@ describe('StoryReviewPage make video and cancel wiring (10.6.1-T2)', () => {
     // Same state discipline as the make-video control: an idle cancel advertises nothing and stays clickable.
     expect(button!.getAttribute('aria-disabled')).toBeNull();
     expect(button!.getAttribute('aria-busy')).toBeNull();
-    const renderStore = fixture.componentRef.injector.get(RenderTimelineStore);
-    // As above: the real confirm + DELETE round trip is slice A's spec; this asserts the output reaches the store.
-    const cancel = vi.spyOn(renderStore, 'cancel').mockImplementation(() => Promise.resolve());
     button!.click();
-    expect(cancel).toHaveBeenCalledTimes(1);
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+
+    // The control is the store's own command: the click reaches the port as the DELETE of the loaded job id.
+    expect(renderRepo.cancelCalls).toEqual(['job-1']);
+  });
+
+  it('drops the previous episode make-video message when the page moves to another :id', async () => {
+    const first = approvedDetail(['render']);
+    const second = episodeDetail({ id: SECOND_EPISODE_ID, status: 'story_approved', hasCurrentStory: true, currentStory: snapshot, nextActions: ['render'] });
+    const { root, fixture, renderRepo, episodes, params } = await createRenderPage(first, {
+      status: 'story_approved', messageKey: (error) => `errors.${error.code}`, answers: [second],
+    });
+    renderRepo.willFailRender({ code: 'keywords_flagged', status: 409, kind: 'precondition', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="make-video"]')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.story-review-page__make-error')).not.toBeNull();
+
+    params.next(convertToParamMap({ id: SECOND_EPISODE_ID }));
+    fixture.detectChanges(); await fixture.whenStable();
+    fixture.detectChanges(); await fixture.whenStable();
+
+    // The refusal described a command on the episode the user left: the new episode's view must not carry its banner.
+    expect(root.querySelector('.story-review-page__make-error')).toBeNull();
+    expect(root.querySelector('[data-testid="make-video"]')).not.toBeNull();
+    expect(episodes.getCalls.map((call) => call.episodeId)).toEqual([first.id, SECOND_EPISODE_ID]);
   });
 
   it('marks the cancel control busy in flight, and a second click there emits nothing', async () => {

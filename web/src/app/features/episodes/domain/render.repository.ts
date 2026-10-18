@@ -17,13 +17,18 @@ export interface RenderCommandIntent {
  *
  * `requestRender` is If-Match guarded — the episode's current ETag, so a credit-spending POST is never a blind write —
  * and idempotency-key guarded through the caller's own intent: the same intent is replayed by every retry of one
- * click, and a genuinely new click mints a new key. It answers the render job id of the 202's `Location`.
+ * click, and a genuinely new click mints a new key. It answers the render job id of the 202's `Location`, or `null`
+ * when that answer carried no usable one (a proxy that strips or rewrites the header): the command WAS applied, so
+ * `null` is an accepted command whose id the caller never learns — never a refusal, and never a fabricated id.
  * `cancelRender` is server-idempotent (a repeat answers 204 as well) and therefore carries neither `If-Match` nor
  * `Idempotency-Key`. A failure is the structured `AppError` of `@core/errors`, exactly like the sibling ports.
  */
 export abstract class RenderRepository {
-  /** `POST /api/v1/episodes/{id}/render` (202) → the job id parsed from `Location: /render-jobs/{id}`. */
-  abstract requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string>;
+  /**
+   * `POST /api/v1/episodes/{id}/render` (202) → the job id parsed from `Location: /render-jobs/{id}`, or `null` when
+   * the 202 carried no usable `Location`.
+   */
+  abstract requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string | null>;
 
   /** `DELETE /api/v1/render-jobs/{id}` (204, also on a repeat). */
   abstract cancelRender(renderJobId: string): Promise<void>;

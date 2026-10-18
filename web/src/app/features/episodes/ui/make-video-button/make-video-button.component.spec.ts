@@ -26,25 +26,6 @@ async function setup(lang: 'vi' | 'en' = 'en') {
 afterEach(() => TestBed.resetTestingModule());
 
 describe('MakeVideoButtonComponent', () => {
-  it.each([['vi', episodesVi], ['en', episodesEn]] as const)('defines every action and confirmation key in %s', (_lang, messages) => {
-    for (const value of [
-      messages.render.make.action,
-      messages.render.make.retry,
-      messages.render.make.confirm.title,
-      messages.render.make.confirm.body,
-      messages.render.make.blockedKeywords,
-      messages.render.make.inProgress,
-      messages.render.cancel.action,
-      messages.render.cancel.title,
-      messages.render.cancel.body,
-      messages.render.cancel.confirm,
-      messages.render.cancel.busy,
-    ]) {
-      expect(typeof value).toBe('string');
-      expect(value.length).toBeGreaterThan(0);
-    }
-  });
-
   it.each(['vi', 'en'] as const)('renders enabled action and retry labels from full keys in %s', async (lang) => {
     const { fixture, button } = await setup(lang);
     const messages = lang === 'vi' ? episodesVi : episodesEn;

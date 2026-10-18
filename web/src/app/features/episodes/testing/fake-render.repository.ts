@@ -27,18 +27,18 @@ export class FakeRenderRepository extends RenderRepository {
   readonly requestCalls: Array<{ episodeId: string; etag: string; intent: RenderCommandIntent }> = [];
   /** The render job ids `cancelRender` was called with, in call order. */
   readonly cancelCalls: string[] = [];
-  /** The id a successful `requestRender` answers with (the 202's `Location` id). */
-  renderJobId = 'job-1';
+  /** The id a successful `requestRender` answers with (the 202's `Location` id), or `null` for a 202 without one. */
+  renderJobId: string | null = 'job-1';
 
-  private readonly requestScript: Array<Answer<string>> = [];
+  private readonly requestScript: Array<Answer<string | null>> = [];
   private readonly cancelScript: Array<Answer<void>> = [];
-  private readonly requestPending: Array<Pending<string>> = [];
+  private readonly requestPending: Array<Pending<string | null>> = [];
   private readonly cancelPending: Array<Pending<void>> = [];
   private deferredRequest = false;
   private deferredCancelCall = false;
 
-  /** The next `requestRender` answers the given job id (default: the seeded one). */
-  willAcceptRender(jobId = this.renderJobId): this {
+  /** The next `requestRender` answers the given job id, or `null` for a 202 the caller cannot read an id from. */
+  willAcceptRender(jobId: string | null = this.renderJobId): this {
     this.requestScript.push(() => Promise.resolve(jobId));
     return this;
   }
@@ -82,7 +82,7 @@ export class FakeRenderRepository extends RenderRepository {
   }
 
   /** Resolves the oldest (or the given index of the) pending `requestRender`. */
-  resolveRender(jobId = this.renderJobId, index = 0): void {
+  resolveRender(jobId: string | null = this.renderJobId, index = 0): void {
     this.take(this.requestPending, index).resolve(jobId);
   }
 
@@ -99,7 +99,7 @@ export class FakeRenderRepository extends RenderRepository {
     this.take(this.cancelPending, index).reject(error);
   }
 
-  override requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string> {
+  override requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string | null> {
     this.requestCalls.push({ episodeId, etag, intent });
     if (this.deferredRequest) return pendingInto(this.requestPending);
     return this.requestScript.shift()?.() ?? Promise.resolve(this.renderJobId);

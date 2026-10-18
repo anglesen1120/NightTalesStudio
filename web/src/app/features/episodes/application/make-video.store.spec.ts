@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import type { Observable } from 'rxjs';
 import { vi, type MockInstance } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
@@ -192,16 +192,20 @@ describe('MakeVideoStore', () => {
     const read = gate<EpisodeDetail>();
     state.episodes.scriptGet(() => read.promise);
     state.repo.willAcceptRender('job-42');
-    await state.store.makeVideo();
+    const running = state.store.makeVideo();
     await settle();
-    // The view switches to the timeline only when the episode read reports the job (F1): nothing is painted here.
+    // The view switches to the timeline only when the episode read reports the job (F1): nothing is painted here, and
+    // the command stays held until that read lands (PS2).
+    expect(state.store.submitting()).toBe(true);
     expect(state.detail.episode()).toBe(before);
     expect(state.detail.episode()?.status).toBe('story_approved');
     expect(state.detail.episode()?.nextActions).toEqual(['render']);
 
     // The read landing is what moves the detail, and it carries the server's own status.
     read.resolve(detailAnswer({ nextActions: ['render'] }));
+    await running;
     await settle();
+    expect(state.store.submitting()).toBe(false);
     expect(state.detail.episode()?.status).toBe('story_approved');
   });
 
@@ -220,16 +224,17 @@ describe('MakeVideoStore', () => {
     expect(state.confirm).toHaveBeenCalledTimes(1);
     expect(state.repo.requestPendingCount).toBe(1);
     state.repo.resolveRender('job-1');
-    await Promise.all([first, second]);
     await settle();
-    expect(state.store.submitting()).toBe(false);
-    // The post-202 read is still pending here, so the episode must be untouched: the server's answer is the only thing
-    // that may move it, never a status painted on the way.
+    // The POST is answered, but the read it triggered is still pending: the command is not finished, so the hold stays
+    // and the episode is untouched — the server's answer is the only thing that may move it, never a painted status.
+    expect(state.store.submitting()).toBe(true);
     expect(state.detail.episode()).toBe(before);
     expect(state.detail.episode()?.status).toBe('story_approved');
 
     read.resolve(detailAnswer({ nextActions: ['render'] }));
+    await Promise.all([first, second]);
     await settle();
+    expect(state.store.submitting()).toBe(false);
     expect(state.detail.episode()?.status).toBe('story_approved');
   });
 
@@ -313,6 +318,23 @@ describe('MakeVideoStore', () => {
     // An unusable refusal must not clear or seed the flagged set with an empty list.
     expect(setKeywordFlags).not.toHaveBeenCalled();
     expect(state.editor.videoBlocked()).toBe(false);
+    expect(state.store.error()?.code).toBe('keywords_flagged');
+    // Nothing armed the gate, so nothing can clear the cause later: the alert stays the only report of the refusal.
+    expect(state.store.errorKey()).toBe('errors.keywords_flagged');
+  });
+
+  it('makeVideo_KeywordsFlagged_AlertGoesWithTheFlagsItPointsAt', async () => {
+    const state = await loaded();
+    state.repo.willFailRender(appError('keywords_flagged', 409, 'precondition', { problem: { errors: [KEYWORD_ROW] } }));
+    await state.store.makeVideo();
+    expect(state.store.errorKey()).toBe('errors.keywords_flagged');
+
+    // The user fixes the flagged segments: the gate opens and the command is offered again, so the banner about the rows
+    // they just fixed goes with them (C4) instead of sitting over a healthy story. The refusal itself is kept as read.
+    state.editor.setKeywordFlags([], EPISODE_ID);
+    expect(state.editor.videoBlocked()).toBe(false);
+    expect(state.store.canMakeVideo()).toBe(true);
+    expect(state.store.errorKey()).toBeNull();
     expect(state.store.error()?.code).toBe('keywords_flagged');
   });
 
@@ -471,6 +493,108 @@ describe('MakeVideoStore', () => {
     const [first, second] = state.repo.requestCalls;
     expect(state.repo.requestCalls).toHaveLength(2);
     expect(keyOf(second?.intent)).not.toBe(keyOf(first?.intent));
+  });
+
+  it('makeVideo_After202_KeepsTheCommandInertUntilTheAuthoritativeReadLands', async () => {
+    const state = await loaded();
+    const read = gate<EpisodeDetail>();
+    state.episodes.scriptGet(() => read.promise);
+    state.repo.willAcceptRender('job-9');
+    const running = state.store.makeVideo();
+    await settle();
+
+    // The 202 is in and the read it triggers is still pending: nothing about the click may look finished, or a second
+    // click in this window would reserve a second render off the `nextActions` the read has not corrected yet (PS2).
+    expect(state.repo.requestCalls).toHaveLength(1);
+    expect(state.store.submitting()).toBe(true);
+    expect(state.store.canMakeVideo()).toBe(false);
+    await state.store.makeVideo();
+    expect(state.confirm).toHaveBeenCalledTimes(1);
+    expect(state.repo.requestCalls).toHaveLength(1);
+
+    read.resolve(detailAnswer({ nextActions: ['cancel'] }));
+    await running;
+    expect(state.store.submitting()).toBe(false);
+    expect(state.store.canMakeVideo()).toBe(false);
+    expect(state.store.intent()).toBeNull();
+  });
+
+  it('makeVideo_202WithoutAUsableLocation_IsTheSameAcceptedCommandAndNeverAnAlert', async () => {
+    const state = await loaded({ devMode: true });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const read = gate<EpisodeDetail>();
+    state.episodes.scriptGet(() => read.promise);
+    state.repo.willAcceptRender(null);
+    const running = state.store.makeVideo();
+    await settle();
+
+    // Accepted, never refused: the server queued the render and reserved the credit, so the read must be running (the
+    // button inert) and no alert may claim a failure (PS1/C6). The unusable header is a dev-time note only.
+    expect(state.repo.requestCalls).toHaveLength(1);
+    expect(state.store.error()).toBeNull();
+    expect(state.store.errorKey()).toBeNull();
+    expect(state.store.submitting()).toBe(true);
+    expect(warn).toHaveBeenCalled();
+
+    read.resolve(detailAnswer({ nextActions: ['cancel'] }));
+    await running;
+    expect(state.store.error()).toBeNull();
+    expect(state.store.intent()).toBeNull();
+  });
+
+  it('makeVideo_RefetchWhileTheDialogIsOpen_SendsTheFreshEtag', async () => {
+    const state = await loaded();
+    const decision = new Subject<boolean>();
+    state.confirm.mockReturnValue({ afterClosed: () => decision });
+    const running = state.store.makeVideo();
+    await settle();
+
+    // A hub-driven read lands while the dialog is open: the confirmed command carries the ETag of that answer, not the
+    // one the dialog opened on — a stale `If-Match` would be a spurious 412 for a command the user just confirmed.
+    state.episodes.scriptGet(() => Promise.resolve(detailAnswer({ etag: '"ep-2"' })));
+    await state.detail.refetch();
+    decision.next(true);
+    await running;
+
+    expect(state.repo.requestCalls).toHaveLength(1);
+    expect(state.repo.requestCalls[0]!.etag).toBe('"ep-2"');
+  });
+
+  it('makeVideo_RouteMovesWhileTheDialogIsOpen_SendsNothingForTheAbandonedEpisode', async () => {
+    const state = await loaded();
+    const decision = new Subject<boolean>();
+    state.confirm.mockReturnValue({ afterClosed: () => decision });
+    const running = state.store.makeVideo();
+    await settle();
+
+    // The same page for another `:id` while the confirm is open (the navigation does not close the dialog): the
+    // confirmed click must not become a POST for the episode the user left, so the store refuses it itself (C2).
+    await openEpisode(state, OTHER_EPISODE_ID);
+    decision.next(true);
+    await running;
+
+    expect(state.repo.requestCalls).toHaveLength(0);
+    expect(state.store.intent()).toBeNull();
+    expect(state.store.submitting()).toBe(false);
+  });
+
+  it('dismiss_ClearsTheMessageStateAndTheWaitOfThePreviousEpisode', async () => {
+    vi.useFakeTimers();
+    const state = await loaded();
+    state.repo.willFailRender(appError('spend_cap_reached', 429, 'rate_limit', { retryAfterSec: 30 }));
+    await state.store.makeVideo();
+    expect(state.store.errorKey()).toBe('errors.spend_cap_reached');
+    expect(state.store.retryAfterSec()).toBe(30);
+
+    state.store.dismiss();
+    expect(state.store.error()).toBeNull();
+    expect(state.store.errorKey()).toBeNull();
+    expect(state.store.needsRefresh()).toBe(false);
+    expect(state.store.retryAfterSec()).toBeNull();
+    // The countdown of the abandoned episode cannot fire into the new one: its timer went with the state.
+    vi.advanceTimersByTime(30_000);
+    expect(state.store.error()).toBeNull();
+    expect(state.store.retryAfterSec()).toBeNull();
   });
 
   it('dismiss_Teardown_DropsTheHeldIntent', async () => {

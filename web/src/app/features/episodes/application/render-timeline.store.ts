@@ -204,6 +204,7 @@ export class RenderTimelineStore {
 
   private readonly cancellingState = signal(false);
   private readonly cancelErrorState = signal<AppError | null>(null);
+  private cancelErrorJobId: string | null = null;
 
   /**
    * `true` from the accepted `DELETE` until the job leaves the cancellable set (the detail reports `cancelled`, a
@@ -240,8 +241,12 @@ export class RenderTimelineStore {
       // "Cancelling…" is bounded by the state it was asked for: once the job is no longer cancellable — the detail
       // reports `cancelled` or another terminal status, the episode left `rendering`, or it returned to
       // `story_approved` — the hold is released. The terminal view is the detail's, never a status written here.
+      const jobId = this.job()?.renderJobId ?? null;
       const cancellable = this.cancellable();
-      untracked(() => { if (!cancellable && this.cancellingState()) this.cancellingState.set(false); });
+      untracked(() => {
+        if (!cancellable && this.cancellingState()) this.cancellingState.set(false);
+        if (!cancellable || jobId !== this.cancelErrorJobId) this.cancelErrorState.set(null);
+      });
     });
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
@@ -273,6 +278,10 @@ export class RenderTimelineStore {
   start(episodeId: string): void {
     if (episodeId === '' || this.destroyed) return;
     if (this.episodeId() === episodeId && this.subscription !== null) return;
+    if (this.episodeId() !== episodeId) {
+      this.cancelErrorState.set(null);
+      this.cancelErrorJobId = null;
+    }
     this.subscription?.unsubscribe();
     this.subscription = null;
     this.setTick(false);
@@ -308,17 +317,23 @@ export class RenderTimelineStore {
     if (!(await this.confirmCancel())) return;
     // The job may have moved on while the dialog was open (the poller's terminal event, a refetch): the server's
     // current state decides, and a job that already left the cancellable set is never sent a cancel.
-    if (this.staleCancel(episodeId, call) || !this.cancellable()) return;
+    const currentJob = this.job();
+    if (this.staleCancel(episodeId, call) || currentJob?.renderJobId !== job.renderJobId || !this.cancellable()) return;
     this.cancellingState.set(true);
     try {
       await this.repo.cancelRender(job.renderJobId);
       if (this.staleCancel(episodeId, call)) return;
-      // 204: nothing is painted. The hold above is released by the detail's own status (the effect in the constructor).
+      // One read also resolves queued cancellations when the realtime connection is unavailable.
+      // The detail's own status releases the hold; the 204 itself still paints no status.
+      this.refresh();
     } catch (cause) {
       if (this.staleCancel(episodeId, call)) return;
       const error = isAppError(cause) ? cause : this.mapper.from(cause);
       this.cancellingState.set(false);
-      this.cancelErrorState.set(error);
+      if (this.job()?.renderJobId === job.renderJobId && this.cancellable()) {
+        this.cancelErrorJobId = job.renderJobId;
+        this.cancelErrorState.set(error);
+      }
       // A refusal or a missing job means this tab's view is the stale one: re-read it and render the server's state
       // (`cancelled`/`story_approved`) instead of leaving an error over a job that is already gone.
       if (error.status === 409 || error.status === 404) this.refresh();

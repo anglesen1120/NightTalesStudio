@@ -60,6 +60,12 @@ export class MakeVideoStore {
 
   private readonly submittingState = signal(false);
   private readonly errorState = signal<AppError | null>(null);
+  /**
+   * Whether the last `keywords_flagged` refusal actually armed the editor's gate (WR6): its alert then lives exactly as
+   * long as the flags it points at, so fixing them takes the banner away (C4). A refusal whose rows were all unusable
+   * wrote nothing to the editor, so it keeps its alert — there is no other report of it.
+   */
+  private readonly keywordsRefusal = signal(false);
   private readonly needsRefreshState = signal(false);
   private readonly retryAfterState = signal<number | null>(null);
 
@@ -76,6 +82,9 @@ export class MakeVideoStore {
   readonly errorKey = computed<string | null>(() => {
     const error = this.error();
     if (error === null) return null;
+    // The flagged rows are the editor store's (WR6) and the user's fix is its own event: once the flags are gone the
+    // cause of the refusal is gone, so its alert goes with them instead of sitting over a healthy, renderable story.
+    if (this.keywordsRefusal() && !this.blockedByKeywords()) return null;
     return error.status === 428 || error.status === 422 ? 'errors.unknown_error' : this.mapper.messageKey(error);
   });
   /** `412 episode_conflict`, after the refetch: the view asks the user to try again on the new ETag. */
@@ -133,15 +142,20 @@ export class MakeVideoStore {
   }
 
   /**
-   * The click: one confirm, then one `POST /episodes/{id}/render` with the episode's **current** ETag (read at call
-   * time, never when the dialog opened) and the click's own key. Returning early when the action is not offered is
-   * what makes a double click one request; the dialog reference does the same while it is still open.
+   * The click: one confirm, then one `POST /episodes/{id}/render` with the episode's **current** ETag and the click's
+   * own key. The episode is read again after the dialog (C1/PS3): the ETag is the one of the answer, never the one the
+   * dialog opened on, and a `:id` change behind the dialog forbids the command outright (C2). Returning early when the
+   * action is not offered is what makes a double click one request; the dialog reference does the same while it is open.
    */
   async makeVideo(): Promise<void> {
     if (!this.canMakeVideo() || this.confirmRef !== null) return;
     const episode = this.detail.episode();
     if (episode === null) return;
     if (!(await this.confirm())) return;
+    // The dialog outlives the click's episode: a `:id` reuse (MatDialog does not close on navigation) or another
+    // tab's refetch both land here, and neither may turn one confirm into a command for the episode the user left.
+    const current = this.detail.episode();
+    if (current === null || current.id !== episode.id) return;
     // The button state may have moved while the dialog was open (a refetch from another tab): the answer is the
     // current one, and nothing is sent for a command the server no longer offers.
     if (!this.canMakeVideo()) return;
@@ -149,35 +163,42 @@ export class MakeVideoStore {
     this.submittingState.set(true);
     this.errorState.set(null);
     this.needsRefreshState.set(false);
+    this.keywordsRefusal.set(false);
     this.clearRateLimit();
-    const intent = this.intentFor(episode.id);
+    const intent = this.intentFor(current.id);
     try {
-      await this.repo.requestRender(episode.id, episode.etag, intent);
-      if (this.stale(episode.id, call)) {
+      const renderJobId = await this.repo.requestRender(current.id, current.etag, intent);
+      if (this.stale(current.id, call)) {
         // The page moved on while this was in flight: the answer belongs to another `:id`, so no key of this episode
         // is left behind for the next click to replay on a different one (D1).
         this.dropIntent(intent);
         return;
       }
-      // 202: the key is spent and the server owns the new state. Nothing is written here — the episode's own status
-      // and the timeline branch take over once the detail reports the job.
+      // 202: the key is spent and the server owns the new state, which is why nothing is written here. A 202 whose
+      // `Location` gave no usable id (C6/PS1) is that same accepted command: the read below brings the job in either
+      // way, and the missing id is this client's dev-time concern, never the user's alert.
       this.dropIntent(intent);
-      void this.detail.refetch();
+      if (renderJobId === null && isDevMode()) console.warn('render accepted without a usable Location');
+      // Awaited (PS2): the hold is what keeps the click inert. Until the authoritative read lands `nextActions` still
+      // offers the render, and a second click inside that window would reserve a second render off a stale ETag.
+      await this.detail.refetch();
     } catch (cause) {
-      if (this.stale(episode.id, call)) {
+      if (this.stale(current.id, call)) {
         this.dropIntent(intent);
         return;
       }
-      await this.route(episode.id, intent, cause);
+      await this.route(current.id, intent, cause);
     } finally {
       if (call === this.callSeq && !this.destroyed) this.submittingState.set(false);
     }
   }
 
   /**
-   * The view is gone (or the page re-initialises): the open confirm is closed, the held intent reference is dropped
-   * (its key is never persisted anywhere), the in-flight hold is released and late answers are fenced. The server keeps
-   * whatever it was told; a reopened page re-derives everything from the detail.
+   * The view is gone or the page moved to another episode: the open confirm is closed, the held intent reference is
+   * dropped (its key is never persisted anywhere), the in-flight hold is released, late answers are fenced and the
+   * message state of the previous click — its refusal, its `429` wait and that wait's timer — goes with it (C4: the
+   * error of episode A must never sit over episode B). The server keeps whatever it was told; a fresh view re-derives
+   * everything from the detail.
    */
   dismiss(): void {
     this.callSeq++;
@@ -186,6 +207,10 @@ export class MakeVideoStore {
     this.intentState.set(null);
     this.intentEpisodeId = null;
     this.submittingState.set(false);
+    this.errorState.set(null);
+    this.needsRefreshState.set(false);
+    this.keywordsRefusal.set(false);
+    this.clearRateLimit();
   }
 
   /** One `ConfirmDialog` per click, with the empty cost slot D14/F19 asks for. */
@@ -240,7 +265,9 @@ export class MakeVideoStore {
       // WR6: the editor store is the ONE owner of the flags, and this is the same hand-off the approve flow uses
       // (10.5.6-T1): the rows are mapped once, a refusal whose rows are all unusable writes nothing (no empty list),
       // the episode fence is the editor's, and this store keeps no copy of them.
-      this.editor.applyKeywordsFlaggedProblem(error, episodeId);
+      // Armed only when the hand-off actually wrote rows: a refusal the editor could not take (its rows all unusable,
+      // `setKeywordFlags` is single-owned by WR6) keeps its alert, because nothing else reports it.
+      this.keywordsRefusal.set(this.editor.applyKeywordsFlaggedProblem(error, episodeId) === true);
       this.errorState.set(error);
       return;
     }

@@ -24,14 +24,14 @@ class RenderCommandHttpIntent extends IdempotencyIntent {
   }
 }
 
-/** The 202 carried no usable `Location`: the answer cannot be used, and the mapper's client-bug entry owns the code. */
-class RenderLocationError extends Error {}
-
 /**
  * The render job id of a 202's `Location`, or `null`. The route answers `/render-jobs/{id}` (F1); the API also
  * answers an absolute URL behind a proxy, so both forms are accepted. The query and the fragment are dropped, the id
  * must be the last segment and must follow `render-jobs`, and its shape is bounded — a missing, foreign or truncated
  * location is never turned into an id. The header value is never logged or echoed anywhere.
+ *
+ * `null` is an ACCEPTED command whose id this client cannot use, not a refusal: the server has already queued the
+ * render, so the caller reads the authoritative episode instead of claiming an id it was never given (PS1/C6).
  */
 export function renderJobIdFromLocation(location: string | null): string | null {
   if (location === null) return null;
@@ -48,15 +48,15 @@ export function renderJobIdFromLocation(location: string | null): string | null 
  * caller-owned intent's key as `Idempotency-Key` together with the `IDEMPOTENCY_INTENT` context, so the interceptor
  * (and a 401 replay) sees the same key; it answers only the job id of the 202's `Location` — no status is adopted
  * here. `cancelRender` sends neither header: the DELETE is server-idempotent (09.6.4-T1). Every failure becomes the
- * shared `AppError`; a 202 without a usable `Location` is the client-bug entry (the mapper has no dedicated one, and
- * `versions.store` treats a missing server ETag the same way), never a fabricated id.
+ * shared `AppError`; a 202 without a usable `Location` resolves `null` — an accepted command, never a fabricated id
+ * and never a refusal.
  */
 @Injectable()
 export class RenderHttpRepository extends RenderRepository {
   private readonly client = inject(RenderingEndpointsClient);
   private readonly mapper = inject(AppErrorMapper);
 
-  override async requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string> {
+  override async requestRender(episodeId: string, etag: string, intent: RenderCommandIntent): Promise<string | null> {
     // The context has to carry an `IdempotencyIntent` (the interceptor writes the header from it). The store's own
     // instance already is one, so it is passed through unchanged and only a structural caller is wrapped.
     const contextIntent = intent instanceof IdempotencyIntent ? intent : new RenderCommandHttpIntent(intent);
@@ -67,12 +67,10 @@ export class RenderHttpRepository extends RenderRepository {
           withIdempotency(contextIntent, userAction()),
         ),
       );
-      const renderJobId = renderJobIdFromLocation(response.headers.get('Location'));
-      if (renderJobId === null) throw new RenderLocationError();
-      return renderJobId;
+      return renderJobIdFromLocation(response.headers.get('Location'));
     } catch (cause) {
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- port rejects with the structured AppError contract
-      return Promise.reject(cause instanceof RenderLocationError ? this.mapper.fromProblem(null, 428, null) : this.mapper.from(cause));
+      return Promise.reject(this.mapper.from(cause));
     }
   }
 
