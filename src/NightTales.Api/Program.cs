@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Hangfire;
 using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
@@ -13,6 +15,7 @@ using NightTales.Api.Internal.Jobs;
 using NightTales.Api.RateLimiting;
 using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
+using NightTales.Application.Features.VideoReview;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.OpenAI;
@@ -138,6 +141,18 @@ try
     // Worker BackgroundService; what the Api composes here is the pinned-TLS transport and the two clients.
     builder.Services.AddRenderNodes(builder.Configuration);
     builder.Services.AddRenderClients(builder.Configuration);
+
+    // 09.7.1-T1 (09 README BD1, WT56): the approve/reject handlers of the video-review routes and the
+    // retention window approve re-stamps on the episode's live assets (`Assets:RetentionDays`). The Worker
+    // binds the same section for its ingest stamp (`Assets:UnapprovedRetentionDays`) with its own adapter;
+    // every key has an in-code default, and an impossible one fails the boot.
+    builder.Services.AddVideoReview();
+    builder.Services.AddOptions<AssetRetentionOptions>()
+        .BindConfiguration(AssetRetentionOptions.SectionName)
+        .ValidateOnStart();
+    builder.Services.TryAddEnumerable(
+        ServiceDescriptor.Singleton<IValidateOptions<AssetRetentionOptions>, AssetRetentionOptionsValidation>());
+    builder.Services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<AssetRetentionOptions>>().Value);
 
     // 06.1.2-T1 (06 README D11, 06.1 connect plan §Infrastructure): the YouTube OAuth client resolution —
     // the active client's secret read through the secret provider — and the Google authorization-code client
@@ -367,6 +382,12 @@ try
     // submitted/running one by asking the adapter through the Worker's outbox handler. No If-Match, no
     // Idempotency-Key, no rate policy: the route frees money and is idempotent by the row's own status.
     app.MapRenderingEndpoints();
+
+    // 09.7.1-T1 (09 README BD1, WT3/WT56): the video-review routes — approve moves `video_review → ready`
+    // and re-stamps the episode's live assets; reject stores the reason and moves the episode to
+    // `story_review` (target `story`, 200) or `story_approved` (target `re_render`, 202, the Worker starts
+    // that render from the outbox). Both require If-Match; reject also requires an Idempotency-Key.
+    app.MapVideoReviewEndpoints();
 
     // 06.3.1-T1 (06 README D9): GET /api/v1/publishing/youtube/eta reports the platform's remaining daily
     // YouTube upload units. The route is gated by the youtube_publish feature flag and needs a session.

@@ -285,7 +285,7 @@ Open items:
 ## 11. Rollout
 
 - **Order**: 09.7.2-T1 (unblocks 09.6.3-T2 and 02.5.2-T2) → 09.7.3-T1 and 09.7.1-T1 in parallel (both depend on storage-or-ingest work already landed).
-- **Migrations**: exactly one, from 09.7.3-T1 — `ix_assets_retention_due` (index only, expand-only, no data change) plus `ix_audit_logs_created_id` on `audit_logs (created_at, id)` for the keyset sweep ([RULED — README §B10 WT47]). 09.7.1-T1 adds none (`assets` and `audit_logs` exist per D9/BD15).
+- **Migrations**: exactly one, from 09.7.3-T1 — `ix_assets_retention_due` (index only, expand-only, no data change) plus `ix_audit_logs_created_id` on `audit_logs (created_at, id)` for the keyset sweep ([RULED — README §B10 WT47]). 09.7.1-T1 adds one of its own (09 CR-48): `09_EpisodeVideoReview`, expand-only, two nullable `episodes` columns `ready_at` and `video_reject_reason` (`assets` and `audit_logs` exist per D9/BD15, so no change there).
 - **Flags**: none (B8.1 `P · M1`). Both routes ship enabled; the sweep only has work after the first `ready`.
 - **Env/secret prerequisites**: `Storage:*` values and `nt-media-<env>` (11.4.1-T1, 11 D15); in dev the compose `storage` service plus `tools/dev/storage-init.sh` (11 D14).
 - **Observability**: the §7 metrics; `retention_sweep_batches_capped_total` or three days of `retention_sweep_asset_failures_total` mean a credential, bucket or backlog problem and should alert (11.6.2-T1 owns alerts).

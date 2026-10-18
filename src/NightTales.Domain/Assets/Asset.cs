@@ -195,4 +195,18 @@ public sealed class Asset : Entity, IUserOwned, IAuditable
     /// </summary>
     /// <param name="now">The sweep's clock reading.</param>
     public void MarkDeleted(DateTimeOffset now) => DeletedAt ??= now;
+
+    /// <summary>
+    /// Re-stamps when 09.7.3-T1's retention sweep may remove this row (WT56): the owner's approval of the
+    /// episode overwrites the ingest's shorter unapproved window with the approved one.
+    /// </summary>
+    /// <remarks>
+    /// The write is unconditional — an existing instant is replaced, never kept, and an earlier instant wins
+    /// just as a later one does — because the two writers (<c>Assets:UnapprovedRetentionDays</c> at ingest,
+    /// <c>Assets:RetentionDays</c> at approve) are phases of one lifetime rather than competing claims. A row
+    /// that never gets a stamp is never swept (11 D20 H9). <see cref="UpdatedAt"/> is stamped by the auditable
+    /// interceptor in the same <c>SaveChanges</c>.
+    /// </remarks>
+    /// <param name="retentionUntil">The new retention instant, from the caller's clock.</param>
+    public void ScheduleRetention(DateTimeOffset retentionUntil) => RetentionUntil = retentionUntil;
 }

@@ -23,6 +23,7 @@ using NightTales.Application.Features.SeriesBible.Events;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
 using NightTales.Application.Features.Stories.Review;
+using NightTales.Application.Features.VideoReview;
 using NightTales.Application.Rendering;
 using NightTales.Application.Rendering.Quality;
 using NightTales.Application.Telemetry;
@@ -200,6 +201,13 @@ public static class WorkerServiceCollectionExtensions
         // 02.3.2-T1: checkpoint transitions invalidate the owner's episode projection, ids only.
         services.AddOutboxHandler<StoryApproved, StoryApprovedRealtimeHandler>();
         services.AddOutboxHandler<StoryReopened, StoryReopenedRealtimeHandler>();
+
+        // 09.7.1-T1 (09 README D11, §B10 WT3): the two checkpoint #2 transitions. Both invalidate the owner's
+        // episode page (ids only), and the `re_render` target of a rejection starts the new render of the
+        // already-approved story in this delivery's own scope — never inside the rejecting transaction, and never
+        // in the Api, which only writes the outbox rows (D12). The feature's own registrations come with them.
+        services.AddVideoReview();
+        services.AddVideoReviewOutbox();
 
         // 02.2.2-T3 (02 README D21): the story generation job, its outbox consumers, the stage progress and the sweeper.
         // Every key has a default, so none is a required start-up key; a value out of range fails the boot.
@@ -452,6 +460,16 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RenderIngestOptions>, RenderIngestOptionsValidation>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderIngestOptions>>().Value);
+
+        // 09.7.1-T1 (WT56): the retention stamped over those rows once the owner accepts the cut
+        // (`Assets:RetentionDays`, the sibling key of the section above). It has an in-code default, an
+        // out-of-range value fails the boot, and the bound value is exposed as the snapshot the approve path
+        // takes directly — the Api binds the same section for its own copy of that path.
+        services.AddOptions<AssetRetentionOptions>()
+            .BindConfiguration(AssetRetentionOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AssetRetentionOptions>, AssetRetentionOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<AssetRetentionOptions>>().Value);
 
         // The ingest job takes the bound render-quality policy value (05 D10), which `AddRenderQuality`
         // registers only as `IOptions<RenderQualityPolicy>`.
