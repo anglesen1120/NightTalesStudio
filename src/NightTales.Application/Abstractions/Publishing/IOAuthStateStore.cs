@@ -1,3 +1,5 @@
+using NightTales.Domain.Publishing;
+
 namespace NightTales.Application.Abstractions.Publishing;
 
 /// <summary>
@@ -21,13 +23,18 @@ namespace NightTales.Application.Abstractions.Publishing;
 public interface IOAuthStateStore
 {
     /// <summary>
-    /// Claims the state row of <paramref name="stateHash"/>:
-    /// <c>UPDATE oauth_states SET used_at = @now WHERE state_hash = @hash AND used_at IS NULL AND
-    /// expires_at &gt; @now RETURNING …</c>.
+    /// Claims the state row of <paramref name="stateHash"/> for <paramref name="platform"/>:
+    /// <c>UPDATE oauth_states SET used_at = @now WHERE state_hash = @hash AND platform = @platform AND
+    /// used_at IS NULL AND expires_at &gt; @now RETURNING …</c>.
     /// </summary>
     /// <param name="stateHash">
-    /// The lowercase SHA-256 hex of the presented state. An unknown, spent or expired state — and a
-    /// callback that never carried one — all match no row.
+    /// The lowercase SHA-256 hex of the presented state. An unknown, spent or expired state all match no
+    /// row.
+    /// </param>
+    /// <param name="platform">
+    /// The platform of the callback's route segment. A state minted for another platform matches no row, so
+    /// it answers the same indistinguishable <see langword="null"/> as an unknown state (F8) — the check is
+    /// defence in depth while only YouTube has a route (07 adds the second one).
     /// </param>
     /// <param name="now">The claim instant, from the scope's clock.</param>
     /// <param name="ct">The request cancellation token.</param>
@@ -36,5 +43,5 @@ public interface IOAuthStateStore
     /// answers every <see langword="null"/> with the one indistinguishable failure outcome, so this port
     /// never reports why.
     /// </returns>
-    Task<OAuthStateClaim?> ClaimAsync(string stateHash, DateTimeOffset now, CancellationToken ct);
+    Task<OAuthStateClaim?> ClaimAsync(string stateHash, Platform platform, DateTimeOffset now, CancellationToken ct);
 }

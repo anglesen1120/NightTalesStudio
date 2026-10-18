@@ -31,7 +31,10 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// boundary, parameter abuse (duplicate, oversized, non-ASCII, redirect-shaped values), cross-site
 /// navigation headers, non-GET verbs, an unserved platform, log redaction on <em>failure</em> paths,
 /// tenant isolation of the purge, the purge of a finished row, ten parallel navigations, the rate-limit
-/// rejection shape, and <c>YouTube:Pkce=false</c>.
+/// rejection shape, <c>YouTube:Pkce=false</c>, and the five exchange-failure shapes the failure table names
+/// (a token endpoint 500, <c>channels.list</c> 401, a missing refresh token, a scope that was only partly
+/// granted, and a state minted for another platform) plus a host with no channel writer registered and the
+/// unhandled-callback log line of a throwing writer.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -562,6 +565,194 @@ public sealed class ConnectChannelQaTests(TestDatabase database) : IntegrationTe
                 Database,
                 $"SELECT code_verifier_protected FROM oauth_states WHERE user_id = '{world.User.Id}'")
             .ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Callback_TokenEndpointServerFault_IsAnExchangeFailure()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // Google answering 500 at the token endpoint: no grant was minted, and the code is single-use, so the
+        // flow ends as an exchange failure rather than as a retry (the task file's failure table row).
+        harness.Google.Options.TokenError = "server_error";
+        harness.Google.Options.TokenStatusCode = HttpStatusCode.InternalServerError;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+        harness.Google.TokenRequestCount.ShouldBe(1, "a single-use code is never retried, whatever Google answered");
+        harness.Connection.CallCount.ShouldBe(0);
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_ChannelReadUnauthorized_IsAnExchangeFailure()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // The token exchange succeeded, then channels.list answers 401 (Google's revoked/unknown token): the
+        // grant cannot be stored as a connection, so nothing is written and the state stays spent.
+        harness.Google.Options.ChannelStatusCode = HttpStatusCode.Unauthorized;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+        harness.Google.TokenRequestCount.ShouldBe(1);
+        harness.Google.ChannelRequestCount.ShouldBe(1);
+        harness.Connection.CallCount.ShouldBe(0);
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_WithoutARefreshToken_IsAnExchangeFailureBeforeTheChannelRead()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // A silent prior grant: Google answers tokens without refresh_token. Offline access is the point of
+        // the connect (the connection would die after an hour), so the flow refuses it — and refuses before
+        // spending a channels.list call on it.
+        harness.Google.Options.OmitRefreshToken = true;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+        harness.Google.TokenRequestCount.ShouldBe(1);
+        harness.Google.ChannelRequestCount.ShouldBe(0, "the refresh-token check precedes the channel read");
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Theory]
+    [InlineData(FakeGoogleHosting.ReadonlyScope)]
+    [InlineData("")]
+    public async Task Callback_ScopeNotFullyGranted_IsAnExchangeFailureBeforeTheChannelRead(string grantedScope)
+    {
+        // Granular consent (F9): a granted scope list that misses a required scope — or that grants nothing
+        // at all — must be refused, never assumed to be what the connect asked for.
+        var googleOptions = new FakeGoogleOptions { GrantedScope = grantedScope };
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, googleOptions: googleOptions);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+        harness.Google.TokenRequestCount.ShouldBe(1);
+        harness.Google.ChannelRequestCount.ShouldBe(0, "the scope check precedes the channel read");
+        harness.Connection.CallCount.ShouldBe(0);
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_StateMintedForAnotherPlatform_IsIndistinguishableFromAnUnknownState()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // A live, unspent row of this user that was minted for tiktok (07): the route's platform is the
+        // claim's second predicate (F8), so a state of another platform can never be spent through this
+        // route, and the answer is the same indistinguishable refusal an unknown state gets.
+        const string foreign = "canary-state-minted-for-tiktok";
+        await harness.Database.ExecuteAsync(
+            "INSERT INTO oauth_states (id, user_id, platform, state_hash, code_verifier_protected, "
+            + "oauth_client_id, refresh_family_id, browser_nonce_hash, created_at, expires_at, used_at) VALUES ("
+            + "'0199f0c2-1f3a-7a4b-9f6d-4c2a5b6d7e8f', "
+            + $"'{harness.User.Id}', 'tiktok', '{AuthTestFlow.Hash(foreign)}', 'canary-foreign-protected-verifier', "
+            + $"'{harness.Google.Options.ActiveClientId}', '{harness.FamilyId}', 'canary-foreign-nonce-hash', "
+            + "now(), now() + interval '10 minutes', NULL)",
+            Ct);
+
+        using var response = await harness.CallbackAsync(code, foreign, connect.NonceCookie, Ct);
+
+        await AssertStateInvalidAsync(response);
+        harness.StateValueFor("used_at", foreign).ShouldBeNullOrEmpty(
+            "a row minted for another platform is never claimed, so it stays spendable");
+        harness.StateValueFor("used_at", connect.State).ShouldBeNullOrEmpty(
+            "and the mismatch must not claim the route's own row either");
+        harness.Google.TokenRequestCount.ShouldBe(0);
+        harness.Connection.CallCount.ShouldBe(0);
+        harness.AuditRows().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Callback_WithoutAChannelWriter_RefusesBeforeSpendingTheCodeAtGoogle()
+    {
+        // The production default until 06.1.2-T2 registers the port (D-2), probed here independently of the
+        // task suite's own case: the handler resolves the writer before the exchange, so no grant is minted at
+        // Google that this deployment could neither store nor revoke, and the state is already spent.
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, connectChannelWriter: false);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+        harness.Google.TokenRequestCount.ShouldBe(0, "a missing writer must be found before the code is spent");
+        harness.Google.ChannelRequestCount.ShouldBe(0);
+        harness.Connection.CallCount.ShouldBe(0);
+        harness.StateValueFor("used_at", connect.State)
+            .ShouldNotBeNullOrEmpty("the claim of unit of work #1 cannot be undone");
+        harness.AuditRows().ShouldBe(0);
+        harness.EmailRows().ShouldBe(0);
+        harness.MarkerRows().ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Callback_WriterThrows_LogsTheExceptionTypeAndNothingItCarries()
+    {
+        var sink = new TestLogSink();
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, logSink: sink);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // The writer writes its rows and then throws: the endpoint answers the fixed redirect (a spent state
+        // must never reach a browser as a 500) and logs the exception's type only, so the canary message —
+        // which stands in for a message holding a statement, a URL or a token response — never reaches a log
+        // line (R5; the delegate is called with a null exception).
+        harness.Connection.WriteBeforeAnswering = true;
+        harness.Connection.Throw = true;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=" + ErrorCodes.OauthExchangeFailed);
+
+        var text = sink.AllText();
+        text.ShouldNotBeNullOrWhiteSpace("the sink must have seen the host's lines, or the search proves nothing");
+        text.ShouldContain(
+            "InvalidOperationException",
+            Case.Sensitive,
+            "the unhandled-callback line names the exception's type: that is all it may carry");
+        text.ShouldNotContain(
+            "canary channel-writer failure",
+            Case.Insensitive,
+            "the exception's message must never be logged: only its type is (R5)");
+        text.ShouldNotContain(code);
+        text.ShouldNotContain(connect.State);
+        text.ShouldNotContain(connect.Nonce);
+    }
+
+    /// <summary>
+    /// The post-claim invariants every exchange failure owes: the state stays spent and no audit, outbox,
+    /// e-mail or connection-marker row survives. The marker probe is the sensitive one — the writer stand-in
+    /// leaves rows behind before it fails only when a test switches that on, so a red here means the rollback
+    /// of unit of work #2 really happened.
+    /// </summary>
+    /// <param name="harness">The test's world.</param>
+    /// <param name="state">The raw state of the flow under test.</param>
+    private static void AssertSpentWithoutRows(ConnectChannelHarness harness, string state)
+    {
+        harness.StateValueFor("used_at", state)
+            .ShouldNotBeNullOrEmpty("a claimed state stays spent: the code is single-use and never retried");
+        harness.AuditRows().ShouldBe(0);
+        harness.OutboxRows().ShouldBe(0);
+        harness.EmailRows().ShouldBe(0);
+        harness.MarkerRows().ShouldBe(0);
     }
 
     /// <summary>Drives one callback navigation for <paramref name="code"/> on <paramref name="browser"/>.</summary>

@@ -6,14 +6,15 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 
 /// <summary>
 /// The <c>oauth_states</c> table (06.1.2-T1, 06 README D3/D20): one single-use connect attempt per row, claimed
-/// by one atomic statement that includes its own tenant predicate.
+/// by one atomic statement keyed on the 256-bit <c>state_hash</c> capability.
 /// </summary>
 /// <remarks>
 /// <para>
 /// There is no navigation and no foreign key to <c>users</c>: the row outlives the session that started the
-/// connect and is inert after ten minutes, and the callback has no principal, so it is read by the explicit
-/// <c>state_hash</c> + <c>user_id</c> predicate instead of the D10 tenant filter (the type is deliberately not
-/// <see cref="NightTales.Domain.Common.IUserOwned"/>).
+/// connect and is inert after ten minutes, and the callback has no principal, so the claim reads the row by its
+/// explicit <c>state_hash</c> predicate — the presented state is the whole capability — instead of the D10 tenant
+/// filter, while the connect-time purge of the caller's own finished rows scopes by <c>user_id</c> (the type is
+/// deliberately not <see cref="NightTales.Domain.Common.IUserOwned"/>).
 /// </para>
 /// <para>
 /// <c>platform</c> is <c>text</c> holding the lower-case wire value (<c>youtube</c>, never <c>YouTube</c>), with

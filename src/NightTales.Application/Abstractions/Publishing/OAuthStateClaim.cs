@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using NightTales.Domain.Publishing;
 
 namespace NightTales.Application.Abstractions.Publishing;
@@ -25,4 +27,22 @@ public sealed record OAuthStateClaim(
     string CodeVerifierProtected,
     string OAuthClientId,
     Guid RefreshFamilyId,
-    string BrowserNonceHash);
+    string BrowserNonceHash)
+{
+    /// <summary>
+    /// Prints the ids and the platform only (R8/F4): the compiler-generated list would put the protected
+    /// PKCE verifier and the browser-nonce hash into every log line, exception message and debugger string
+    /// (06.1.2-T1).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(
+            CultureInfo.InvariantCulture,
+            $"Id = {Id}, UserId = {UserId}, Platform = {Platform}, OAuthClientId = {OAuthClientId}, RefreshFamilyId = {RefreshFamilyId}");
+        return true;
+    }
+}

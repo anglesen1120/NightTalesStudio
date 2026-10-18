@@ -82,7 +82,9 @@ public static class OAuthNonceCookie
     /// <remarks>
     /// The header is written by hand rather than through <c>ResponseCookies.Delete</c>, which emits only a
     /// past <c>Expires</c>: the contract is an explicit <c>Max-Age=0</c>, and the past instant is kept as
-    /// the second line for a client that prefers absolute expiry.
+    /// the second line for a client that prefers absolute expiry. The endpoint calls this <em>before</em> it
+    /// dispatches the callback command (R5/F3), so every outcome — including one the handler throws — carries
+    /// the clear rather than leaving a nonce the browser must never present again.
     /// </remarks>
     public static void Clear(HttpResponse response)
     {

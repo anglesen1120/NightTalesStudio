@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 namespace NightTales.Application.Abstractions.Publishing;
 
 /// <summary>
@@ -17,4 +20,20 @@ namespace NightTales.Application.Abstractions.Publishing;
 /// </param>
 /// <param name="ExpiresAt">When <paramref name="AccessToken"/> stops being valid.</param>
 /// <param name="Scope">The scope list Google echoed, space-joined.</param>
-public sealed record OAuthTokens(string AccessToken, string? RefreshToken, DateTimeOffset ExpiresAt, string Scope);
+public sealed record OAuthTokens(string AccessToken, string? RefreshToken, DateTimeOffset ExpiresAt, string Scope)
+{
+    /// <summary>
+    /// Prints the non-secret members only (R8/F4): the compiler-generated list would put
+    /// <see cref="AccessToken"/> and <see cref="RefreshToken"/> into every log line, exception message and
+    /// debugger string, and both are bearer secrets of the connected account (06 README D17).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(CultureInfo.InvariantCulture, $"ExpiresAt = {ExpiresAt}, Scope = {Scope}");
+        return true;
+    }
+}

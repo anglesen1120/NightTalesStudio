@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using ErrorOr;
 using Mediator;
 using NightTales.Application.Abstractions.Audit;
@@ -42,4 +44,21 @@ public sealed record ConnectYouTubeCommand(string Platform) : ICommand<ErrorOr<C
 /// <param name="AuthorizationUrl">The absolute Google authorization URL.</param>
 /// <param name="ExpiresAt">When the state stops being usable (ten minutes by default).</param>
 /// <param name="BrowserNonce">The plaintext browser nonce; the row keeps its SHA-256 hex only.</param>
-public sealed record ConnectYouTubeResponse(string AuthorizationUrl, DateTimeOffset ExpiresAt, string BrowserNonce);
+public sealed record ConnectYouTubeResponse(string AuthorizationUrl, DateTimeOffset ExpiresAt, string BrowserNonce)
+{
+    /// <summary>
+    /// Prints the expiry only (R8/F4): the compiler-generated list would put
+    /// <see cref="AuthorizationUrl"/> (the single-use <c>state</c> and the PKCE code challenge) and the
+    /// plaintext <see cref="BrowserNonce"/> into every log line, exception message and debugger string
+    /// (06 README D3, YR10).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(CultureInfo.InvariantCulture, $"ExpiresAt = {ExpiresAt}");
+        return true;
+    }
+}

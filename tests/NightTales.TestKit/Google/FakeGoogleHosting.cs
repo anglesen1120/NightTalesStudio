@@ -105,6 +105,8 @@ public static class FakeGoogleHosting
             services.AddScoped<IConnectChannelConnection>(
                 provider => new FakeConnectChannelConnection(
                     provider.GetRequiredService<IEmailSender>(),
+                    provider.GetRequiredService<AppDbContext>(),
+                    provider.GetRequiredService<IClock>(),
                     state));
         });
     }

@@ -22,6 +22,14 @@ public sealed class FakeEmailSenderState
     /// </summary>
     public bool Fail { get; set; }
 
+    /// <summary>
+    /// When true — and with <see cref="Fail"/> on — the sender writes its real row and outbox event
+    /// <em>before</em> it answers the failure, the shape a sender that failed after its own write has. That
+    /// is what turns the "queue failure leaves no e-mail row" assertion into evidence about a rolled-back row
+    /// rather than about a row nothing ever wrote (R2).
+    /// </summary>
+    public bool WriteBeforeFailing { get; set; }
+
     /// <summary>Every queue request the sender received, in arrival order.</summary>
     public IReadOnlyList<EmailMessage> Calls
     {
@@ -65,14 +73,16 @@ public sealed class FakeEmailSenderState
 /// Two differences from the production sender are deliberate: no template-catalog check (06.1.2-T2 owns
 /// the connect template and it does not exist yet, and a test must not pass or fail on that), and no
 /// recipient lookup (the address hash is a canary). Everything else — the row, its state and the
-/// <c>email_requested.v1</c> event — goes through the domain aggregate, like the real one.
+/// <c>email_requested.v1</c> event — goes through the domain aggregate, like the real one. With
+/// <see cref="FakeEmailSenderState.WriteBeforeFailing"/> it also writes that row before it answers its
+/// failure, so the rollback assertions are about rows that existed (R2).
 /// </remarks>
 /// <param name="state">The test's switchboard and call log.</param>
 /// <param name="database">The ambient write model: the row must commit with the caller's unit.</param>
 /// <param name="clock">The host's clock, so the row's <c>created_at</c> is the test's instant.</param>
 public sealed class FakeEmailSender(FakeEmailSenderState state, AppDbContext database, IClock clock) : IEmailSender
 {
-    private const string ToHashPlaceholder = "canary-to-hash-4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a";
+    private const string ToHashPlaceholder = "canary-to-hash-4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a4f2a";
 
     /// <inheritdoc />
     public Task<ErrorOr<Guid>> QueueAsync(EmailMessage message, CancellationToken cancellationToken)
@@ -81,11 +91,28 @@ public sealed class FakeEmailSender(FakeEmailSenderState state, AppDbContext dat
 
         state.Record(message);
 
-        if (state.Fail)
+        if (!state.Fail)
         {
-            return Task.FromResult<ErrorOr<Guid>>(Error.Unexpected(ErrorCodes.ServiceUnavailable));
+            var row = QueueRow(message);
+
+            return Task.FromResult<ErrorOr<Guid>>(row.Id);
         }
 
+        if (state.WriteBeforeFailing)
+        {
+            // The failure comes after the write: whether the row survives is exactly the question the unit
+            // of work's rollback answers (R2).
+            _ = QueueRow(message);
+        }
+
+        return Task.FromResult<ErrorOr<Guid>>(Error.Unexpected(ErrorCodes.ServiceUnavailable));
+    }
+
+    /// <summary>Writes the real row — and raises its outbox event — through the domain aggregate.</summary>
+    /// <param name="message">The queue request.</param>
+    /// <returns>The tracked row.</returns>
+    private DomainEmailMessage QueueRow(EmailMessage message)
+    {
         var row = DomainEmailMessage.Queue(
             message.UserId,
             message.Template,
@@ -96,6 +123,6 @@ public sealed class FakeEmailSender(FakeEmailSenderState state, AppDbContext dat
 
         database.EmailMessages.Add(row);
 
-        return Task.FromResult<ErrorOr<Guid>>(row.Id);
+        return row;
     }
 }

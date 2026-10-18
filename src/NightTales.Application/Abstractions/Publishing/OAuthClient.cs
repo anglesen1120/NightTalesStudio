@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 namespace NightTales.Application.Abstractions.Publishing;
 
 /// <summary>
@@ -10,4 +13,20 @@ namespace NightTales.Application.Abstractions.Publishing;
 /// </remarks>
 /// <param name="ClientId">The public OAuth client id (the <c>YouTube:Clients</c> key).</param>
 /// <param name="ClientSecret">The client secret, read through <c>ISecretProvider</c>.</param>
-public sealed record OAuthClient(string ClientId, string ClientSecret);
+public sealed record OAuthClient(string ClientId, string ClientSecret)
+{
+    /// <summary>
+    /// Prints the public client id only (R8/F4): the compiler-generated list would put
+    /// <see cref="ClientSecret"/> into every log line, exception message and debugger string, and the
+    /// secret travels in the process only (06 README D3).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(CultureInfo.InvariantCulture, $"ClientId = {ClientId}");
+        return true;
+    }
+}

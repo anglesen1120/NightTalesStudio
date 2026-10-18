@@ -33,9 +33,10 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// this test's own user (the class shares one database, so nothing reads another test's rows).
 /// </para>
 /// <para>
-/// The task file's Tests table fixes the names below; the extra rows it does not carry are the two
-/// post-claim failure cases it lists under failure handling (a queue failure and a channel conflict) and
-/// the anonymous connect of acceptance check 2.
+/// The task file's Tests table fixes the names below; the extra rows it does not carry are the post-claim
+/// failure cases it lists under failure handling (a queue failure and a channel conflict, both writing their
+/// rows before they fail), a writer that throws mid-unit, a host with no writer registered (D-2's production
+/// default), and the anonymous connect of acceptance check 2.
 /// </para>
 /// </remarks>
 /// <param name="database">The class database, a migrated copy of the run's template.</param>
@@ -535,39 +536,92 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
     }
 
     [Fact]
-    public async Task Callback_EmailQueueFailure_RedirectsOauthExchangeFailedAndRollsBack()
+    public async Task Callback_EmailQueueFailureAfterTheWriterWrote_RedirectsOauthExchangeFailedAndRollsBack()
     {
         await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
         var connect = await harness.ConnectAsync(Ct);
         var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
 
-        // 06.1.2-T2's hand-off queues the connect e-mail inside the caller's unit, which is the shape the
-        // fake has: the sender fails, so the connection, the audit, the outbox and the e-mail must all vanish.
+        // 06.1.2-T2's hand-off writes the connection and queues the connect e-mail inside the caller's unit.
+        // Both stand-ins therefore leave their rows behind before the failure: the marker row, the e-mail row
+        // and its outbox event exist when the queue answers its error, so the zero counts below prove unit of
+        // work #2 was rolled back rather than that nothing was attempted (R2).
         harness.Connection.QueueConnectEmail = true;
+        harness.Connection.WriteBeforeAnswering = true;
         harness.Email.Fail = true;
+        harness.Email.WriteBeforeFailing = true;
 
         using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
 
         await AssertRedirectAsync(response, "/channels?error=oauth_exchange_failed");
         harness.Email.CallCount.ShouldBe(1, "the queue was attempted, so the zero counts below are evidence");
+        harness.Email.Calls[0].UserId.ShouldBe(harness.User.Id);
         harness.Connection.CallCount.ShouldBe(1);
         AssertSpentWithoutRows(harness, connect.State);
     }
 
     [Fact]
-    public async Task Callback_ChannelConflict_RedirectsChannelAlreadyConnectedAndRollsBack()
+    public async Task Callback_WriterRefusedAfterWritingItsRows_RedirectsChannelAlreadyConnectedAndRollsBack()
     {
         await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
         var connect = await harness.ConnectAsync(Ct);
         var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
 
+        // The writer writes what a real one writes and then refuses: the refusal is an ErrorOr code, so the
+        // handler answers it as an error and unit of work #2 rolls its own rows back (R1/R2/F1).
         harness.Connection.Outcome = FakeConnectOutcome.Conflict;
+        harness.Connection.WriteBeforeAnswering = true;
 
         using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
 
         await AssertRedirectAsync(response, "/channels?error=channel_already_connected");
         harness.Connection.CallCount.ShouldBe(1);
         harness.Email.CallCount.ShouldBe(0, "the conflict is answered before any e-mail is queued");
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_WriterThrowsMidUnit_RedirectsOauthExchangeFailedAndClearsTheCookie()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // A writer that throws after writing its rows: the pipeline rolls unit of work #2 back, the endpoint
+        // still answers the fixed redirect (a spent state must never reach the browser as a 500), and only the
+        // exception's type could have been logged.
+        harness.Connection.WriteBeforeAnswering = true;
+        harness.Connection.Throw = true;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=oauth_exchange_failed");
+        harness.Connection.CallCount.ShouldBe(1);
+        var cleared = ConnectChannelHarness.SetCookieHeader(response, ConnectChannelHarness.NonceCookie);
+        cleared.ShouldNotBeNull("every outcome clears the nonce cookie, a thrown one included").ShouldContain(
+            "max-age=0",
+            Case.Insensitive);
+        AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_NoWriterRegistered_RedirectsOauthExchangeFailedBeforeTheExchange()
+    {
+        // The production default until 06.1.2-T2 lands (D-2): the handler resolves its writer before it spends
+        // the code, so a host without one answers the fixed redirect and never calls Google (R13/F2). The
+        // state is already spent by then: the claim is unit of work #1 and cannot be undone.
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, connectChannelWriter: false);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=oauth_exchange_failed");
+        harness.Google.TokenRequestCount.ShouldBe(
+            0,
+            "a missing writer must be discovered before the code is spent at Google (F2)");
+        harness.Google.ChannelRequestCount.ShouldBe(0);
+        harness.Connection.CallCount.ShouldBe(0);
         AssertSpentWithoutRows(harness, connect.State);
     }
 
@@ -614,18 +668,18 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
     }
 
     [Fact]
-    public async Task Callback_EnvelopeConflict_RedirectsOauthStateInvalid()
+    public async Task Callback_EnvelopeStateInvalid_RedirectsOauthStateInvalid()
     {
-        // The claim's own unit refused it: the endpoint maps the first error code `oauth_state_invalid` or
-        // `concurrency_conflict` to this one constant, and every other code to oauth_exchange_failed.
-        // The real handler would have connected this channel, so a failure redirect here is also the proof
-        // that the replacement, not the real handler, answered. If this test ever reddens with
-        // `oauth_exchange_failed`, check [AllowAnonymousRequest] on the command first: a pipeline
-        // authorization denial answers `unauthorized`, which the split maps to the exchange-failed constant.
+        // An ErrorOr pipeline error carrying the claim's own code: the endpoint maps it to the state-invalid
+        // constant, and every other code to oauth_exchange_failed (the next test). The real handler would have
+        // connected this channel if it had run, so a failure redirect is also proof that the replacement, not
+        // the real handler, answered. If this test ever reddens with `oauth_exchange_failed`, check
+        // [AllowAnonymousRequest] on the command first: a pipeline authorization denial answers `unauthorized`,
+        // which the split maps to the exchange-failed constant.
         await using var harness = await ConnectChannelHarness.StartAsync(
             Database,
             Ct,
-            envelope: Error.Conflict(ErrorCodes.ConcurrencyConflict, "canary claim conflict"));
+            envelope: Error.NotFound(ErrorCodes.OauthStateInvalid, "canary claim refusal"));
 
         var connect = await harness.ConnectAsync(Ct);
         var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
@@ -640,6 +694,28 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
 
         var cleared = ConnectChannelHarness.SetCookieHeader(response, ConnectChannelHarness.NonceCookie);
         cleared.ShouldNotBeNull().ShouldContain("max-age=0", Case.Insensitive);
+    }
+
+    [Fact]
+    public async Task Callback_EnvelopeConflict_RedirectsOauthExchangeFailed()
+    {
+        // R6: `concurrency_conflict` is the code a commit mapping of unit of work #2 answers, where the state
+        // was valid and is already spent, so it belongs to the generic exchange failure and not to the
+        // state-invalid bucket (which would tell the user a used link was invalid).
+        await using var harness = await ConnectChannelHarness.StartAsync(
+            Database,
+            Ct,
+            envelope: Error.Conflict(ErrorCodes.ConcurrencyConflict, "canary commit conflict"));
+
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?error=oauth_exchange_failed");
+        harness.Google.TokenRequestCount.ShouldBe(0, "the replaced handler never reached Google");
+        harness.AuditRows().ShouldBe(0);
+        harness.StateValueFor("used_at", connect.State).ShouldBeNullOrEmpty("the real claim never ran");
     }
 
     [Fact]
@@ -688,8 +764,11 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
     }
 
     /// <summary>
-    /// The three assertions every post-claim failure owes: the state stays spent, and the connection, the
-    /// audit, the outbox and the e-mail rows the failed attempt would have written are not there.
+    /// The assertions every post-claim failure owes: the state stays spent, and the connection marker, the
+    /// audit, the outbox and the e-mail rows the failed attempt would have written are gone. The marker probe
+    /// is only meaningful in the cases that switch <c>WriteBeforeAnswering</c> on — there the writer really
+    /// added it before failing, so this is evidence about unit of work #2's rollback and not about a row
+    /// nothing ever wrote (R2).
     /// </summary>
     private static void AssertSpentWithoutRows(ConnectChannelHarness harness, string state)
     {
@@ -698,6 +777,7 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
         harness.AuditRows().ShouldBe(0);
         harness.OutboxRows().ShouldBe(0);
         harness.EmailRows().ShouldBe(0);
+        harness.MarkerRows().ShouldBe(0);
     }
 
     /// <summary>A 302 with the fixed relative target, the no-store/no-referrer pair and an empty body.</summary>

@@ -365,7 +365,17 @@ Rules for any change that runs at start-up:
   the `SecretRef` is a secret-manager *name*, never a secret — so the Api host and the build-time OpenAPI generator
   boot with no override. `AddYouTubePublishing` binds and validates the section on start, and the Api already binds it
   through `AddPersistence` (06.3.1-T1), so this call adds only the second validator and never a second binding or a
-  second `ValidateOnStart`. The Worker composes `AddPersistence` only, so it keeps the quota-only validation it had and
+  second `ValidateOnStart`. The start-up rules are: `ActiveClientId` names an entry of `Clients`; every entry's
+  `SecretRef` is set and is a name, not a value (ASCII letters, digits, `_`, `/`, `-` — a `:` is refused, because the
+  provider reads a reference's last path segment as a configuration key); `RedirectUri` is an absolute URI;
+  `Http:TimeoutSeconds` stays in 1–60 s (outside it `HttpClient.Timeout` throws when the client is first created,
+  after the state is already spent); `OAuthStateMinutes` stays in 5–30; `Scopes` is exactly the frozen pair;
+  `AuditStatus` is one of `pending|approved|rejected`; and outside Development every endpoint key is `https`. Every
+  failure message names the key and the rule only, never a configured value (06 README D17). `ApiBaseUrl` is the
+  Google **host root** (`https://www.googleapis.com`): the SDK appends its own `youtube/v3/` path, so a value that
+  already carried that path would address `.../youtube/v3/youtube/v3/channels`. `Pkce` and `RedirectUri` are
+  restart-only: the callback re-reads both, while the state row pins only the client id. The Worker composes
+  `AddPersistence` only, so it keeps the quota-only validation it had and
   needs no placeholder anywhere. The client secret is deliberately **not** a start-up key:
   `ConfigurationSecretProvider` reads `YOUTUBE_CLIENT_SECRET` (the last path segment of e.g.
   `nts/<env>/api/YOUTUBE_CLIENT_SECRET`) when a connect runs, so a missing secret fails that request with 503

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -58,9 +59,17 @@ public sealed class YouTubeOptionsValidatorTests
     [InlineData("ActiveClientId", "", $"{Section}:ActiveClientId")]
     [InlineData("ActiveClientId", "nts-some-other-client", $"{Section}:Clients")]
     [InlineData($"Clients:{ClientId}:SecretRef", "", "SecretRef")]
+    [InlineData($"Clients:{ClientId}:SecretRef", "ConnectionStrings:Default", "SecretRef")]
+    [InlineData("Clients:nts-youtube-next:SecretRef", "", "SecretRef")]
+    [InlineData("Clients:nts-youtube-next:SecretRef", "nts/dev/api/YOUTUBE SECRET", "SecretRef")]
+    [InlineData("RedirectUri", "", $"{Section}:RedirectUri")]
+    [InlineData("RedirectUri", "api/v1/channels/youtube/callback", $"{Section}:RedirectUri")]
     [InlineData("Scopes:1", UploadScope, "Scopes")]
     [InlineData("OAuthStateMinutes", "4", $"{Section}:OAuthStateMinutes")]
     [InlineData("OAuthStateMinutes", "31", $"{Section}:OAuthStateMinutes")]
+    [InlineData("Http:TimeoutSeconds", "0", $"{Section}:Http:TimeoutSeconds")]
+    [InlineData("Http:TimeoutSeconds", "61", $"{Section}:Http:TimeoutSeconds")]
+    [InlineData("AuthorizationEndpoint", "http://accounts.google.com/o/oauth2/v2/auth", $"{Section}:AuthorizationEndpoint")]
     [InlineData("TokenEndpoint", "http://oauth2.googleapis.com/token", $"{Section}:TokenEndpoint")]
     [InlineData("RevokeEndpoint", "http://oauth2.googleapis.com/revoke", $"{Section}:RevokeEndpoint")]
     [InlineData("ApiBaseUrl", "http://127.0.0.1:5000", $"{Section}:ApiBaseUrl")]
@@ -73,6 +82,31 @@ public sealed class YouTubeOptionsValidatorTests
         exception.Message.ShouldContain(namedKey);
         exception.Message.ShouldNotContain(SecretCanary);
         exception.Message.ShouldNotContain(SecretRef);
+        exception.Message.ShouldNotContain("ConnectionStrings:Default");
+        exception.Message.ShouldNotContain("YOUTUBE SECRET");
+    }
+
+    [Fact]
+    public void A_second_client_with_a_well_formed_reference_passes()
+    {
+        // The map exists for a rotation: a reference with '/', '_' and '-' is a secret-manager path or an environment
+        // variable name, and the validation of the entry must not demand the active client's shape only.
+        StartUp(Configuration(("Clients:nts-youtube-next:SecretRef", "nts/dev/api/YOUTUBE_CLIENT_SECRET-NEXT")));
+    }
+
+    [Fact]
+    public void The_default_ApiBaseUrl_is_the_host_root_the_committed_section_carries()
+    {
+        // `ApiBaseUrl` is the Google SDK's `BaseUri`, and the SDK appends its own `youtube/v3/` path to it: a default
+        // that already ended in `/youtube/v3` would build `.../youtube/v3/youtube/v3/channels`, and a section that
+        // disagreed with the class default would depend on which one the host bound. Both must be the host root, and
+        // the composed path must be the one the channel endpoint (and FakeGoogleServer) serves.
+        new YouTubeOptions().ApiBaseUrl.ShouldBe("https://www.googleapis.com");
+        new YouTubeOptions().ApiBaseUrl.ShouldBe(CommittedApiBaseUrl());
+        ApiBaseUrl.ShouldBe(CommittedApiBaseUrl());
+
+        new Uri(new Uri(new YouTubeOptions().ApiBaseUrl), "youtube/v3/channels").AbsoluteUri
+            .ShouldBe("https://www.googleapis.com/youtube/v3/channels");
     }
 
     [Fact]
@@ -181,6 +215,31 @@ public sealed class YouTubeOptionsValidatorTests
         }
 
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+    }
+
+    /// <summary>
+    /// The <c>YouTube:ApiBaseUrl</c> the committed Api <c>appsettings.json</c> carries, read from the file so a class
+    /// default that drifted from the shipped section (or a section that changed shape) is a failing test.
+    /// </summary>
+    private static string CommittedApiBaseUrl()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "NightTales.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory is null)
+        {
+            throw new InvalidOperationException("NightTales.sln was not found above the test output directory.");
+        }
+
+        var path = Path.Combine(directory.FullName, "src", "NightTales.Api", "appsettings.json");
+        using var document = JsonDocument.Parse(
+            File.ReadAllBytes(path),
+            new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+
+        return document.RootElement.GetProperty(Section).GetProperty(nameof(YouTubeOptions.ApiBaseUrl)).GetString()!;
     }
 
     /// <summary>A hand-written host environment: the validator adapter reads Development only.</summary>

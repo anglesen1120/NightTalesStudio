@@ -42,7 +42,11 @@ public sealed class FakeGoogleOptions
     /// <summary>The status <c>channels.list</c> answers with; not OK answers Google's error body.</summary>
     public HttpStatusCode ChannelStatusCode { get; set; } = HttpStatusCode.OK;
 
-    /// <summary>The status the token endpoint answers with when <see cref="TokenError"/> is set.</summary>
+    /// <summary>
+    /// The status the token endpoint answers with when <see cref="TokenError"/> is set. The switch only
+    /// applies with an error body, so a bare server failure is <see cref="TokenStatusCode"/> = 500 plus a
+    /// non-OAuth error value; with <see cref="TokenError"/> null a real exchange runs.
+    /// </summary>
     public HttpStatusCode TokenStatusCode { get; set; } = HttpStatusCode.BadRequest;
 
     /// <summary>
@@ -54,6 +58,15 @@ public sealed class FakeGoogleOptions
 
     /// <summary>When true, a successful exchange omits <c>refresh_token</c> (a silent prior grant).</summary>
     public bool OmitRefreshToken { get; set; }
+
+    /// <summary>
+    /// When set, the <c>scope</c> every token response names, instead of the scope the authorization request
+    /// asked for — Google's granular consent. Set it to a subset (the upload scope only) for a partial grant,
+    /// or to <see cref="string.Empty"/> for a response that granted nothing; F9's comparison treats both as a
+    /// refusal, and an empty value is exactly the case the client no longer papers over with the request's
+    /// own scope list.
+    /// </summary>
+    public string? GrantedScope { get; set; }
 
     /// <summary>The secret of <paramref name="clientId"/>, or null when the fake does not know the client.</summary>
     /// <param name="clientId">The client id sent to the token endpoint.</param>

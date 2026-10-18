@@ -10,9 +10,10 @@ namespace NightTales.Domain.Publishing;
 /// <para>
 /// The row is deliberately not <see cref="IUserOwned"/>: the callback has no principal, so its authentication is
 /// the state <em>plus</em> the <c>__Host-nts_oauth</c> browser nonce, and neither binding alone completes a
-/// connect (README D3/F01, YR10). Every read of it therefore goes through an explicit
-/// <c>state_hash</c> + <c>user_id</c> predicate instead of the tenant filter, and the table carries no
-/// <c>updated_at</c> bookkeeping and no <c>xmin</c> row version, because the row is never exposed with an ETag.
+/// connect (README D3/F01, YR10). Because the type carries no tenant filter, the callback claims the row by
+/// its 256-bit <c>state_hash</c> capability alone — the hash <em>is</em> the authorization — while the
+/// connect-time purge scopes by <c>user_id</c>. The table carries no <c>updated_at</c> bookkeeping and no
+/// <c>xmin</c> row version, because the row is never exposed with an ETag.
 /// </para>
 /// <para>
 /// The state is single use: the callback claims it with one atomic statement that mirrors

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 namespace NightTales.Api.Contracts.Publishing;
 
 /// <summary>
@@ -14,4 +17,20 @@ namespace NightTales.Api.Contracts.Publishing;
 /// <c>state</c> and, unless <c>YouTube:Pkce</c> is off, the S256 code challenge.
 /// </param>
 /// <param name="ExpiresAt">When the <c>state</c> inside <paramref name="AuthorizationUrl"/> stops being usable, in UTC.</param>
-public sealed record ConnectChannelResponse(string AuthorizationUrl, DateTimeOffset ExpiresAt);
+public sealed record ConnectChannelResponse(string AuthorizationUrl, DateTimeOffset ExpiresAt)
+{
+    /// <summary>
+    /// Prints the expiry only (R8/F4): the compiler-generated list would put
+    /// <see cref="AuthorizationUrl"/> into every log line, exception message and debugger string, and the
+    /// URL carries the single-use <c>state</c> and the PKCE code challenge (06 README D3).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(CultureInfo.InvariantCulture, $"ExpiresAt = {ExpiresAt}");
+        return true;
+    }
+}

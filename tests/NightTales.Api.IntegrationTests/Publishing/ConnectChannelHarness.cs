@@ -131,6 +131,10 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
     /// <param name="logSink">A sink the host logs through, for the redaction check.</param>
     /// <param name="resolver">A resolver stand-in, for the two catalogue codes the connect route maps.</param>
     /// <param name="envelope">A callback-handler stand-in answering this, for the endpoint's envelope split.</param>
+    /// <param name="connectChannelWriter">
+    /// Whether the host gets the writer stand-in. False leaves <see cref="IConnectChannelConnection"/>
+    /// unregistered, which is the production default until 06.1.2-T2 lands (D-2) and the case R13 covers.
+    /// </param>
     internal static async Task<ConnectChannelHarness> StartAsync(
         TestDatabase database,
         CancellationToken ct,
@@ -140,7 +144,8 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
         bool legal = true,
         TestLogSink? logSink = null,
         FakeOAuthClientResolver? resolver = null,
-        ErrorOr<ConnectYouTubeOutcome>? envelope = null)
+        ErrorOr<ConnectYouTubeOutcome>? envelope = null,
+        bool connectChannelWriter = true)
     {
         var clock = new FakeClock();
 
@@ -162,8 +167,12 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
 
         var factory = new ApiFactory(database, clock)
             .WithFakeGoogle(google)
-            .WithFakeConnectChannel(connection)
             .WithFakeEmailSender(email);
+
+        if (connectChannelWriter)
+        {
+            factory = factory.WithFakeConnectChannel(connection);
+        }
 
         if (logSink is not null)
         {
@@ -382,9 +391,21 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
     internal long StateRows() =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM oauth_states WHERE user_id = '{User.Id}'");
 
-    /// <summary>How many rows carry exactly this state's hash (one, unless the purge ate it).</summary>
+    /// <summary>
+    /// How many rows carry exactly this state's hash (one, unless the purge ate it).
+    /// </summary>
     internal long StateRowsFor(string state) =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM oauth_states WHERE state_hash = '{AuthTestFlow.Hash(state)}'");
+
+    /// <summary>
+    /// How many marker rows exist: the row <see cref="FakeConnectChannelConnection"/> writes in its
+    /// <c>WriteBeforeAnswering</c> mode as the stand-in for a <c>channel_connections</c> row (R2). A failure
+    /// after the claim must leave zero, which is only meaningful because the mode writes one first.
+    /// </summary>
+    internal long MarkerRows() =>
+        SqlProbe.Count(
+            Database,
+            $"SELECT count(*) FROM oauth_states WHERE state_hash = '{FakeConnectChannelState.MarkerStateHash}'");
 
     /// <summary>One column of the row this test's user owns, or empty for NULL.</summary>
     internal string StateValue(string column) =>
@@ -411,14 +432,16 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
             $"SELECT data::text FROM audit_logs WHERE action = '{AuditAction}' AND subject_user_id = '{User.Id}' LIMIT 1");
 
     /// <summary>
-    /// How many <c>channel_connection_changed.v1</c> outbox rows this test's user owns. The payload is the
-    /// only column that can name a user (<c>outbox_messages</c> is platform-wide), and the success path
-    /// asserts this is 1 — that is what keeps the zero assertions of the failure cases honest.
+    /// How many outbox rows this test's user owns: the connect's own
+    /// <c>channel_connection_changed.v1</c> row (06.1.2-T2 raises it) plus the <c>email_requested.v1</c> the
+    /// connect e-mail raises. The payload is the only column that can name a user
+    /// (<c>outbox_messages</c> is platform-wide), so the failure cases can assert zero about this user even
+    /// though the table is shared and other rows exist.
     /// </summary>
     internal long OutboxRows() =>
         SqlProbe.Count(
             Database,
-            $"SELECT count(*) FROM outbox_messages WHERE type = '{OutboxEventType}' "
+            $"SELECT count(*) FROM outbox_messages WHERE type IN ('{OutboxEventType}', 'email_requested.v1') "
             + $"AND payload::text LIKE '%{User.Id}%'");
 
     /// <summary>How many <c>email_messages</c> rows this test's user owns.</summary>

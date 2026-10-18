@@ -65,6 +65,14 @@ public sealed partial class GoogleYouTubeClient(
     /// <summary>The named handler chain the `Google.Apis.YouTube.v3` client transports through.</summary>
     public const string ApiHttpClientName = "youtube-api";
 
+    /// <summary>
+    /// The largest response body either client buffers. A token answer, a revocation answer and a `channels.list`
+    /// payload are each a few hundred bytes, so the bound never bites a working flow; it keeps a compromised or
+    /// misconfigured endpoint from making a callback buffer an arbitrary body inside the timeout. Applied to both
+    /// clients: the named OAuth client in the composition root and the SDK's own <c>ConfigurableHttpClient</c> here.
+    /// </summary>
+    public const int MaxResponseContentBytes = 64 * 1024;
+
     /// <summary>The application name the Google client reports in its user agent.</summary>
     private const string ApplicationName = "NightTales";
 
@@ -247,7 +255,9 @@ public sealed partial class GoogleYouTubeClient(
 
     /// <summary>
     /// Exchanges or refreshes through the token endpoint and parses the answer. The code, the client secret and the
-    /// refresh token travel in the form body only; a response never survives in a log line.
+    /// refresh token travel in the form body only; a response never survives in a log line. The returned scope is
+    /// Google's granted <c>scope</c> verbatim — empty when the answer carried none — so a caller can require the
+    /// scopes a connect needs instead of assuming the requested ones were granted.
     /// </summary>
     private async Task<ErrorOr<OAuthTokens>> PostTokenAsync(
         string operation,
@@ -286,7 +296,11 @@ public sealed partial class GoogleYouTubeClient(
         }
 
         var lifetime = payload.ExpiresInSeconds is > 0 ? payload.ExpiresInSeconds.Value : DefaultTokenLifetimeSeconds;
-        var scope = string.IsNullOrWhiteSpace(payload.Scope) ? string.Join(' ', options.Value.EffectiveScopes()) : payload.Scope;
+
+        // The granted scope is exactly what Google answered, empty when it sent none: the caller compares the granted
+        // set with the scopes a connect requires, so defaulting it to the requested list would mark a connection
+        // usable whose uploads Google will refuse with 403 (security review F9).
+        var scope = payload.Scope ?? string.Empty;
 
         return new OAuthTokens(accessToken, payload.RefreshToken, clock.UtcNow.AddSeconds(lifetime), scope);
     }
@@ -379,7 +393,8 @@ public sealed partial class GoogleYouTubeClient(
     /// The transport the `Google.Apis.YouTube.v3` client runs on (README D9/D19). The SDK builds a
     /// <c>ConfigurableHttpClient</c> from a raw <see cref="HttpMessageHandler"/> and applies the credential
     /// initializer to the client it gets back, so this hands it the host's named handler chain (no redirects,
-    /// pooled, gzip) and the configured timeout — one chain for every token, and no <c>HttpClient</c> of its own.
+    /// pooled, gzip), the configured timeout and the same bounded response body as the OAuth client
+    /// (<see cref="MaxResponseContentBytes"/>) — one chain for every token, and no <c>HttpClient</c> of its own.
     /// </summary>
     /// <param name="handlers">The host's handler factory.</param>
     /// <param name="timeout">The configured <c>YouTube:Http:TimeoutSeconds</c>.</param>
@@ -396,6 +411,7 @@ public sealed partial class GoogleYouTubeClient(
             var client = new ConfigurableHttpClient(handler)
             {
                 Timeout = timeout,
+                MaxResponseContentBufferSize = MaxResponseContentBytes,
             };
 
             foreach (var initializer in args.Initializers)

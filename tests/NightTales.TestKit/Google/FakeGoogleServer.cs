@@ -399,6 +399,10 @@ public sealed class FakeGoogleServer : IAsyncDisposable
             Encoding.ASCII.GetBytes(challenge));
     }
 
+    /// <summary>The scope pair Google echoes when the test does not override it.</summary>
+    private const string DefaultScopes =
+        "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+
     private async Task WriteTokensAsync(HttpContext context, string? scope, bool omitRefreshToken)
     {
         var index = Interlocked.Increment(ref _tokens);
@@ -412,7 +416,9 @@ public sealed class FakeGoogleServer : IAsyncDisposable
         {
             ["access_token"] = accessToken,
             ["expires_in"] = 3600,
-            ["scope"] = scope ?? "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+            // Granular consent: Options.GrantedScope lets a test answer less than the request asked for (or
+            // nothing at all) without touching the authorization request itself.
+            ["scope"] = Options.GrantedScope ?? scope ?? DefaultScopes,
             ["token_type"] = "Bearer",
         };
 

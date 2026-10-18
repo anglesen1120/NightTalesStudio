@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using ErrorOr;
 using NightTales.Application.Abstractions.Publishing;
 using NightTales.Domain.Publishing;
@@ -19,8 +21,14 @@ namespace NightTales.Application.Features.Publishing.Channels;
 /// <c>youtube_publish</c> flag stays off.
 /// </para>
 /// <para>
-/// The implementation runs inside the caller's transaction and never commits: the callback's unit of work
-/// #2 commits the connection, its audit row and its outbox row together, or none of them.
+/// <b>The implementation must not flush.</b> It joins the caller's unit of work #2 and never commits: the
+/// callback answers every non-connected outcome as an <c>ErrorOr</c> error, so the pipeline rolls that
+/// transaction back and whatever the implementation tracked vanishes with it. An explicit
+/// <c>SaveChanges</c> or <c>ExecuteUpdate</c> before the answer is still wrong, for two narrower reasons:
+/// it bypasses the single <c>SaveChangesAsync</c> the pipeline owns, and a unique-index violation inside it
+/// aborts the Npgsql transaction (25P02), which moves the 23505 mapping out of <c>EfUnitOfWork</c>'s commit
+/// mapping into <c>ConnectAsync</c>. There the refusal must be answered as
+/// <c>channel_already_connected</c>, never thrown.
 /// </para>
 /// </remarks>
 public interface IConnectChannelConnection
@@ -55,4 +63,22 @@ public sealed record ConnectChannelConnectionRequest(
     GoogleChannel Channel,
     OAuthTokens Tokens,
     string OAuthClientId,
-    DateTimeOffset Now);
+    DateTimeOffset Now)
+{
+    /// <summary>
+    /// Prints the ids, the channel and the instant only (R8/F4). The compiler-generated list would put the
+    /// nested <see cref="Tokens"/> — the access and refresh tokens — into every log line, exception message
+    /// and debugger string.
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(
+            CultureInfo.InvariantCulture,
+            $"UserId = {UserId}, Platform = {Platform}, OAuthClientId = {OAuthClientId}, Now = {Now}");
+        return true;
+    }
+}

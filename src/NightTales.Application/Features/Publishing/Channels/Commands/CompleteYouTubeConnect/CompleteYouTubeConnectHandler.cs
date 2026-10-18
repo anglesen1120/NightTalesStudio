@@ -24,17 +24,49 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.CompleteY
 /// <summary>
 /// Finishes one YouTube connect (06 README D3, <c>plan.md</c> §4 UC2): claims the state row in a unit of
 /// work of its own, then exchanges the code, reads the channel, hands both to the channel writer and
-/// records the audit row — all inside a second unit of work that commits or rolls back as one.
+/// records the audit row — the write and its records inside a second unit of work that commits or rolls
+/// back as one.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Two units of work, deliberately.</b> Unit #1 is the atomic <c>UPDATE … RETURNING</c> claim, committed
-/// before any Google call, so a replayed callback can never claim the row again whatever happens next; a
-/// crash between the two units burns the state and creates nothing, which is harmless, while a replayable
-/// state is not. Unit #2 opens its own transaction after that commit and holds the exchange, the
-/// connection row, the audit row and the outbox row of the connect, so a failure after the claim leaves the
-/// state spent and no other trace. The command therefore answers a success-typed outcome and never an
-/// error: an <c>ErrorOr</c> error would roll the whole unit of work back on 09 D5, undoing the claim.
+/// <b>Two units of work, and the second spans the write only.</b> Unit #1 is the atomic
+/// <c>UPDATE … RETURNING</c> claim, committed by the handler before any Google call, so a replayed callback
+/// can never claim the row again whatever happens next; a crash between the two units burns the state and
+/// creates nothing, which is harmless, while a replayable state is not. Everything between the two units —
+/// the family read, the verifier unprotect, the client and the writer resolution, the code exchange, the
+/// scope check, the refresh-token check and the channel read — runs with <em>no transaction open</em>, so
+/// no pooled connection carries an <c>idle in transaction</c> backend across Google's two round trips (P1).
+/// Unit #2 is opened immediately before <c>IConnectChannelConnection.ConnectAsync</c> and holds the
+/// connection row, the audit row and the connect's outbox and e-mail rows, so the write and its records
+/// commit together or vanish together.
+/// </para>
+/// <para>
+/// <b>Only <see cref="ConnectYouTubeOutcome.Connected"/> is a value; every other outcome is an error.</b>
+/// The four failures are returned as <c>ErrorOr</c> errors carrying the catalogue's own codes, so
+/// <c>UnitOfWorkBehavior</c> rolls unit #2 back instead of committing it (R1/F1) and <c>LoggingBehavior</c>
+/// records the failure as a failure rather than a 100 % <c>outcome=ok</c> (R11). Returning them as
+/// success-typed values — the earlier shape — made the pipeline <c>CommitAsync</c> whatever the writer had
+/// already tracked, and a bare rollback is not an option either: unit #1's commit has closed the
+/// transaction the pipeline opened, and <c>EfUnitOfWork.CommitAsync</c> throws when none is open.
+/// </para>
+/// <para>
+/// <b>The writer is resolved before the exchange (F2).</b> A missing
+/// <see cref="IConnectChannelConnection"/> — the production Api's state until 06.1.2-T2 ships — fails
+/// <em>before</em> Google spends the code, so no live grant is minted that this app can neither store nor
+/// revoke.
+/// </para>
+/// <para>
+/// <b>The granted scope must cover the required set (F9).</b> Granular consent lets the user untick
+/// <c>youtube.upload</c>; the exchange then succeeds while every later upload would 403. The granted
+/// <c>scope</c> is compared as a set against <c>YouTubeOptions.EffectiveScopes</c>, and a missing scope —
+/// or a blank granted value, which the client no longer defaults — is a failed exchange.
+/// </para>
+/// <para>
+/// <b><c>YouTube:Pkce</c> and <c>YouTube:RedirectUri</c> are restart-only configuration.</b> The exchange
+/// re-reads both at callback time while the client id is pinned to the state row (F19): flipping either key
+/// between connect and callback fails the in-flight flow closed (a verifier Google never saw a challenge
+/// for, or a <c>redirect_uri</c> mismatch) as <c>oauth_exchange_failed</c>. Operators change them with a
+/// restart, never with a live reload (R9/F10).
 /// </para>
 /// <para>
 /// <b>No oracle.</b> An unknown state, a spent state, an expired state, a state from another user, a
@@ -100,11 +132,15 @@ public sealed partial class CompleteYouTubeConnectHandler(
         var now = clock.UtcNow;
 
         // ---- Unit of work #1: the claim, committed alone, before any Google call (YR10). ----
-        // A callback with no state at all still travels this path: an empty hash matches no row, so it can
-        // never be a second way to look a state up.
-        var claim = await states
-            .ClaimAsync(HashOfState(command.State), now, cancellationToken)
-            .ConfigureAwait(false);
+        // A callback that carried no state can never match a 64-hex hash, so the claim is skipped: the junk
+        // path then costs one empty commit instead of a pointless UPDATE, and the answer is the same
+        // indistinguishable refusal (P5). The route's platform is the claim's second predicate, so a state
+        // minted for another platform can never be completed here (F8).
+        var claim = command.State is { Length: > 0 } presented
+            ? await states
+                .ClaimAsync(HubTicketSecret.HashOf(presented), command.Platform, now, cancellationToken)
+                .ConfigureAwait(false)
+            : null;
 
         var claimed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
         if (claimed.IsError)
@@ -119,10 +155,10 @@ public sealed partial class CompleteYouTubeConnectHandler(
             return claimed.Errors;
         }
 
-        // ---- Unit of work #2: everything the connect writes, committed as one by the pipeline. ----
-        // BeginAsync opens a fresh transaction: unit #1 closed the pipeline's first one at its commit.
-        await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
-
+        // From here on every failure is an ErrorOr error and no transaction is open: unit #1's commit closed
+        // the pipeline's first one, and unit #2 is opened further down, immediately before the write (P1).
+        // UnitOfWorkBehavior rolls back only when the response is an error, which is exactly why these
+        // answers are errors rather than the success-typed outcomes of the earlier shape (R1/F1/R11).
         if (claim is null)
         {
             return Refuse("state-not-claimed");
@@ -138,7 +174,7 @@ public sealed partial class CompleteYouTubeConnectHandler(
 
         if (string.Equals(command.Error, AccessDenied, StringComparison.Ordinal))
         {
-            return ConnectYouTubeOutcome.Denied;
+            return Denied();
         }
 
         if (command.Code is not { Length: > 0 } code)
@@ -147,13 +183,15 @@ public sealed partial class CompleteYouTubeConnectHandler(
             return Refuse("no-code");
         }
 
+        // The family read needs no transaction (EfRefreshTokenService.GetReauthStateAsync,
+        // requireTransaction: false), so it happens here with none open.
         var family = await families.GetReauthStateAsync(claim.RefreshFamilyId, cancellationToken)
             .ConfigureAwait(false);
         if (family.IsError)
         {
             LogFamilyReadFailed(claim.RefreshFamilyId, family.FirstError.Code);
 
-            return ConnectYouTubeOutcome.ExchangeFailed;
+            return ExchangeFailed();
         }
 
         if (family.Value.Revoked)
@@ -175,7 +213,18 @@ public sealed partial class CompleteYouTubeConnectHandler(
         {
             LogClientUnavailable(claim.OAuthClientId, client.FirstError.Code);
 
-            return ConnectYouTubeOutcome.ExchangeFailed;
+            return ExchangeFailed();
+        }
+
+        // 06.1.2-T2's writer, resolved lazily: it is not registered until that task lands, and the Api must
+        // boot and validate without it while the flag stays off. It is resolved BEFORE the exchange (F2), so
+        // a missing writer fails while the authorization code is still unspent and no grant is minted at
+        // Google that this app could neither store nor revoke.
+        if (services.GetService<IConnectChannelConnection>() is not { } writer)
+        {
+            LogChannelWriterMissing();
+
+            return ExchangeFailed();
         }
 
         // The verifier travels only when the flow is PKCE: Google refuses a verifier it never saw a
@@ -187,7 +236,16 @@ public sealed partial class CompleteYouTubeConnectHandler(
         {
             LogExchangeFailed(claim.OAuthClientId, tokens.FirstError.Code);
 
-            return ConnectYouTubeOutcome.ExchangeFailed;
+            return ExchangeFailed();
+        }
+
+        // F9: granular consent may grant less than the connect asked for, and a connection stored without a
+        // required scope would fail every later call that needs it. A blank granted scope is not granted.
+        if (!ScopesGranted(tokens.Value.Scope, options.EffectiveScopes()))
+        {
+            LogExchangeFailed(claim.OAuthClientId, "scope_not_granted");
+
+            return ExchangeFailed();
         }
 
         if (tokens.Value.RefreshToken is not { Length: > 0 })
@@ -196,7 +254,7 @@ public sealed partial class CompleteYouTubeConnectHandler(
             // working after an hour (06 README D2 failure table).
             LogExchangeFailed(claim.OAuthClientId, "refresh_token_missing");
 
-            return ConnectYouTubeOutcome.ExchangeFailed;
+            return ExchangeFailed();
         }
 
         var channel = await youTube.GetMyChannelAsync(tokens.Value.AccessToken, cancellationToken)
@@ -205,18 +263,12 @@ public sealed partial class CompleteYouTubeConnectHandler(
         {
             LogChannelReadFailed(channel.FirstError.Code);
 
-            return ConnectYouTubeOutcome.ExchangeFailed;
+            return ExchangeFailed();
         }
 
-        // 06.1.2-T2's writer, resolved lazily: it is not registered until that task lands, and the Api must
-        // boot and validate without it while the flag stays off. A missing writer is a failure inside unit
-        // #2 (nothing was written), never a 500.
-        if (services.GetService<IConnectChannelConnection>() is not { } writer)
-        {
-            LogChannelWriterMissing();
-
-            return ConnectYouTubeOutcome.ExchangeFailed;
-        }
+        // ---- Unit of work #2: opened here, immediately before the write, so the transaction spans the
+        // write and its records only and no pooled connection sits idle across the Google round trips (P1).
+        await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
 
         var connected = await writer
             .ConnectAsync(
@@ -231,13 +283,13 @@ public sealed partial class CompleteYouTubeConnectHandler(
             .ConfigureAwait(false);
         if (connected.IsError)
         {
-            var outcome = MapConnectFailure(connected.Errors);
-
             // The writer's own failure table: a refused unique index is the 409 the caller sees, anything
-            // else is a failed exchange. The reason label is the refused code only — never a message.
+            // else is a failed exchange. The reason label is the refused code only — never a message. The
+            // error is what makes the pipeline roll unit #2 back, so whatever the writer tracked before it
+            // answered vanishes with the transaction (R1/F1).
             LogConnectWriteRefused(connected.FirstError.Code);
 
-            return outcome;
+            return MapConnectFailure(connected.Errors);
         }
 
         // Step 10: the one audit row of the flow, written here because the pipeline slot is off for this
@@ -254,25 +306,25 @@ public sealed partial class CompleteYouTubeConnectHandler(
     }
 
     /// <summary>
-    /// The one indistinguishable refusal: one outcome, one log label, no row, no exchange.
+    /// The one indistinguishable refusal: one error code, one log label, no row, no exchange.
     /// </summary>
     /// <param name="reason">A stable internal label for the support log; never part of the response.</param>
-    private ConnectYouTubeOutcome Refuse(string reason)
+    /// <returns>The <c>oauth_state_invalid</c> error the endpoint maps to the expired-or-used redirect.</returns>
+    private Error Refuse(string reason)
     {
         LogRefused(reason);
 
-        return ConnectYouTubeOutcome.StateInvalid;
+        return Error.Validation(ErrorCodes.OauthStateInvalid, StateInvalidDescription);
     }
 
-    /// <summary>
-    /// The stored hash of the presented state, or the empty string when the callback carried none: the
-    /// claim's <c>WHERE</c> then matches no row instead of the callback inventing a second lookup path.
-    /// </summary>
-    private static string HashOfState(string? state) =>
-        state is { Length: > 0 } presented ? HubTicketSecret.HashOf(presented) : string.Empty;
+    /// <summary>Google's own refusal: the user declined consent, so no code was exchanged.</summary>
+    private static Error Denied() => Error.Failure(ErrorCodes.OauthDenied, DeniedDescription);
+
+    /// <summary>Everything Google-side that went wrong, and every local precondition the flow needs.</summary>
+    private static Error ExchangeFailed() => Error.Failure(ErrorCodes.OauthExchangeFailed, ExchangeFailedDescription);
 
     /// <summary>
-    /// Whether the presented cookie is the one this state was minted for. The comparison is
+    /// Whether the cookie the caller presented is the one this state was minted for. The comparison is
     /// constant-time over the two hashes (09 README BD16), and the plaintext cookie never leaves this
     /// method.
     /// </summary>
@@ -293,14 +345,50 @@ public sealed partial class CompleteYouTubeConnectHandler(
     }
 
     /// <summary>
-    /// The writer's refusal as the endpoint's outcome: a refused <c>ux_channel_connections_account</c> is
-    /// the already-connected 409; every other refusal is a failed exchange.
+    /// Whether Google granted every scope the connect asked for (F9): the granted <c>scope</c> is a
+    /// space-separated list compared as a set, and a blank or missing value grants nothing — the client no
+    /// longer substitutes the requested list for an empty answer.
+    /// </summary>
+    /// <param name="granted">The token response's <c>scope</c>, or null.</param>
+    /// <param name="required">The scopes the connect requested (<c>YouTubeOptions.EffectiveScopes</c>).</param>
+    private static bool ScopesGranted(string? granted, IReadOnlyList<string> required)
+    {
+        if (granted is not { Length: > 0 })
+        {
+            return false;
+        }
+
+        var grantedSet = granted
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return required.All(grantedSet.Contains);
+    }
+
+    /// <summary>
+    /// The writer's refusal as the error the endpoint maps back to an outcome: a refused
+    /// <c>ux_channel_connections_account</c> is the already-connected 409; every other refusal is a failed
+    /// exchange.
     /// </summary>
     /// <param name="errors">The errors the channel writer answered.</param>
-    private static ConnectYouTubeOutcome MapConnectFailure(List<Error> errors) =>
+    private static Error MapConnectFailure(List<Error> errors) =>
         errors.Any(error => string.Equals(error.Code, ErrorCodes.ChannelAlreadyConnected, StringComparison.Ordinal))
-            ? ConnectYouTubeOutcome.ChannelAlreadyConnected
-            : ConnectYouTubeOutcome.ExchangeFailed;
+            ? Error.Conflict(ErrorCodes.ChannelAlreadyConnected, ChannelAlreadyConnectedDescription)
+            : Error.Failure(ErrorCodes.OauthExchangeFailed, ExchangeFailedDescription);
+
+    /// <summary>The fixed, client-never-sees-it description of the indistinguishable refusal.</summary>
+    private const string StateInvalidDescription =
+        "The OAuth state is unknown, spent, expired or not this browser's.";
+
+    /// <summary>The fixed description of Google's own refusal.</summary>
+    private const string DeniedDescription = "The user refused consent at Google.";
+
+    /// <summary>The fixed description of every other flow failure.</summary>
+    private const string ExchangeFailedDescription = "The code exchange or the channel read did not complete.";
+
+    /// <summary>The fixed description of the already-connected refusal.</summary>
+    private const string ChannelAlreadyConnectedDescription =
+        "This account already has a live connection for that channel.";
 
     /// <summary>The one audit row of the flow (09 README BD15, 06 README D17).</summary>
     private static AuditEntry Entry(

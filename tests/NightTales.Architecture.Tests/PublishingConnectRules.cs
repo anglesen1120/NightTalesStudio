@@ -15,16 +15,18 @@ namespace NightTales.Architecture.Tests;
 /// <para>
 /// The attribute rules themselves are 09.3.6-T1's (<see cref="AuditAttributeTests"/>); this file pins the
 /// two 06 commands by name and the three properties that keep the exemption reviewable: each carries
-/// <see cref="NotAuditedAttribute"/> and never <see cref="AuditedAttribute"/>; the callback answers the
-/// callback answers <c>ErrorOr&lt;ConnectYouTubeOutcome&gt;</c> whose value arm is the closed outcome set
-/// (the endpoint's envelope split maps the error arm to a constant); and the handler reaches
-/// <c>IAuditWriter</c> from exactly one call site.
+/// <see cref="NotAuditedAttribute"/> and never <see cref="AuditedAttribute"/>; the callback answers
+/// <c>ErrorOr&lt;ConnectYouTubeOutcome&gt;</c> whose value arm is <c>Connected</c> and whose error arm
+/// carries the four failure codes (the endpoint's envelope split maps each code to a constant redirect);
+/// and the handler reaches <c>IAuditWriter</c> from exactly one call site.
 /// </para>
 /// <para>
-/// The runtime half — <b>one</b> row on the success path and <b>none</b> on any of the failure outcomes —
-/// cannot be seen in metadata, so it is asserted over the real host in
+/// The runtime half — <b>one</b> row on the success path and <b>none</b> on any failure outcome — cannot be
+/// seen in metadata, so it is asserted over the real host in
 /// <c>NightTales.Api.IntegrationTests.Publishing.ConnectChannelTests</c>
-/// (<c>Callback_ValidState_RedirectsAndConnectsChannel</c> plus the three post-claim failure cases).
+/// (<c>Callback_ValidState_RedirectsAndConnectsChannel</c> plus the post-claim failure cases: the refused
+/// exchange, the queue failure after the writer wrote, the writer's own refusal, a writer that throws, and a
+/// host with no writer registered).
 /// </para>
 /// </remarks>
 public sealed class PublishingConnectRules
@@ -72,7 +74,7 @@ public sealed class PublishingConnectRules
     }
 
     [Fact]
-    public void CompleteCommand_AnswersTheClosedOutcomeSetAndNeverAnError()
+    public void CompleteCommand_AnswersTheOutcomeEnvelopeWithTheClosedOutcomeSet()
     {
         var command = Application.GetType(CompleteCommandTypeName, throwOnError: true)!;
         var answer = command.GetInterfaces()
@@ -80,9 +82,10 @@ public sealed class PublishingConnectRules
             .Select(type => type.GetGenericArguments()[0])
             .Single();
 
-        // The envelope is ErrorOr<ConnectYouTubeOutcome> on purpose: the error arm is what the Api's envelope
-        // split maps to a constant redirect, and the value arm is the closed outcome set. Either way the type
-        // the endpoint switches on is the enum - never a raw wire code the Location could interpolate.
+        // The envelope is ErrorOr<ConnectYouTubeOutcome> on purpose: the error arm carries the handler's four
+        // failure codes, which the Api's envelope split maps to a constant redirect each, and the value arm is
+        // Connected only. The type the endpoint switches on is the enum either way - never a raw wire code the
+        // Location could interpolate.
         var outcome = answer.IsGenericType && answer.GetGenericTypeDefinition().Name == "ErrorOr`1"
             ? answer.GetGenericArguments()[0]
             : answer;
@@ -90,7 +93,7 @@ public sealed class PublishingConnectRules
         answer.Name.ShouldStartWith(
             "ErrorOr",
             Case.Sensitive,
-            "the callback answers an envelope, so a failure of the claim's own unit has a code to map");
+            "the callback answers an envelope, so every failure outcome has a code the endpoint can map");
         outcome.FullName.ShouldBe(OutcomeTypeName);
 
         Enum.GetName(outcome, 0).ShouldBe(

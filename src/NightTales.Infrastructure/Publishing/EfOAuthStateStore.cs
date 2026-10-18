@@ -21,8 +21,9 @@ namespace NightTales.Infrastructure.Publishing;
 /// scope that has no principal (the callback authenticates with the state alone, YR10).
 /// </para>
 /// <para>
-/// No failure is reported: an unknown, spent or expired state all match no row and answer <see langword="null"/>,
-/// and the callback turns every one of them into the same outcome, so nothing here can be used as an oracle.
+/// No failure is reported: an unknown, spent, expired or other-platform state all match no row and answer
+/// <see langword="null"/>, and the callback turns every one of them into the same outcome, so nothing here can
+/// be used as an oracle.
 /// </para>
 /// </remarks>
 /// <param name="database">The scope's context: its connection and its ambient transaction carry the claim.</param>
@@ -35,15 +36,20 @@ public sealed class EfOAuthStateStore(AppDbContext database) : IOAuthStateStore
     private const string ClaimSql = """
         UPDATE oauth_states
         SET used_at = @now
-        WHERE state_hash = @state_hash AND used_at IS NULL AND expires_at > @now
+        WHERE state_hash = @state_hash AND platform = @platform AND used_at IS NULL AND expires_at > @now
         RETURNING id, user_id, platform, code_verifier_protected, oauth_client_id, refresh_family_id, browser_nonce_hash;
         """;
 
     /// <inheritdoc />
-    public async Task<OAuthStateClaim?> ClaimAsync(string stateHash, DateTimeOffset now, CancellationToken ct)
+    public async Task<OAuthStateClaim?> ClaimAsync(
+        string stateHash,
+        Platform platform,
+        DateTimeOffset now,
+        CancellationToken ct)
     {
         await using var command = await CreateCommandAsync(ClaimSql, ct).ConfigureAwait(false);
         command.Parameters.Add(new NpgsqlParameter("state_hash", NpgsqlDbType.Text) { Value = stateHash });
+        command.Parameters.Add(new NpgsqlParameter("platform", NpgsqlDbType.Text) { Value = platform.ToWire() });
         command.Parameters.Add(new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = now });
 
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -54,7 +60,7 @@ public sealed class EfOAuthStateStore(AppDbContext database) : IOAuthStateStore
         }
 
         var platformWire = reader.GetString(2);
-        if (!PlatformExtensions.TryParse(platformWire, out var platform))
+        if (!PlatformExtensions.TryParse(platformWire, out var rowPlatform))
         {
             // The column carries a CHECK over the domain's closed set, so this is a schema/domain mismatch and
             // not an input problem; the message names no value.
@@ -65,7 +71,7 @@ public sealed class EfOAuthStateStore(AppDbContext database) : IOAuthStateStore
         return new OAuthStateClaim(
             reader.GetGuid(0),
             reader.GetGuid(1),
-            platform,
+            rowPlatform,
             reader.GetString(3),
             reader.GetString(4),
             reader.GetGuid(5),

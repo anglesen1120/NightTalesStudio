@@ -7,6 +7,15 @@ namespace NightTales.Application.Publishing;
 /// a consumer that must see a change without a redeploy (<c>AuditStatus</c>, WT27) reads
 /// <c>CurrentValue</c>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="RedirectUri"/> and <see cref="Pkce"/> are restart-only: the callback re-reads both when Google answers,
+/// while the state row pins only the client id. A host that bound a changed value between the connect and the
+/// callback would then exchange against a redirect URI or a PKCE mode the authorization request never used (Google
+/// answers <c>redirect_uri_mismatch</c> or <c>invalid_grant</c>), so flipping either key is a redeploy, never a
+/// live-reload change.
+/// </para>
+/// </remarks>
 public sealed class YouTubeOptions
 {
     /// <summary>The configuration section the composition root binds.</summary>
@@ -28,12 +37,16 @@ public sealed class YouTubeOptions
     /// </summary>
     public Dictionary<string, YouTubeClientOptions> Clients { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>The absolute callback URI of the connect flow; Google answers here with <c>code</c> + <c>state</c>.</summary>
+    /// <summary>
+    /// The absolute callback URI of the connect flow; Google answers here with <c>code</c> + <c>state</c>. Restart-only
+    /// (see the class remarks): the callback re-reads it, so a change between connect and callback breaks that flow.
+    /// </summary>
     public string RedirectUri { get; set; } = string.Empty;
 
     /// <summary>
-    /// The scopes a connect requests: exactly Google's upload and read-only YouTube scopes, in this order
-    /// (06 README D2). The validator refuses any other set, so a widened scope list cannot ship silently.
+    /// The scopes a connect requests: exactly Google's upload and read-only YouTube scopes (06 README D2). The order
+    /// is not significant — the validator compares the configured list with the frozen pair as a set — and the
+    /// validator refuses any other set, so a widened scope list cannot ship silently.
     /// <see langword="null"/> (not a default array) means <see cref="YouTubeScopes.Required"/>: the binder
     /// appends the configured items to a non-empty collection instance instead of replacing them, so a
     /// non-empty default would send every scope twice. Read <see cref="EffectiveScopes"/>.
@@ -53,15 +66,17 @@ public sealed class YouTubeOptions
     public string RevokeEndpoint { get; set; } = "https://oauth2.googleapis.com/revoke";
 
     /// <summary>
-    /// The YouTube Data API v3 base URL the channel read and the later uploads use; the deployment points
-    /// it at <c>FakeGoogleServer</c> for the integration suite (06 README D19).
+    /// The YouTube Data API v3 <em>host root</em> (<c>https://www.googleapis.com</c>) the channel read and the later
+    /// uploads use. The value is the Google SDK's <c>BaseUri</c>, to which the SDK appends its own <c>youtube/v3/</c>
+    /// path, so a value that already carried that path would address <c>.../youtube/v3/youtube/v3/channels</c>; the
+    /// deployment points it at <c>FakeGoogleServer</c>'s origin for the integration suite (06 README D19).
     /// </summary>
-    public string ApiBaseUrl { get; set; } = "https://www.googleapis.com/youtube/v3";
+    public string ApiBaseUrl { get; set; } = "https://www.googleapis.com";
 
     /// <summary>
     /// Whether the flow carries PKCE S256 (default true, F12). The fallback to <see langword="false"/> is a
     /// configuration change, not a code edit, and it must match the staging observation recorded in
-    /// <c>docs/ops/youtube-oauth-setup.md</c>.
+    /// <c>docs/ops/youtube-oauth-setup.md</c>. Restart-only (see the class remarks).
     /// </summary>
     public bool Pkce { get; set; } = true;
 

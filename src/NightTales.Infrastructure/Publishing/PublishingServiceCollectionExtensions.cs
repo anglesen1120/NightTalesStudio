@@ -69,11 +69,16 @@ public static class PublishingServiceCollectionExtensions
         services.TryAddScoped<IOAuthStateStore, EfOAuthStateStore>();
         services.TryAddScoped<ISessionFamilyReader, SessionFamilyReader>();
 
-        // The form posts: the timeout is the configured one, the transport is shared with the API client below.
-        services.AddHttpClient(
-                GoogleYouTubeClient.OAuthHttpClientName,
-                (provider, client) => client.Timeout =
-                    TimeSpan.FromSeconds(provider.GetRequiredService<IOptions<YouTubeOptions>>().Value.Http.TimeoutSeconds))
+        // The form posts: the timeout is the configured one, the transport is shared with the API client below, and
+        // the buffered body is bounded. A token answer is a few hundred bytes, so a compromised or misconfigured
+        // token endpoint must not be able to make the callback buffer an arbitrary body inside that timeout.
+        services.AddHttpClient(GoogleYouTubeClient.OAuthHttpClientName, (provider, client) =>
+            {
+                var http = provider.GetRequiredService<IOptions<YouTubeOptions>>().Value.Http;
+
+                client.Timeout = TimeSpan.FromSeconds(http.TimeoutSeconds);
+                client.MaxResponseContentBufferSize = GoogleYouTubeClient.MaxResponseContentBytes;
+            })
             .ConfigurePrimaryHttpMessageHandler(CreateTransport);
 
         // The Google Data API client's handler chain. Its own timeout is unused — the SDK's
@@ -106,7 +111,9 @@ public static class PublishingServiceCollectionExtensions
 /// needs the host — outside Development every endpoint must be <c>https</c> — exactly as <c>BudgetOptionsValidation</c>
 /// does for <c>Budget:Enabled</c>. <c>RedirectUri</c> is deliberately not scheme-checked: it must equal the URI
 /// registered on that environment's Google client (06.1.1-T1) and the committed development value is a loopback
-/// <c>http</c> one, while the four endpoints below are Google's own addresses (https in every environment).
+/// <c>http</c> one, while the four endpoints below are Google's own addresses (https in every environment). The message
+/// names the key and the rule only: an endpoint is configuration, so no value of it reaches a failure text
+/// (06 README D17).
 /// </remarks>
 internal sealed class YouTubeOptionsValidation(IHostEnvironment environment) : IValidateOptions<YouTubeOptions>
 {
@@ -123,7 +130,7 @@ internal sealed class YouTubeOptionsValidation(IHostEnvironment environment) : I
                 Endpoints(options)
                     .Where(endpoint => !endpoint.Value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                     .Select(endpoint =>
-                        $"'{YouTubeOptions.SectionName}:{endpoint.Key}' must be an https URL outside Development; it is '{endpoint.Value}'."));
+                        $"'{YouTubeOptions.SectionName}:{endpoint.Key}' must be an https URL outside Development."));
         }
 
         return problems.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);

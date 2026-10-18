@@ -83,6 +83,23 @@ public static class PublishingEndpoints
     /// <summary>The re-auth window the connect route requires (A5: 5 minutes, 06.1 plan UC1).</summary>
     public static readonly TimeSpan ReauthWindow = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// How long the callback's post-claim work may run (P6): the flow runs on a token of its own instead of
+    /// the request's <c>RequestAborted</c>, so a browser that disconnects after Google spent the code does
+    /// not cancel the exchange and drop a live grant. Two 15-second Google calls plus the claim fit well
+    /// inside it.
+    /// </summary>
+    public static readonly TimeSpan PostClaimTimeout = TimeSpan.FromSeconds(45);
+
+    /// <summary>
+    /// The one line of an unexpected callback failure: the exception's <em>type</em> only. Its message may
+    /// carry a code, a token or a statement, and the redirect is the same fixed answer either way (R5).
+    /// </summary>
+    private static readonly Action<ILogger, string, Exception?> CallbackUnhandled = LoggerMessage.Define<string>(
+        LogLevel.Error,
+        new EventId(6401, "publishing.callback.unhandled"),
+        "publishing.callback.unhandled exceptionType={ExceptionType}");
+
     /// <summary>Maps the channel routes onto the host's route builder.</summary>
     /// <param name="routes">The host's endpoint route builder.</param>
     /// <returns>The same builder, for chaining.</returns>
@@ -171,9 +188,10 @@ public static class PublishingEndpoints
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The nonce cookie is cleared on every flow outcome — the successful connect and each of the four
-    /// failures — before the redirect is built, and the cookie is read before the handler runs (it is the
-    /// handler's second binding), so the read and the clear can never disagree (YR10).
+    /// The nonce cookie is cleared and the two headers are set <em>before</em> the handler runs, so every
+    /// outcome of this endpoint carries them — the successful connect, each of the four failures and a
+    /// failure that throws (R5/F3). The cookie is read first (it is the handler's second binding), so the
+    /// read and the clear can never disagree (YR10).
     /// </para>
     /// <para>
     /// <c>Referrer-Policy: no-referrer</c> is stated explicitly even though 09.9.4-T1's hardening headers
@@ -182,14 +200,17 @@ public static class PublishingEndpoints
     /// the global defaults. <c>Cache-Control: no-store</c> likewise keeps the redirect out of every cache.
     /// </para>
     /// <para>
-    /// An <c>ErrorOr</c> error inside the pipeline is answered as a redirect, never as a 500: a browser
-    /// navigation cannot render a ProblemDetails body. Two buckets are distinguished, both inside the
-    /// closed redirect set — the claiming UPDATE's own refusals (<c>oauth_state_invalid</c>, and the
-    /// <c>concurrency_conflict</c> a race between two Api instances produces, where the loser holds no
-    /// state exactly as a replayed one does) answer the generic "expired or already used" target, and
-    /// every other pipeline failure — a commit mapping of unit of work #2 — answers the generic exchange
-    /// failure. Neither target carries the pipeline's error text, and the failure is already logged by
-    /// <c>LoggingBehavior</c> (its <c>outcome</c> member is the first error code).
+    /// An <c>ErrorOr</c> error is answered as a redirect, never as a 500: a browser navigation cannot
+    /// render a ProblemDetails body. The handler answers its four non-connected outcomes as errors, and
+    /// <see cref="FailureOutcome"/> maps each code to its own constant target; every other code — a commit
+    /// mapping of either unit of work — answers the generic exchange failure. No target carries the
+    /// pipeline's error text, and the failure is already logged by <c>LoggingBehavior</c>.
+    /// </para>
+    /// <para>
+    /// A thrown exception is caught here for the same reason: the state is already spent, so the browser
+    /// must still land on the fixed failure redirect rather than on a 500 body. Only the exception's type is
+    /// logged, and only <see cref="OperationCanceledException"/> is rethrown, because cancellation (the
+    /// bounded token, or shutdown) is a mechanism rather than a flow outcome (R5).
     /// </para>
     /// </remarks>
     /// <param name="platform">The platform from the route; only <c>youtube</c> exists in P (07 owns TikTok, S).</param>
@@ -198,8 +219,8 @@ public static class PublishingEndpoints
     /// <param name="error">Google's <c>error</c> query value (<c>access_denied</c> when the user refused), or null.</param>
     /// <param name="sender">The Mediator sender.</param>
     /// <param name="requestInfo">The caller's untrusted IP/User-Agent, for the audit row of the success path.</param>
+    /// <param name="lifetime">The host's shutdown token, so the bounded post-claim token still honours a stop.</param>
     /// <param name="http">The request, for the nonce cookie and the response headers.</param>
-    /// <param name="ct">The request cancellation token.</param>
     private static async Task<IResult> CompleteConnectAsync(
         string platform,
         [FromQuery(Name = "code")] string? code,
@@ -207,30 +228,63 @@ public static class PublishingEndpoints
         [FromQuery(Name = "error")] string? error,
         ISender sender,
         IRequestInfoAccessor requestInfo,
-        HttpContext http,
-        CancellationToken ct)
+        IHostApplicationLifetime lifetime,
+        HttpContext http)
     {
-        // 06.1 plan §5.1: a platform other than `youtube` is the same 404 a missing route answers — the
-        // route value is checked here because the command carries no platform (the state row has it).
-        if (!PlatformExtensions.TryParse(platform, out _))
+        // 06.1 plan §5.1: a platform other than `youtube` is the same 404 a missing route answers. The
+        // parsed value also travels into the command, where it is the claim's second predicate, so a state
+        // minted for another platform can never be completed through this route (F8).
+        if (!PlatformExtensions.TryParse(platform, out var routePlatform))
         {
             return ProblemDetailsWriter.ToProblem([Errors.NotFound()], http);
         }
 
         var nonce = OAuthNonceCookie.Read(http.Request);
 
-        var result = await sender
-            .Send(
-                new CompleteYouTubeConnectCommand(code, state, error, nonce, requestInfo.Current),
-                ct)
-            .ConfigureAwait(false);
-
-        OAuthNonceCookie.Clear(http.Response);
-
+        // The two headers and the clear are written before the handler runs, so every outcome of the flow
+        // carries them — the successful connect, each of the four failures, and one that throws (R5/F3). The
+        // state is single-use and already spent by then, so leaving the nonce for its ten-minute Max-Age
+        // would only let the browser present a cookie that can never complete a connect again.
         http.Response.Headers.CacheControl = "no-store";
         http.Response.Headers["Referrer-Policy"] = "no-referrer";
+        OAuthNonceCookie.Clear(http.Response);
 
-        var outcome = result.IsError ? FailureOutcome(result.Errors) : result.Value;
+        // The post-claim work runs on a token of its own (P6): a browser that disconnects while Google is
+        // answering must not cancel the exchange, because the code is already spent and the grant Google
+        // just minted would be dropped un-stored. Application shutdown still wins, and the timeout bounds a
+        // stuck Google call.
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
+        bounded.CancelAfter(PostClaimTimeout);
+
+        ErrorOr<ConnectYouTubeOutcome> result;
+        try
+        {
+            result = await sender
+                .Send(
+                    new CompleteYouTubeConnectCommand(routePlatform, code, state, error, nonce, requestInfo.Current),
+                    bounded.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The shutdown or the bounded timeout, not the caller: the pipeline has rolled unit of work #2
+            // back, so the fixed redirect is the honest answer. Cancellation is not an exception to hide.
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // By type only (09 README D17, FetcherEndpoints precedent): the exception's message may hold a
+            // URL, a statement or a token response, so the record never carries it (R5).
+            CallbackUnhandled(
+                http.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("NightTales.Api.Publishing.Callback"),
+                exception.GetType().Name,
+                null);
+
+            return Results.Redirect(ErrorRedirectPrefix + ErrorCodes.OauthExchangeFailed);
+        }
+
+        var outcome = result.IsError ? FailureOutcome(result.Errors) : ConnectYouTubeOutcome.Connected;
 
         return Results.Redirect(outcome switch
         {
@@ -243,22 +297,36 @@ public static class PublishingEndpoints
     }
 
     /// <summary>
-    /// The outcome of an <c>ErrorOr</c> error the pipeline returned instead of one of the five
-    /// success-typed values: the claim's own refusals keep the state bucket, every other failure is the
-    /// generic exchange failure.
+    /// The outcome of the <c>ErrorOr</c> error the handler (or the pipeline's own commit mapping) returned:
+    /// the handler's four failure codes each name their own member, and every other code — a
+    /// <c>concurrency_conflict</c> from unit #2's commit, a <c>service_unavailable</c> from unit #1's, an
+    /// unmapped provider failure — is the generic exchange failure.
     /// </summary>
     /// <remarks>
-    /// <c>CompleteYouTubeConnectHandler</c> is success-typed, so an error means the pipeline refused the
-    /// call rather than the flow failing at Google: unit of work #1's commit mapped a concurrency or
-    /// referential refusal (<c>oauth_state_invalid</c>, <c>concurrency_conflict</c> — the loser of a race
-    /// between two Api instances holds no state, exactly like a replay), or unit of work #2's commit was
-    /// mapped. Both targets are constants of the closed redirect set, so the distinction leaks nothing:
-    /// the two state answers are already indistinguishable from each other on the wire (YR10), and the
-    /// remaining failures all read as "Google did not complete the connection".
+    /// <para>
+    /// The handler answers <c>oauth_state_invalid</c>, <c>oauth_denied</c>, <c>oauth_exchange_failed</c> and
+    /// <c>channel_already_connected</c> for the four non-connected outcomes, so this split is what turns an
+    /// error back into the enum the redirect set is expressed in. Every target below is a constant of that
+    /// set, so the distinction leaks nothing: the state answer is already indistinguishable from any other
+    /// unclaimable state on the wire (YR10), and every other failure reads as "Google did not complete the
+    /// connection".
+    /// </para>
+    /// <para>
+    /// <c>concurrency_conflict</c> is deliberately <em>not</em> mapped to <see
+    /// cref="ConnectYouTubeOutcome.StateInvalid"/> (R6): its only real source is unit #2's commit — a
+    /// reconnect race against the T2 writer, or the active-run mapping of <c>EfUnitOfWork</c> — where the
+    /// state was valid and has already been spent, so telling the user the link was invalid would be a lie.
+    /// </para>
     /// </remarks>
-    private static ConnectYouTubeOutcome FailureOutcome(List<Error> errors)
-        => errors is { Count: > 0 } && errors[0].Code is ErrorCodes.OauthStateInvalid or ErrorCodes.ConcurrencyConflict
-            ? ConnectYouTubeOutcome.StateInvalid
+    private static ConnectYouTubeOutcome FailureOutcome(List<Error> errors) =>
+        errors is { Count: > 0 }
+            ? errors[0].Code switch
+            {
+                ErrorCodes.OauthStateInvalid => ConnectYouTubeOutcome.StateInvalid,
+                ErrorCodes.OauthDenied => ConnectYouTubeOutcome.Denied,
+                ErrorCodes.ChannelAlreadyConnected => ConnectYouTubeOutcome.ChannelAlreadyConnected,
+                _ => ConnectYouTubeOutcome.ExchangeFailed,
+            }
             : ConnectYouTubeOutcome.ExchangeFailed;
 
     /// <summary>
