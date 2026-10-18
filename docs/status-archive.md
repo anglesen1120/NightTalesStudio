@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 64 close-out wording (2026-10-19, replaced by the 09.7.1-T1 close-out)
+
+Replaced text (verbatim):
+
+- Resume bullet heading: `- **Backend (Session 64, PR #249):**`
+- Open tasks row 09.7.1-T1 status start: `**PR #249 open** (Session 64`
+- Migrations bullet fragment: `(09.7.1-T1, PR #249;`
+
 ### Superseded Session 64 wording (2026-10-19, replaced by the 09.7.1-T1 delivery)
 
 Replaced text (verbatim):
