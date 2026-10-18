@@ -57,7 +57,7 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
             return ValueTask.CompletedTask;
         };
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         reportDuringMerge.ShouldBe("-", "the verdict is not readable before the transaction commits");
         assetsDuringMerge.ShouldBe(0, "neither are the assets");
@@ -119,7 +119,7 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
         harness.Hooks.Images = new JsonObject { ["schema"] = "images.v1", ["canary"] = ImagesCanary };
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.ReportChecks(Database, world).ShouldBeGreaterThanOrEqualTo(3);
         IngestDb.Report(Database, world, "->'images'->>'canary'").ShouldBe(ImagesCanary);

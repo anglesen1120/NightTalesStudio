@@ -61,8 +61,8 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
         harness.Render.EnqueueStatus(body);
         harness.Blobs.PutBarrier = new Barrier(2);
 
-        var first = harness.RunAsync(world.RenderJobId);
-        var second = harness.RunAsync(world.RenderJobId);
+        var first = harness.RunAsync(world.RenderJobId, Ct);
+        var second = harness.RunAsync(world.RenderJobId, Ct);
         var firstError = await Record.ExceptionAsync(() => first);
         var secondError = await Record.ExceptionAsync(() => second);
         firstError.ShouldBeNull();
@@ -144,7 +144,7 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
                 IngestBodies.Output(video, subtitles),
                 IngestBodies.Check(errors: ["ffmpeg: torn frame at 00:01:02"])));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_quality_failed|false");
         IngestDb.AssetCount(Database, world).ShouldBe(0);
@@ -188,7 +188,7 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         var messages = harness.Logs.Entries.Select(entry => entry.Message).ToList();
         messages.ShouldAllBe(message => !message.Contains("https://", StringComparison.OrdinalIgnoreCase));
@@ -226,10 +226,9 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
         harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
-        harness.Money.Settles.Count.ShouldBe(
-            1,
-            "the settlement runs before the terminal write and outside its transaction, so a later failure rolls "
-            + "the row back over an already-settled reservation (recorded in the task's Delivery notes)");
+        harness.Money.Settles.ShouldBeEmpty(
+            "the settlement is the last statement before the commit (C3), and the kept-video hook that fails here "
+            + "runs before it, so the reservation is never settled and then refunded by the same attempt");
         JobKeys(harness).ShouldBeEmpty();
         harness.TempFiles().ShouldBeEmpty();
         harness.Logs.Entries.ShouldContain(
@@ -357,6 +356,235 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
+        harness.Money.Refunds.ShouldHaveSingleItem();
+        harness.TempFiles().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// C2: the episode leaves <c>rendering</c> behind the attempt (a cancel, an owner action), so the output is
+    /// real but there is no episode left to attach it to. The attempt ends through the recorder, and the rows it
+    /// had already staged — the two assets and the passing verdict — must not survive into that ending: the
+    /// verdict would sit on a failed row and the asset rows would name objects the ending deletes.
+    /// </summary>
+    [Fact]
+    public async Task AttachRefused_OnLastAttempt_EndsRowFailedWithoutTheStagedRows()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { EpisodeStatus = "story_approved" });
+        var video = harness.Downloads.ServeVideo(4096);
+        var subtitles = harness.Downloads.ServeSubtitles();
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
+
+        await harness.RunLastAttemptAsync(world.RenderJobId);
+
+        IngestDb.Row(Database, world).ShouldBe(
+            "failed|render_node_error|-",
+            "the verdict is dropped with the attempt's other staged rows, so the failed row carries no report");
+        IngestDb.AssetCount(Database, world).ShouldBe(0, "the staged asset rows never reach the table");
+        IngestDb.Episode(Database, world).ShouldBe("story_approved|-", "the episode keeps the state it moved to");
+        IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(1);
+        IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
+        harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
+        harness.Money.Settles.ShouldBeEmpty();
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey, world.SubtitlesKey]);
+        JobKeys(harness).ShouldBeEmpty();
+        harness.TempFiles().ShouldBeEmpty();
+        harness.IngestLines().ShouldContain(
+            entry => entry.EventId == 6359,
+            "the refused attach names the episode state that refused it");
+    }
+
+    /// <summary>
+    /// C2, the cancel-requested variant: a row the owner asked to cancel never waits for another attempt (WT51),
+    /// so the refused attach ends it here even though the scheduler still had attempts left — and still without
+    /// the rows it had staged.
+    /// </summary>
+    [Fact]
+    public async Task AttachRefused_OnCancelRequestedRow_EndsTheRowWithoutWaitingForARetry()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(
+            Database,
+            Ct,
+            new IngestSeed { EpisodeStatus = "story_approved", CancelRequested = true });
+        var video = harness.Downloads.ServeVideo(4096);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+
+        await harness.RunAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+
+        IngestDb.Row(Database, world).ShouldBe("failed|render_node_error|-");
+        IngestDb.AssetCount(Database, world).ShouldBe(0);
+        IngestDb.JobCount(Database, world).ShouldBe(1, "a cancelled render queues no retry row");
+        harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey, world.SubtitlesKey]);
+        harness.TempFiles().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// C4: the ingest leg — a download plus up to two uploads — can take minutes, so the instants the success path
+    /// stamps are read inside the final transaction instead of at the moment the attempt was picked up. The clock
+    /// moves while the download streams, and every stamp (the row's <c>finished_at</c>, the video asset's
+    /// <c>created_at</c> and retention, the audit row and the event) must carry the later reading.
+    /// </summary>
+    [Fact]
+    public async Task IngestLegThatOutlivesTheEntryReading_StampsTheFinalReading()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+
+        var finishedAt = IngestHarness.Start.AddMinutes(7);
+        harness.Downloads.OnBeforeWrite = _ =>
+        {
+            harness.Clock.Set(finishedAt);
+
+            return ValueTask.CompletedTask;
+        };
+
+        await harness.RunAsync(world.RenderJobId, Ct);
+
+        IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
+        IngestDb.Stamps(Database, world, finishedAt, finishedAt.AddDays(IngestHarness.UnapprovedRetentionDays))
+            .ShouldBe(
+                "true|true|true|true|true",
+                "the row, the asset and its retention, the audit row and the event all carry the reading taken "
+                + "inside the final transaction");
+    }
+
+    /// <summary>
+    /// C5/S3: a delivery that reaches its final transaction behind another delivery that already ended the row as
+    /// <c>failed</c> commits nothing — and clears both of the row's deterministic objects, because a failed row
+    /// owns neither. A success would keep them (they are its own two keys).
+    /// </summary>
+    [Fact]
+    public async Task RowEndedFailedByAnotherDelivery_IsANoOpThatClearsBothKeys()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        var subtitles = harness.Downloads.ServeSubtitles();
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
+        harness.Downloads.OnBeforeWrite = async _ =>
+        {
+            await Database.ExecuteAsync(
+                $"UPDATE render_jobs SET status = 'failed', error_code = 'render_node_error' "
+                + $"WHERE id = '{world.RenderJobId}'",
+                Ct);
+        };
+
+        await harness.RunAsync(world.RenderJobId, Ct);
+
+        IngestDb.Row(Database, world).ShouldStartWith("failed|");
+        IngestDb.AssetCount(Database, world).ShouldBe(0);
+        IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
+        harness.Money.Settles.ShouldBeEmpty();
+        harness.Money.Refunds.ShouldBeEmpty();
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe(
+            [world.VideoKey, world.SubtitlesKey],
+            "a row another delivery ended as failed owns neither key, so this attempt clears both");
+        JobKeys(harness).ShouldBeEmpty();
+        harness.IngestLines().ShouldContain(entry => entry.EventId == 6301);
+    }
+
+    /// <summary>
+    /// C6/S2: a delivery that decides to fail must not refund a reservation another delivery already settled, nor
+    /// end a row it already ended. Hangfire redelivers a job whose download outlived the invisibility timeout, so
+    /// the shape is real: the row turns terminal behind this attempt, and the failure path's row lock plus
+    /// committed-status re-read is what keeps it the logged no-op of AC8 instead of a second ending.
+    /// </summary>
+    [Fact]
+    public async Task FailingDelivery_OnARowAnotherDeliveryCommitted_RefundsNothing()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideoFailure(
+            new RenderClientFailure(
+                RenderClientFailureKind.TransientFailure,
+                "adapter_node_overloaded",
+                "scripted: the node dropped the connection",
+                Alert: false,
+                RetryAfter: TimeSpan.FromSeconds(5)));
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+        harness.Downloads.OnBeforeWrite = async _ =>
+        {
+            await Database.ExecuteAsync(
+                $"UPDATE render_jobs SET status = 'succeeded', finished_at = now() WHERE id = '{world.RenderJobId}'",
+                Ct);
+        };
+
+        await harness.RunLastAttemptAsync(world.RenderJobId);
+
+        IngestDb.Row(Database, world).ShouldStartWith("succeeded|");
+        IngestDb.Outbox(Database, world, RenderFailed).ShouldBe(0);
+        IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0, "this delivery raises no event of its own");
+        harness.Money.Refunds.ShouldBeEmpty("the row another delivery settled is never refunded again");
+        harness.Money.Settles.ShouldBeEmpty();
+        harness.Blobs.Deletes.ShouldBeEmpty("a success owns both keys, so nothing is cleared");
+        harness.Logs.Entries.ShouldContain(entry => entry.EventId == 6301);
+    }
+
+    /// <summary>
+    /// S3: a shutdown cancels the attempt's token mid-download. The attempt's writes are dropped and both objects
+    /// are deleted best-effort with a token of their own — the cancelled one would refuse the deletes — and the
+    /// row is left where it was, because the scheduler re-runs the job when the host comes back.
+    /// </summary>
+    [Fact]
+    public async Task ShutdownMidDownload_ClearsBothKeysWithItsOwnToken()
+    {
+        using var shutdown = new CancellationTokenSource();
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+        harness.Downloads.OnBeforeWrite = _ =>
+        {
+            shutdown.Cancel();
+
+            return ValueTask.CompletedTask;
+        };
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => harness.RunAsync(world.RenderJobId, shutdown.Token));
+
+        IngestDb.Row(Database, world).ShouldStartWith("ingesting|");
+        harness.Money.Refunds.ShouldBeEmpty();
+        harness.Money.Settles.ShouldBeEmpty();
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe(
+            [world.VideoKey, world.SubtitlesKey],
+            "the shutdown path clears both objects with a token that is not the cancelled one");
+        harness.TempFiles().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// S6: an output the node declares as empty is refused as <c>render_output_invalid</c> before anything is
+    /// stored. The empty body has a real hash and the declared byte count matches what was served, so without the
+    /// zero-byte check the declaration and the served bytes agree on nothing at all and an empty video would be
+    /// stored as the episode's final asset.
+    /// </summary>
+    [Fact]
+    public async Task ZeroByteVideo_FailsRenderOutputInvalid()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(0);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+
+        await harness.RunLastAttemptAsync(world.RenderJobId);
+
+        IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
+        harness.IngestLines().ShouldContain(
+            entry => entry.EventId == 6308 && entry.Message.Contains("bytes_zero", StringComparison.Ordinal),
+            "the reason the output was refused is the zero-byte one");
+        JobPuts(harness).ShouldBeEmpty();
+        JobKeys(harness).ShouldBeEmpty();
         harness.Money.Refunds.ShouldHaveSingleItem();
         harness.TempFiles().ShouldBeEmpty();
     }

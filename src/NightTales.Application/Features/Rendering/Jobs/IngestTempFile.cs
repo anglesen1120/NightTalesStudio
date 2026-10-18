@@ -108,6 +108,9 @@ public sealed class IngestTempFile : IDisposable
             Access = FileAccess.ReadWrite,
             Share = FileShare.Read,
             Options = FileOptions.Asynchronous | FileOptions.SequentialScan | FileOptions.DeleteOnClose,
+            // P7 (S57 perf review): the default 4 KiB buffer turns the upload's read side (the S3 SDK reads in
+            // small chunks) into 4 KiB fills / small syscalls over a file of up to 2 GiB. One 80 KiB buffer.
+            BufferSize = 81_920,
         };
 
         if (!OperatingSystem.IsWindows())

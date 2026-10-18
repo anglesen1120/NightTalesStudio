@@ -34,7 +34,7 @@ public sealed class IngestIdempotencyTests(TestDatabase database) : IntegrationT
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         // The delivered world, captured before the replay.
         var rowAfterFirstRun = IngestDb.Row(Database, world);
@@ -47,7 +47,7 @@ public sealed class IngestIdempotencyTests(TestDatabase database) : IntegrationT
         putKeysAfterFirstRun.Count.ShouldBe(2);
 
         // Replay: the same job id, delivered again.
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe(rowAfterFirstRun);
         IngestDb.Episode(Database, world).ShouldBe(episodeAfterFirstRun);
@@ -87,7 +87,7 @@ public sealed class IngestIdempotencyTests(TestDatabase database) : IntegrationT
         var refundsAfterFirstRun = harness.Money.Refunds.Count;
         refundsAfterFirstRun.ShouldBe(1);
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);

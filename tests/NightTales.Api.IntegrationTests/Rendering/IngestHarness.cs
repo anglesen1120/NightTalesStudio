@@ -83,6 +83,13 @@ internal sealed record IngestSeed
     /// <summary>The <c>render_jobs.status</c> the poller left behind.</summary>
     public string Status { get; init; } = "ingesting";
 
+    /// <summary>
+    /// The episode's status the seed leaves behind: <c>rendering</c> for every normal ingest, and something else
+    /// when the test needs the episode to have moved on before the ingest runs — the refused-attach branch, where
+    /// the output is real but there is no episode left to attach it to (C2).
+    /// </summary>
+    public string EpisodeStatus { get; init; } = "rendering";
+
     /// <summary>The stored stage, as the adapter reported it.</summary>
     public string Stage { get; init; } = "done";
 
@@ -154,7 +161,7 @@ internal static class IngestWorlds
         var taskId = Guid.CreateVersion7();
 
         await database.ExecuteAsync(
-            $"UPDATE episodes SET status = 'rendering' WHERE id = '{episode.Id}'",
+            $"UPDATE episodes SET status = '{world.EpisodeStatus}' WHERE id = '{episode.Id}'",
             cancellationToken);
 
         await database.ExecuteAsync(
@@ -1308,6 +1315,37 @@ internal static class IngestDb
     public static long JobCount(TestDatabase database, IngestWorld world) =>
         SqlProbe.Count(database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'");
 
+    /// <summary>
+    /// The instants the success path stamps, each as the boolean "equals <paramref name="at"/>", in one string:
+    /// the row's <c>finished_at</c>, the video asset's <c>created_at</c>, its <c>retention_until</c>, the audit
+    /// row's <c>created_at</c> and the success event's <c>occurred_at</c>. All five read true when the ingest
+    /// stamped them from the clock reading taken inside the final transaction, not from the one it entered the
+    /// attempt with (C4).
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The seeded world.</param>
+    /// <param name="at">The instant the ingest leg finished at.</param>
+    /// <param name="retentionUntil">The instant the video asset's retention must equal.</param>
+    /// <returns>Five <c>true</c>/<c>false</c> flags, joined by <c>|</c>.</returns>
+    public static string Stamps(
+        TestDatabase database,
+        IngestWorld world,
+        DateTimeOffset at,
+        DateTimeOffset retentionUntil) =>
+        SqlProbe.ScalarText(
+            database,
+            "SELECT (SELECT (finished_at = "
+            + $"'{IngestTime.Literal(at)}'::timestamptz)::text FROM render_jobs WHERE id = '{world.RenderJobId}')"
+            + " || '|' || (SELECT (created_at = "
+            + $"'{IngestTime.Literal(at)}'::timestamptz)::text || '|' || (retention_until = "
+            + $"'{IngestTime.Literal(retentionUntil)}'::timestamptz)::text FROM assets "
+            + $"WHERE episode_id = '{world.EpisodeId}' AND kind = 'video')"
+            + " || '|' || (SELECT (created_at = "
+            + $"'{IngestTime.Literal(at)}'::timestamptz)::text FROM audit_logs WHERE entity_id = '{world.RenderJobId}')"
+            + " || '|' || (SELECT (occurred_at = "
+            + $"'{IngestTime.Literal(at)}'::timestamptz)::text FROM outbox_messages "
+            + $"WHERE type = 'render_succeeded.v1' AND user_id = '{world.UserId}')");
+
     /// <summary>How many outbox rows of one type the owner has.</summary>
     /// <param name="database">The class database.</param>
     /// <param name="world">The seeded world.</param>
@@ -1489,6 +1527,13 @@ internal sealed class IngestHarness : IAsyncDisposable
     /// <summary>The scripted, recorded download client.</summary>
     public FakeRenderDownloadClient Downloads { get; } = new();
 
+    /// <summary>
+    /// The host's clock. Every other test leaves it at <see cref="IngestTime.Start"/>; a test that needs the
+    /// ingest leg to have taken real time advances it from a download hook and asserts the instants that were
+    /// stamped from the clock reading taken inside the final transaction (C4).
+    /// </summary>
+    public FakeClock Clock { get; } = new(IngestTime.Start);
+
     /// <summary>The recorded blob store.</summary>
     public RecordingBlobStore Blobs { get; }
 
@@ -1517,7 +1562,7 @@ internal sealed class IngestHarness : IAsyncDisposable
 
         var harness = new IngestHarness(tempDirectory, cancellationToken);
 
-        harness.Host = new WorkerHost(database, new FakeClock(IngestTime.Start))
+        harness.Host = new WorkerHost(database, harness.Clock)
             .WithSetting(
                 $"{RenderIngestOptions.SectionName}:{nameof(RenderIngestOptions.TempDirectory)}",
                 tempDirectory)
@@ -1542,19 +1587,31 @@ internal sealed class IngestHarness : IAsyncDisposable
     public string[] TempFiles() =>
         Directory.Exists(TempDirectory) ? Directory.GetFiles(TempDirectory) : [];
 
-    /// <summary>The lines of the ingest itself (event ids 6300-6321), without the host's own start-up noise.</summary>
+    /// <summary>The lines of the ingest itself (its 6300-6339 and 6359 event-id block), without the host's own
+    /// start-up noise.</summary>
     /// <returns>The ingest's lines, in order.</returns>
     public IReadOnlyList<IngestLogEntry> IngestLines() =>
-        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6321)];
+        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6339 or 6359)];
 
     /// <summary>Runs the ingest of <paramref name="renderJobId"/> the way the scheduler does: in its own scope.</summary>
     /// <param name="renderJobId">The <c>render_jobs</c> row.</param>
     /// <returns>A task that completes when the attempt ended.</returns>
-    public async Task RunAsync(Guid renderJobId)
+    public Task RunAsync(Guid renderJobId) => RunAsync(renderJobId, _cancellationToken);
+
+    /// <summary>
+    /// Runs the ingest of <paramref name="renderJobId"/> under a token of the caller's own: the shutdown path a
+    /// test drives by cancelling it mid-download, while the host keeps the token it started with.
+    /// </summary>
+    /// <param name="renderJobId">The <c>render_jobs</c> row.</param>
+    /// <param name="cancellationToken">The token the attempt runs under.</param>
+    /// <returns>A task that completes when the attempt ended.</returns>
+    public async Task RunAsync(Guid renderJobId, CancellationToken cancellationToken)
     {
         using var scope = Host.CreateScope();
 
-        await scope.ServiceProvider.GetRequiredService<IngestRenderOutputJob>().RunAsync(renderJobId, _cancellationToken);
+        await scope.ServiceProvider
+            .GetRequiredService<IngestRenderOutputJob>()
+            .RunAsync(renderJobId, cancellationToken);
     }
 
     /// <summary>Runs the ingest of the last of <paramref name="maxAttempts"/> scheduler attempts.</summary>

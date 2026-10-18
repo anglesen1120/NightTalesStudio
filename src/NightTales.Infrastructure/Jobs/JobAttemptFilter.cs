@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Hangfire.Common;
 using Hangfire.Server;
 using NightTales.Application.Abstractions.Jobs;
@@ -43,6 +44,12 @@ public sealed class JobAttemptFilter : IServerFilter
     private const string HandleItemKey = "nts.job.attempt";
 
     /// <summary>
+    /// The retries each job class declares, read once per class: <see cref="JobPolicy.RetriesOf"/> walks the
+    /// type's attributes on every call, and this global filter runs on every execution of every job.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, int> RetriesByJobType = new();
+
+    /// <summary>
     /// The 1-based attempt and the total the policy allows for a job whose retry counter is
     /// <paramref name="retryCount"/> and whose class declares <paramref name="retries"/> retries.
     /// </summary>
@@ -63,12 +70,28 @@ public sealed class JobAttemptFilter : IServerFilter
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        var retries = RetriesOf(context.BackgroundJob.Job.Type);
+
+        // A class with no retries has exactly one attempt, so the answer is (1, 1) whatever the
+        // scheduler would report: skip the storage round trip that reads the RetryCount parameter.
+        if (retries == 0)
+        {
+            context.Items[HandleItemKey] = JobAttemptScope.Set(attempt: 1, maxAttempts: 1);
+            return;
+        }
+
         var (attempt, maxAttempts) = Resolve(
             context.GetJobParameter<int>(RetryCountParameter),
-            JobPolicy.RetriesOf(context.BackgroundJob.Job.Type));
+            retries);
 
         context.Items[HandleItemKey] = JobAttemptScope.Set(attempt, maxAttempts);
     }
+
+    /// <summary>The retries of <paramref name="jobType"/>, read once per class and cached.</summary>
+    /// <param name="jobType">The declaring type of the job about to run.</param>
+    /// <returns>The retry attempts the class declares; 0 for a class without the policy.</returns>
+    private static int RetriesOf(Type jobType) =>
+        RetriesByJobType.GetOrAdd(jobType, static type => JobPolicy.RetriesOf(type));
 
     /// <inheritdoc />
     public void OnPerformed(PerformedContext context)

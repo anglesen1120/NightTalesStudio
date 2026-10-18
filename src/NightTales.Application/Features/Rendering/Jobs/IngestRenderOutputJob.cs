@@ -123,6 +123,32 @@ public sealed partial class IngestRenderOutputJob(
     /// <c>render-quality.v1</c> its readers expect.</summary>
     private static readonly JsonSerializerOptions ReportJson = new(RenderNodeJson.Strict);
 
+    /// <summary>
+    /// What one run of the ingest addresses: the scope's context, the media store and the two object keys BD7
+    /// fixes for the row. Set once at the start of <see cref="RunAsync"/> so every ending can take the row lock,
+    /// re-read the committed status and clear both objects best-effort without threading five values through every
+    /// helper (S2, S3, C5, C6). A scoped job instance runs one <see cref="RunAsync"/> at a time, so this is
+    /// per-run state, not shared state.
+    /// </summary>
+    private IngestRun? _run;
+
+    /// <summary>The state of the run in progress.</summary>
+    private IngestRun Run =>
+        _run ?? throw new InvalidOperationException("The ingest run state was not initialised by RunAsync.");
+
+    /// <summary>What one run addresses: the context, the store and the bucket, and the row's two object keys.</summary>
+    /// <param name="Db">The tenant-scoped context the run reads and writes through.</param>
+    /// <param name="Blobs">The media blob store.</param>
+    /// <param name="Bucket">The media bucket the two keys live in.</param>
+    /// <param name="VideoKey">The row's video object key (BD7).</param>
+    /// <param name="SubtitlesKey">The row's subtitle object key (BD7).</param>
+    private sealed record IngestRun(
+        IAppDbContext Db,
+        IBlobStore Blobs,
+        string Bucket,
+        string VideoKey,
+        string SubtitlesKey);
+
     /// <summary>Runs the ingest of <paramref name="renderJobId"/>.</summary>
     /// <param name="renderJobId">The <c>render_jobs</c> row to ingest (the only argument, D12).</param>
     /// <param name="cancellationToken">The scheduler's token for this attempt.</param>
@@ -176,10 +202,26 @@ public sealed partial class IngestRenderOutputJob(
 
         // Step 1. At-least-once delivery: a row whose verdict is written never moves again, so a second run of
         // this job is a logged no-op (AC8).
+        var bucket = BlobLocator.BucketFor(AssetKind.Video, storage);
+        var videoKey = Key(job, "video", VideoExtension);
+        var subtitlesKey = Key(job, "subtitles", SubtitlesExtension);
+
+        // The two keys BD7 fixes for this row, so every ending below can clear both objects best-effort (S3):
+        // a node error or a crash must not leave a paid render unreferenced in the media bucket.
+        _run = new IngestRun(db, blobs, bucket, videoKey, subtitlesKey);
+
         if (IsTerminal(job.Status))
         {
             var terminal = job.Status.ToString();
             LogTerminalNoOp(job.Id, terminal);
+
+            // A row the watchdog or a cancel ended while an attempt was still uploading keeps that attempt's two
+            // objects, so a delivery that finds it terminal clears them best-effort (S3). A row that *succeeded*
+            // keeps them: a concurrent success stored these exact keys (C5).
+            if (job.Status is RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+            {
+                await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+            }
 
             return;
         }
@@ -193,10 +235,6 @@ public sealed partial class IngestRenderOutputJob(
 
             return;
         }
-
-        var bucket = BlobLocator.BucketFor(AssetKind.Video, storage);
-        var videoKey = Key(job, "video", VideoExtension);
-        var subtitlesKey = Key(job, "subtitles", SubtitlesExtension);
 
         if (await db.Assets
                 .AnyAsync(asset => asset.StorageKey == videoKey, cancellationToken)
@@ -347,7 +385,6 @@ public sealed partial class IngestRenderOutputJob(
             return;
         }
 
-        var written = new List<string>(2);
         string? subtitlesSha = null;
         long subtitlesBytes = 0;
         IngestTempFile? video = null;
@@ -470,10 +507,6 @@ public sealed partial class IngestRenderOutputJob(
                 .PutAsync(bucket, videoKey, video.Rewind(), VideoContentType, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Recorded before the answer is read: a PUT the store refused may still have left bytes under the
-            // key, and every path that ends this attempt without keeping the output deletes what it wrote (D4).
-            written.Add(videoKey);
-
             if (storedVideo.IsError || !HashMatches(storedVideo.Value.Sha256, downloaded.Value.Sha256))
             {
                 LogStoreFailed(job.Id, videoKey, storedVideo.IsError ? storedVideo.FirstError.Code : Sha256Mismatch);
@@ -488,8 +521,7 @@ public sealed partial class IngestRenderOutputJob(
                     recorder,
                     metrics,
                     unitOfWork,
-                    cancellationToken,
-                    () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
 
                 return;
             }
@@ -499,8 +531,6 @@ public sealed partial class IngestRenderOutputJob(
                 var storedTrack = await blobs
                     .PutAsync(bucket, subtitlesKey, subtitles.Rewind(), SubtitlesContentType, cancellationToken)
                     .ConfigureAwait(false);
-
-                written.Add(subtitlesKey);
 
                 if (storedTrack.IsError || !HashMatches(storedTrack.Value.Sha256, trackSha))
                 {
@@ -516,8 +546,7 @@ public sealed partial class IngestRenderOutputJob(
                         recorder,
                         metrics,
                         unitOfWork,
-                        cancellationToken,
-                        () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
+                        cancellationToken).ConfigureAwait(false);
 
                     return;
                 }
@@ -535,8 +564,6 @@ public sealed partial class IngestRenderOutputJob(
             if (episode is null)
             {
                 LogEpisodeMissing(job.Id, job.EpisodeId);
-
-                await DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken).ConfigureAwait(false);
 
                 await RetryOrFailAsync(
                     job,
@@ -585,8 +612,21 @@ public sealed partial class IngestRenderOutputJob(
                 LogTerminalNoOp(job.Id, stored);
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
+                // The committed verdict is another delivery's: a success owns these two keys, so they stay, while
+                // a row the watchdog or a cancel ended keeps nothing of this attempt (C5/S3).
+                if (committed.Value is RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+                {
+                    await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+                }
+
                 return;
             }
+
+            // The ingest leg — a download plus up to two uploads — can take minutes, so the instant the output
+            // became durable is read here, inside the final transaction, instead of reusing the entry reading:
+            // FinishedAt, the assets' CreatedAt and retention, the audit row and the event's occurredAt must all
+            // agree with the moment the bytes were stored, not with the moment the job was picked up (C4).
+            var finishedAt = clock.UtcNow;
 
             var images = await hooks.MergeImagesAsync(job, body, cancellationToken).ConfigureAwait(false);
             var merged = report with { Images = images };
@@ -624,7 +664,7 @@ public sealed partial class IngestRenderOutputJob(
 
                 metrics.ObserveDuration(stage, RenderMetrics.OutcomeFailed, clock.UtcNow - startedAt);
 
-                await DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken).ConfigureAwait(false);
+                await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
 
                 return;
             }
@@ -639,14 +679,12 @@ public sealed partial class IngestRenderOutputJob(
                 DurationOf(output.NarrationSeconds),
                 job,
                 options,
-                now,
+                finishedAt,
                 cancellationToken).ConfigureAwait(false);
 
             if (videoAsset.IsError)
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-                await DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken).ConfigureAwait(false);
 
                 throw new InvalidOperationException(
                     $"Storing the video asset of job '{job.Id}' failed ('{videoAsset.FirstError.Code}').");
@@ -664,33 +702,60 @@ public sealed partial class IngestRenderOutputJob(
                     null,
                     job,
                     options,
-                    now,
+                    finishedAt,
                     cancellationToken).ConfigureAwait(false);
 
                 if (subtitleAsset.IsError)
                 {
                     await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                    await DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken).ConfigureAwait(false);
-
                     throw new InvalidOperationException(
                         $"Storing the subtitle asset of job '{job.Id}' failed ('{subtitleAsset.FirstError.Code}').");
                 }
             }
 
-            var attached = episode.AttachFinalVideo(videoAsset.Value, now);
+            var attached = episode.AttachFinalVideo(videoAsset.Value, finishedAt);
             if (attached.IsError)
             {
                 // The episode moved out of `rendering` behind this attempt (a cancel, an owner action): the output
-                // is real but there is no episode to attach it to, so the attempt ends through the recorder.
+                // is real but there is no episode to attach it to, so the attempt ends through the recorder. The
+                // staged rows — the two assets and the verdict — must not survive into that ending, so this
+                // attempt's unsaved changes are dropped and the row is re-read as committed first: the same two
+                // steps the catch block below takes (C2). Without them the recorder's own SaveChanges would
+                // insert asset rows whose objects were just deleted and a passing verdict on a failed row.
                 LogEpisodeStateRefused(job.Id, job.EpisodeId, attached.FirstError.Code);
 
-                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                DiscardPendingChanges(db);
+                await RollbackQuietlyAsync(unitOfWork, job.Id).ConfigureAwait(false);
 
-                await DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken).ConfigureAwait(false);
+                var current = await db.RenderJobs
+                    .SingleOrDefaultAsync(candidate => candidate.Id == job.Id, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (current is null)
+                {
+                    LogJobMissing(job.Id);
+
+                    return;
+                }
+
+                if (IsTerminal(current.Status))
+                {
+                    var stored = current.Status.ToString();
+
+                    LogTerminalNoOp(job.Id, stored);
+
+                    // A row another delivery already ended keeps its objects only when that ending was a success.
+                    if (current.Status is RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+                    {
+                        await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+                    }
+
+                    return;
+                }
 
                 await RetryOrFailAsync(
-                    job,
+                    current,
                     RenderOutcomeCodes.RenderNodeError,
                     stage,
                     startedAt,
@@ -704,7 +769,7 @@ public sealed partial class IngestRenderOutputJob(
                 return;
             }
 
-            var reviewed = episode.RenderSucceeded(now);
+            var reviewed = episode.RenderSucceeded(finishedAt);
             if (reviewed.IsError)
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -713,11 +778,7 @@ public sealed partial class IngestRenderOutputJob(
                     $"Moving episode '{job.EpisodeId}' to video review failed ('{reviewed.FirstError.Code}').");
             }
 
-            // Exactly once, by reservation id, before the row becomes terminal — the same order the failure
-            // recorder uses for its refund (09.6.3-T1).
-            await SettleAsync(ledger, job, cancellationToken).ConfigureAwait(false);
-
-            var succeeded = job.Succeed(now);
+            var succeeded = job.Succeed(finishedAt);
             if (succeeded.IsError)
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -752,9 +813,15 @@ public sealed partial class IngestRenderOutputJob(
                         Ip: (IPAddress?)null,
                         UserAgent: null,
                         ActorLabel: null,
-                        OccurredAt: now),
+                        OccurredAt: finishedAt),
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            // Exactly once, by reservation id, as the last statement before the commit: the settlement is not part
+            // of this unit of work, so issuing it any earlier would let the kept-video hook, the event, the audit
+            // row or the commit fail after a settled reservation — the rollback then refunds a reservation the
+            // ledger already settled (D5/C3). Here only the commit itself can fail after it.
+            await SettleAsync(ledger, job, cancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -810,7 +877,19 @@ public sealed partial class IngestRenderOutputJob(
 
             if (!attempt.IsLastAttempt)
             {
-                throw;
+                // The scheduler downloads the output again, so the exception travels — but never its raw message:
+                // an IO or storage exception can carry the spool path, the blob endpoint or the bucket, and
+                // Hangfire persists the message and the stack in its state table, which the Api's dashboard shows
+                // (S5). Only the type name travels; the job's own typed failures already carry ids and codes, so
+                // they are rethrown unchanged.
+                if (exception is InvalidOperationException)
+                {
+                    throw;
+                }
+
+                throw new InvalidOperationException(
+                    $"The ingest of job '{job.Id}' failed at stage '{stage}' ({exception.GetType().Name}); "
+                    + "the job's next attempt downloads the output again.");
             }
 
             LogAttemptExhausted(job.Id, destination ? "destination" : "unexpected", exception.GetType().Name);
@@ -835,6 +914,12 @@ public sealed partial class IngestRenderOutputJob(
 
                 LogTerminalNoOp(job.Id, stored);
 
+                // A row another delivery already ended keeps its objects only when that ending was a success (C5).
+                if (current.Status is RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+                {
+                    await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+                }
+
                 return;
             }
 
@@ -848,8 +933,23 @@ public sealed partial class IngestRenderOutputJob(
                 recorder,
                 metrics,
                 unitOfWork,
-                cancellationToken,
-                () => DeleteBlobsAsync(blobs, bucket, written, job.Id, cancellationToken)).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // The host is shutting down: the attempt's writes are dropped and its two objects deleted best-effort
+            // (S3) — with a token of their own, because the job's is already cancelled and would refuse the
+            // deletes. They are kept when the committed row already carries another delivery's success, which owns
+            // these exact keys (C5), and the cancellation then travels so the scheduler re-runs the job.
+            DiscardPendingChanges(db);
+            await RollbackQuietlyAsync(unitOfWork, job.Id).ConfigureAwait(false);
+
+            if (!await CommittedSucceededAsync(db, job.Id).ConfigureAwait(false))
+            {
+                await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+            }
+
+            throw;
         }
         finally
         {
@@ -957,6 +1057,13 @@ public sealed partial class IngestRenderOutputJob(
     /// Ends the attempt inside the job, in its own transaction, through the recorder (the D5 code, the retry
     /// decision, one refund by reservation id, the audit row and <c>render_failed.v1</c> at once).
     /// </summary>
+    /// <remarks>
+    /// The failure path opens on the same row lock and committed-status re-read as the success path (S2): a
+    /// delivery that decides to fail while another delivery already committed — Hangfire redelivers a job whose
+    /// download outlived the invisibility timeout — must not refund a reservation that delivery settled, nor end a
+    /// row it already ended. A terminal row is therefore a logged no-op here; a row this attempt is the first to
+    /// end has both of its deterministic objects cleared best-effort once the verdict committed (S3, C5).
+    /// </remarks>
     /// <param name="job">The tracked row.</param>
     /// <param name="code">The D5 outcome code the attempt failed with.</param>
     /// <param name="metricOutcome">The <c>render_duration_seconds</c> outcome tag.</param>
@@ -967,7 +1074,7 @@ public sealed partial class IngestRenderOutputJob(
     /// <param name="metrics">The render instruments.</param>
     /// <param name="unitOfWork">The unit of work the recorder writes in.</param>
     /// <param name="cancellationToken">The caller's token.</param>
-    /// <returns>A task that completes once the row is terminal.</returns>
+    /// <returns>A task that completes once the row is terminal, or once it is found already terminal.</returns>
     private async Task FailAsync(
         RenderJob job,
         string code,
@@ -980,7 +1087,42 @@ public sealed partial class IngestRenderOutputJob(
         IUnitOfWork unitOfWork,
         CancellationToken cancellationToken)
     {
+        var db = Run.Db;
+
         await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+        await db.LockRenderJobForUpdateAsync(job.Id, cancellationToken).ConfigureAwait(false);
+
+        var committed = await db.RenderJobs
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == job.Id)
+            .Select(candidate => (RenderJobStatus?)candidate.Status)
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (committed is null)
+        {
+            LogJobMissing(job.Id);
+            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        if (IsTerminal(committed.Value))
+        {
+            var stored = committed.Value.ToString();
+
+            LogTerminalNoOp(job.Id, stored);
+            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            // A row another delivery already ended keeps its objects only when that ending was a success (C5).
+            if (committed.Value is RenderJobStatus.Failed or RenderJobStatus.Cancelled)
+            {
+                await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
+            }
+
+            return;
+        }
 
         var failed = await recorder
             .FailAsync(job, code, outcomeRetryable: null, cancellationToken)
@@ -1004,6 +1146,9 @@ public sealed partial class IngestRenderOutputJob(
         {
             metrics.CountRetry(code);
         }
+
+        // The row is terminal and committed, so nothing owns these two objects: clear them best-effort (S3/C5).
+        await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1025,10 +1170,6 @@ public sealed partial class IngestRenderOutputJob(
     /// <param name="metrics">The render instruments.</param>
     /// <param name="unitOfWork">The unit of work the recorder writes in.</param>
     /// <param name="cancellationToken">The caller's token.</param>
-    /// <param name="afterEnding">
-    /// The best-effort cleanup of this attempt's own objects, run once the row is terminal and never on the
-    /// rethrow (a rethrown attempt keeps its keys: the next attempt overwrites them, BD7).
-    /// </param>
     /// <returns>A task that completes when the row is either terminal or left for the next attempt.</returns>
     private async Task RetryOrFailAsync(
         RenderJob job,
@@ -1040,8 +1181,7 @@ public sealed partial class IngestRenderOutputJob(
         IRenderFailureRecorder recorder,
         RenderMetrics metrics,
         IUnitOfWork unitOfWork,
-        CancellationToken cancellationToken,
-        Func<Task>? afterEnding = null)
+        CancellationToken cancellationToken)
     {
         if (!lastAttempt && job.CancelRequestedAt is null)
         {
@@ -1049,6 +1189,8 @@ public sealed partial class IngestRenderOutputJob(
                 $"The output of job '{job.Id}' could not be stored ('{code}'); the job's next attempt downloads it again.");
         }
 
+        // A rethrown attempt keeps its keys (the next attempt overwrites them, BD7); the ending itself clears
+        // both of them best-effort inside FailAsync (S3/C5).
         await FailAsync(
             job,
             code,
@@ -1060,11 +1202,6 @@ public sealed partial class IngestRenderOutputJob(
             metrics,
             unitOfWork,
             cancellationToken).ConfigureAwait(false);
-
-        if (afterEnding is not null)
-        {
-            await afterEnding().ConfigureAwait(false);
-        }
     }
 
     /// <summary>Classifies a failed status call: the deferred and not-ready kinds are retried until the scheduler's
@@ -1210,10 +1347,12 @@ public sealed partial class IngestRenderOutputJob(
     /// buy (D5).</summary>
     /// <remarks>
     /// <c>SettleAsync</c> is not the refund of a terminal transition: it has no documented idempotence per
-    /// reservation and it is not part of this job's unit of work, so it is called before the row turns terminal
-    /// and its failure travels (AC3): the attempt's transaction rolls back, the row is not committed
-    /// <c>succeeded</c>, and the attempt is either retried or ended on its last one — never a settled-short
-    /// success. The budget is still its own, because the job's token may already be cancelled by a shutdown.
+    /// reservation and it is not part of this job's unit of work, so its failure travels (AC3): the attempt's
+    /// transaction rolls back, the row is not committed <c>succeeded</c>, and the attempt is either retried or
+    /// ended on its last one — never a settled-short success. It is called as the last statement before the
+    /// commit (C3), so no other step of the success path can fail after a settled reservation — only the commit
+    /// itself, whose rollback then ends the attempt through the failure recorder. The budget is its own, because
+    /// the job's token may already be cancelled by a shutdown.
     /// </remarks>
     /// <param name="ledger">The credit ledger.</param>
     /// <param name="job">The row whose reservation is settled.</param>
@@ -1239,25 +1378,23 @@ public sealed partial class IngestRenderOutputJob(
         }
     }
 
-    /// <summary>Deletes the objects this attempt uploaded before it turned out not to keep them, best effort: the
-    /// verdict that just committed must not be undone by a bucket that answers late.</summary>
+    /// <summary>Deletes objects that no committed row owns, best effort: the verdict that just committed must not
+    /// be undone by a bucket that answers late. The budget is this helper's own, because an ending can be running
+    /// precisely because the job's token was cancelled (S3).</summary>
     /// <param name="blobs">The blob store.</param>
     /// <param name="bucket">The media bucket.</param>
-    /// <param name="keys">The keys uploaded in this attempt.</param>
+    /// <param name="keys">The keys to delete.</param>
     /// <param name="renderJobId">The row the keys belong to (for the log line).</param>
-    /// <param name="cancellationToken">The job's token.</param>
     /// <returns>A task that completes once every delete was attempted.</returns>
     private async Task DeleteBlobsAsync(
         IBlobStore blobs,
         string bucket,
         IReadOnlyList<string> keys,
-        Guid renderJobId,
-        CancellationToken cancellationToken)
+        Guid renderJobId)
     {
         foreach (var key in keys)
         {
-            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            budget.CancelAfter(BestEffortTimeout);
+            using var budget = new CancellationTokenSource(BestEffortTimeout);
 
             try
             {
@@ -1273,6 +1410,39 @@ public sealed partial class IngestRenderOutputJob(
                 LogBlobDeleteSkipped(renderJobId, key, exception.GetType().Name);
             }
         }
+    }
+
+    /// <summary>
+    /// Clears both deterministic objects of this row (BD7: the video key and the subtitle key), best effort.
+    /// Every ending that does not keep the output goes through here, not only the keys this attempt happened to
+    /// have PUT: a node error, a refused attach or a crash must not leave a paid render unreferenced in the media
+    /// bucket, and the delete must not depend on a token a shutdown already cancelled (S3, C5).
+    /// </summary>
+    /// <param name="renderJobId">The row the keys belong to (for the log line).</param>
+    /// <returns>A task that completes once both deletes were attempted.</returns>
+    private Task DeleteRunBlobsAsync(Guid renderJobId) =>
+        _run is { } run
+            ? DeleteBlobsAsync(run.Blobs, run.Bucket, [run.VideoKey, run.SubtitlesKey], renderJobId)
+            : Task.CompletedTask;
+
+    /// <summary>
+    /// Whether the committed row already carries a success: the only ending whose output is kept, and the only one
+    /// whose keys belong to another delivery. Read with <see cref="CancellationToken.None"/> on purpose — it is
+    /// called from the cancellation path, where the job's own token is already cancelled (S3).
+    /// </summary>
+    /// <param name="db">The tenant-scoped context.</param>
+    /// <param name="renderJobId">The row to read.</param>
+    /// <returns>A task that completes with that verdict.</returns>
+    private static async Task<bool> CommittedSucceededAsync(IAppDbContext db, Guid renderJobId)
+    {
+        var stored = await db.RenderJobs
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == renderJobId)
+            .Select(candidate => (RenderJobStatus?)candidate.Status)
+            .SingleOrDefaultAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        return stored is RenderJobStatus.Succeeded;
     }
 
     /// <summary>Asks the adapter to release a task whose output is committed. A failure — including the one retry
@@ -1446,6 +1616,11 @@ public sealed partial class IngestRenderOutputJob(
     /// <returns><c>null</c> when everything matches, otherwise the reason code (never media content).</returns>
     private static string? Invalid(DownloadResult download, RenderFileV1 declared, string expectedContentType)
     {
+        if (download.Bytes == 0)
+        {
+            return ZeroBytes;
+        }
+
         if (download.Bytes != declared.Bytes)
         {
             return BytesMismatch;
@@ -1555,6 +1730,10 @@ public sealed partial class IngestRenderOutputJob(
         exception is IOException
         || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
 
+    /// <summary>The reason of a downloaded output that served no bytes at all (S6: a zero-byte video is a
+    /// failed render, not a stored asset).</summary>
+    private const string ZeroBytes = "bytes_zero";
+
     /// <summary>The reason of a downloaded output whose byte count is not the one the node declared.</summary>
     private const string BytesMismatch = "bytes_mismatch";
 
@@ -1594,13 +1773,13 @@ public sealed partial class IngestRenderOutputJob(
     [LoggerMessage(EventId = 6309, Level = LogLevel.Information, Message = "render_ingest_subtitles_absent renderJobId={RenderJobId}")]
     private partial void LogSubtitlesAbsent(Guid renderJobId);
 
-    [LoggerMessage(EventId = 6310, Level = LogLevel.Error, Message = "render_ingest_store_failed renderJobId={RenderJobId} storageKey={StorageKey} reason={Reason}")]
+    [LoggerMessage(EventId = 6336, Level = LogLevel.Error, Message = "render_ingest_store_failed renderJobId={RenderJobId} storageKey={StorageKey} reason={Reason}")]
     private partial void LogStoreFailed(Guid renderJobId, string storageKey, string reason);
 
-    [LoggerMessage(EventId = 6311, Level = LogLevel.Information, Message = "render_ingest_download_retried renderJobId={RenderJobId} kind={Kind}")]
+    [LoggerMessage(EventId = 6337, Level = LogLevel.Information, Message = "render_ingest_download_retried renderJobId={RenderJobId} kind={Kind}")]
     private partial void LogDownloadRetried(Guid renderJobId, string kind);
 
-    [LoggerMessage(EventId = 6312, Level = LogLevel.Warning, Message = "render_ingest_status_failed renderJobId={RenderJobId} code={Code}")]
+    [LoggerMessage(EventId = 6338, Level = LogLevel.Warning, Message = "render_ingest_status_failed renderJobId={RenderJobId} code={Code}")]
     private partial void LogStatusFailed(Guid renderJobId, string code);
 
     [LoggerMessage(EventId = 6313, Level = LogLevel.Warning, Message = "render_ingest_failed renderJobId={RenderJobId} code={Code} final={Final} retryCreated={RetryCreated}")]
@@ -1624,10 +1803,10 @@ public sealed partial class IngestRenderOutputJob(
     [LoggerMessage(EventId = 6319, Level = LogLevel.Warning, Message = "render_ingest_cleanup_skipped renderJobId={RenderJobId} operation={Operation} reason={Reason}")]
     private partial void LogCleanupSkipped(Guid renderJobId, string operation, string reason);
 
-    [LoggerMessage(EventId = 6320, Level = LogLevel.Error, Message = "render_ingest_episode_missing renderJobId={RenderJobId} episodeId={EpisodeId}")]
+    [LoggerMessage(EventId = 6339, Level = LogLevel.Error, Message = "render_ingest_episode_missing renderJobId={RenderJobId} episodeId={EpisodeId}")]
     private partial void LogEpisodeMissing(Guid renderJobId, Guid episodeId);
 
-    [LoggerMessage(EventId = 6321, Level = LogLevel.Warning, Message = "render_ingest_episode_state_refused renderJobId={RenderJobId} episodeId={EpisodeId} code={Code}")]
+    [LoggerMessage(EventId = 6359, Level = LogLevel.Warning, Message = "render_ingest_episode_state_refused renderJobId={RenderJobId} episodeId={EpisodeId} code={Code}")]
     private partial void LogEpisodeStateRefused(Guid renderJobId, Guid episodeId, string code);
 
     [LoggerMessage(EventId = 6333, Level = LogLevel.Warning, Message = "render_ingest_attempt_exhausted renderJobId={RenderJobId} operation={Operation} kind={Kind}")]

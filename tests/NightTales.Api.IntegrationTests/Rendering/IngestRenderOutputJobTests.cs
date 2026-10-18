@@ -92,7 +92,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         // The row and its stored verdict.
         IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
@@ -156,7 +156,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
         IngestDb.AssetCount(Database, world).ShouldBe(1);
@@ -257,7 +257,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
                 IngestBodies.Output(video, null),
                 IngestBodies.Check(errors: ["ffmpeg: torn frame at 00:01:02"])));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_quality_failed|false");
         IngestDb.Report(Database, world, "->>'schema'").ShouldBe(QualitySchema);
@@ -267,10 +267,12 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         IngestDb.Outbox(Database, world, RenderSucceeded).ShouldBe(0);
         IngestDb.JobCount(Database, world).ShouldBe(1, "a refused verdict is terminal, so no retry row exists");
 
-        // Step 6 stores the objects before step 8 decides, and a refused attempt's own objects are deleted
-        // best-effort once the verdict commits: nothing is left in nt-media and no asset row exists.
+        // Step 6 stores the objects before step 8 decides, and a refused attempt's objects are deleted best-effort
+        // once the verdict commits: nothing is left in nt-media and no asset row exists. The delete is by the
+        // row's two deterministic keys (BD7), not by the keys this attempt happened to PUT, so the subtitle key is
+        // cleared even though this attempt never wrote it (C5/S3).
         harness.Blobs.Puts.Select(put => put.Key).ShouldBe([world.VideoKey]);
-        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey, world.SubtitlesKey]);
         harness.Blobs.Keys.ShouldBeEmpty();
         IngestDb.AssetCount(Database, world).ShouldBe(0);
         IngestDb.Episode(Database, world).ShouldBe("story_approved|-");
@@ -292,7 +294,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
         harness.Money.Settles.Count.ShouldBe(1);
@@ -327,7 +329,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
             return ValueTask.CompletedTask;
         };
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         rowDuringDownload.ShouldBe("ingesting|-|-", "the state change is committed in its own transaction");
         pollDuringDownload.ShouldBe("true", "the poller was released before the download started");
@@ -345,7 +347,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         var assets = IngestDb.Assets(Database, world, IngestHarness.UnapprovedRetention);
         assets.Count.ShouldBe(2);
@@ -416,7 +418,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.Succeeded(world, IngestBodies.Output(video, subtitles), IngestBodies.Check()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         world.VideoKey.ShouldBe($"media/{world.UserId:D}/{world.EpisodeId:D}/{world.RenderJobId:D}/video.mp4");
         world.SubtitlesKey.ShouldBe($"media/{world.UserId:D}/{world.EpisodeId:D}/{world.RenderJobId:D}/subtitles.srt");
@@ -448,7 +450,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
             return ValueTask.CompletedTask;
         };
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         rowAtDelete.ShouldBe("succeeded|-|true", "the state is durable before the cleanup is requested");
         harness.Adapter.DeleteCalls.ShouldBe(1);
@@ -469,7 +471,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
         harness.Render.EnqueueDelete(Error.Failure("adapter_delete_failed", "scripted cleanup failure"));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
         IngestDb.Episode(Database, world).ShouldStartWith("video_review|");
@@ -492,7 +494,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueDelete(Error.Conflict("adapter_task_busy", "scripted: the adapter is still busy"));
         harness.Render.EnqueueDelete(Error.Conflict("adapter_task_busy", "scripted: the adapter is still busy"));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
         harness.Adapter.DeleteCalls.ShouldBe(2, "a busy adapter is retried exactly once");
@@ -609,7 +611,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
         var missing = Guid.CreateVersion7();
 
-        await harness.RunAsync(missing);
+        await harness.RunAsync(missing, Ct);
 
         var line = harness.IngestLines().ShouldHaveSingleItem();
         line.EventId.ShouldBe(6300);
@@ -627,7 +629,7 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
         var terminal = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { Status = "succeeded" });
 
-        await harness.RunAsync(terminal.RenderJobId);
+        await harness.RunAsync(terminal.RenderJobId, Ct);
 
         harness.IngestLines().ShouldHaveSingleItem().EventId.ShouldBe(6301);
         harness.Downloads.Calls.ShouldBeEmpty();
@@ -643,14 +645,20 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
         var queued = await IngestWorlds.SeedAsync(Database, Ct, new IngestSeed { Status = "queued" });
 
-        await harness.RunAsync(queued.RenderJobId);
+        await harness.RunAsync(queued.RenderJobId, Ct);
 
         harness.IngestLines().ShouldHaveSingleItem().EventId.ShouldBe(6302);
         harness.Downloads.Calls.ShouldBeEmpty();
         harness.Blobs.Puts.ShouldBeEmpty();
     }
 
-    /// <summary>An I/O failure while spooling propagates and leaves neither a file nor a row behind.</summary>
+    /// <summary>
+    /// An I/O failure while spooling still hands the attempt back to the scheduler and leaves neither a file nor a
+    /// row behind — but the raw exception does not travel with it. Hangfire persists the message and the stack of
+    /// what it catches and the Api's dashboard shows them, so an IO or storage exception would put the spool path,
+    /// the bucket or the endpoint in front of whoever opens the job: only the job id, the stage and the exception's
+    /// type name travel (S5).
+    /// </summary>
     [Fact]
     public async Task DownloadDestinationIOException_LeavesNothingBehind()
     {
@@ -664,7 +672,12 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
 
-        thrown.ShouldBeOfType<IOException>().Message.ShouldBe("scripted: the spool disk refused a write");
+        var wrapped = thrown.ShouldBeOfType<InvalidOperationException>();
+        wrapped.Message.ShouldContain(world.RenderJobId.ToString());
+        wrapped.Message.ShouldContain("IOException", Case.Insensitive);
+        wrapped.Message.ShouldNotContain("scripted: the spool disk refused a write");
+        wrapped.InnerException.ShouldBeNull("neither does the raw exception object");
+        IngestDb.Row(Database, world).ShouldStartWith("ingesting|");
         harness.TempFiles().ShouldBeEmpty();
         harness.Blobs.Puts.ShouldBeEmpty();
         harness.Money.Refunds.ShouldBeEmpty();
@@ -707,15 +720,16 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
         harness.Render.EnqueueStatus(
             IngestBodies.SucceededRaw(world, IngestBodies.Output(video, null), IngestBodies.EmptyCheck()));
 
-        await harness.RunAsync(world.RenderJobId);
+        await harness.RunAsync(world.RenderJobId, Ct);
 
         IngestDb.Row(Database, world).ShouldBe("failed|render_quality_failed|false");
         IngestDb.FailedPayload(Database, world).ShouldBe($"{world.RenderJobId}|render_quality_failed|true");
 
         // The stored video is written before the verdict and removed with it (the same rule as the other refused
-        // verdict): no bytes stay in nt-media and no asset row exists.
+        // verdict): no bytes stay in nt-media and no asset row exists. Both deterministic keys go, not only the
+        // key this attempt PUT (C5/S3).
         harness.Blobs.Puts.Select(put => put.Key).ShouldBe([world.VideoKey]);
-        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey]);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey, world.SubtitlesKey]);
         harness.Blobs.Keys.ShouldBeEmpty();
         IngestDb.AssetCount(Database, world).ShouldBe(0);
         harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);

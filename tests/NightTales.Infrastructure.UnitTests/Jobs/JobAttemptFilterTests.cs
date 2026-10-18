@@ -191,6 +191,36 @@ public sealed class JobAttemptFilterTests
     /// <summary>The attempt port the ingest resolves, read the way a job body reads it.</summary>
     private static AmbientJobAttempt Ambient() => new();
 
+    [Fact]
+    public void OnPerforming_does_not_read_the_retry_counter_for_a_class_without_retries()
+    {
+        var filter = new JobAttemptFilter();
+        var context = NewPerformContext(typeof(JobWithoutPolicy), retryCount: 0, out var connection);
+
+        filter.OnPerforming(new PerformingContext(context));
+
+        connection.Reads.ShouldBe(0);
+        JobAttemptScope.Value.ShouldBe((1, 1));
+        Ambient().IsLastAttempt.ShouldBeTrue();
+
+        filter.OnPerformed(Performed(context));
+    }
+
+    [Fact]
+    public void OnPerforming_reads_the_retry_counter_once_for_a_retrying_class()
+    {
+        var filter = new JobAttemptFilter();
+        var context = NewPerformContext(typeof(RetryingJob), retryCount: 3, out var connection);
+
+        filter.OnPerforming(new PerformingContext(context));
+
+        connection.Reads.ShouldBe(1);
+        JobAttemptScope.Value.ShouldBe((4, 6));
+        Ambient().IsLastAttempt.ShouldBeFalse();
+
+        filter.OnPerformed(Performed(context));
+    }
+
     /// <summary>The performed callback of <paramref name="context"/>, sharing its item bag with the perform callback.</summary>
     private static PerformedContext Performed(PerformContext context) =>
         new(context, result: null, canceled: false, exception: null);
@@ -199,14 +229,23 @@ public sealed class JobAttemptFilterTests
     /// A Hangfire context for <paramref name="jobType"/> whose <c>RetryCount</c> job parameter is
     /// <paramref name="retryCount"/> — the same context a server hands both filter callbacks.
     /// </summary>
-    private static PerformContext NewPerformContext(Type jobType, int retryCount)
+    private static PerformContext NewPerformContext(Type jobType, int retryCount) =>
+        NewPerformContext(jobType, retryCount, out _);
+
+    /// <summary>
+    /// A Hangfire context for <paramref name="jobType"/> whose <c>RetryCount</c> job parameter is
+    /// <paramref name="retryCount"/> — the same context a server hands both filter callbacks — handing
+    /// back the <paramref name="connection"/> so a test can count how often the counter was asked for.
+    /// </summary>
+    private static PerformContext NewPerformContext(Type jobType, int retryCount, out RetryCountConnection connection)
     {
         var method = jobType.GetMethod(nameof(RetryingJob.RunAsync))!;
         var backgroundJob = new BackgroundJob("probe-job", new Job(jobType, method), DateTime.UtcNow);
+        connection = new RetryCountConnection(retryCount);
 
         return new PerformContext(
             storage: null,
-            connection: new RetryCountConnection(retryCount),
+            connection: connection,
             backgroundJob: backgroundJob,
             cancellationToken: new JobCancellationToken(canceled: false));
     }
@@ -221,8 +260,14 @@ public sealed class JobAttemptFilterTests
     {
         private const string RetryCountParameter = "RetryCount";
 
-        public string? GetJobParameter(string id, string name) =>
-            name == RetryCountParameter ? retryCount.ToString(CultureInfo.InvariantCulture) : null;
+        /// <summary>How many times a job parameter was asked for; the filter reads the counter at most once.</summary>
+        public int Reads { get; private set; }
+
+        public string? GetJobParameter(string id, string name)
+        {
+            Reads++;
+            return name == RetryCountParameter ? retryCount.ToString(CultureInfo.InvariantCulture) : null;
+        }
 
         public void Dispose()
         {
