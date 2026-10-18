@@ -23,6 +23,14 @@ namespace NightTales.Application.Publishing;
 /// environment (Development may use a loopback <c>http://</c> fake), so the Infrastructure adapter owns
 /// that rule beside the options binding.
 /// </para>
+/// <para>
+/// The resumable-upload rules arrive with 06.2.3-T1: <c>UploadBaseUrl</c> must be usable as the <em>root</em> of the
+/// session-create URL and as the origin the session URI is validated against, so its shape (absolute http/https, no
+/// user-info, no query or fragment, trailing <c>/</c>) is checked with it; and the <c>Upload</c> block's chunk size,
+/// retry count and three timeouts must sit inside the bounds the client's streaming and backoff rely on. The
+/// chunk-size rule is the one the resumable protocol itself imposes (a non-final chunk that is not a multiple of
+/// 256 KiB is refused by Google), not a preference.
+/// </para>
 /// </remarks>
 public static class YouTubeOptionsValidator
 {
@@ -40,6 +48,37 @@ public static class YouTubeOptionsValidator
     /// callback (and, with it, a pooled database connection).
     /// </summary>
     public const int MaxHttpTimeoutSeconds = 60;
+
+    /// <summary>
+    /// The granularity every non-final chunk of a resumable upload must be a multiple of (G7): 256 KiB. Google
+    /// refuses a smaller non-final chunk, and a chunk that is not a multiple makes the session's byte accounting
+    /// disagree with the object.
+    /// </summary>
+    public const int UploadChunkSizeMultipleBytes = 256 * 1024;
+
+    /// <summary>The largest accepted <c>Upload:ChunkSizeBytes</c>: 256 MiB, one rented buffer at a time.</summary>
+    public const int MaxUploadChunkSizeBytes = 256 * 1024 * 1024;
+
+    /// <summary>The shortest accepted <c>Upload:MaxChunkRetries</c>: one retry, never zero (a chunk that fails once would end the upload).</summary>
+    public const int MinUploadChunkRetries = 1;
+
+    /// <summary>
+    /// The longest accepted <c>Upload:MaxChunkRetries</c>: ten re-sends of one chunk. The bound matters because every
+    /// retry spends the same quota units as the first attempt and the job's own runtime budget is finite.
+    /// </summary>
+    public const int MaxUploadChunkRetries = 10;
+
+    /// <summary>The shortest accepted <c>Upload:*TimeoutSeconds</c>: zero would make every call time out at once.</summary>
+    public const int MinUploadTimeoutSeconds = 1;
+
+    /// <summary>The longest accepted <c>Upload:StartTimeoutSeconds</c> and <c>Upload:ProbeTimeoutSeconds</c>.</summary>
+    public const int MaxUploadHandshakeTimeoutSeconds = 600;
+
+    /// <summary>
+    /// The longest accepted <c>Upload:ChunkTimeoutSeconds</c>: one chunk carries up to a quarter of a gigabyte, so it
+    /// gets a longer bound than the two handshakes.
+    /// </summary>
+    public const int MaxUploadChunkTimeoutSeconds = 3600;
 
     /// <summary>Every problem of the section; empty when valid.</summary>
     /// <param name="options">The bound <c>YouTube</c> section.</param>
@@ -124,7 +163,91 @@ public static class YouTubeOptionsValidator
                 + string.Join('|', YouTubeAuditStatuses.All) + ".");
         }
 
+        // 06.2.3-T1. `UploadBaseUrl` is the only host an upload may reach (D19): the client appends
+        // `videos?uploadType=resumable` to it and accepts the session URI Google answers only on its scheme, host
+        // and port (SSRF), so a value that cannot carry that path — or that carries a user-info, query or fragment
+        // the comparison would then have to ignore — is refused here instead of at the first upload.
+        if (!IsUploadBaseUrl(options.UploadBaseUrl))
+        {
+            problems.Add(
+                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.UploadBaseUrl)}' must be an absolute http or "
+                + "https URI with no user-info, query or fragment, ending in '/': it is the root the resumable "
+                + "session is created under and the only origin an upload may reach.");
+        }
+
+        if (options.Upload.ChunkSizeBytes < UploadChunkSizeMultipleBytes
+            || options.Upload.ChunkSizeBytes % UploadChunkSizeMultipleBytes != 0
+            || options.Upload.ChunkSizeBytes > MaxUploadChunkSizeBytes)
+        {
+            problems.Add(
+                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.Upload)}:"
+                + $"{nameof(YouTubeUploadOptions.ChunkSizeBytes)}' must be a positive multiple of "
+                + $"{UploadChunkSizeMultipleBytes} no larger than {MaxUploadChunkSizeBytes}.");
+        }
+
+        if (options.Upload.MaxChunkRetries < MinUploadChunkRetries
+            || options.Upload.MaxChunkRetries > MaxUploadChunkRetries)
+        {
+            problems.Add(
+                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.Upload)}:"
+                + $"{nameof(YouTubeUploadOptions.MaxChunkRetries)}' must be "
+                + $"{MinUploadChunkRetries}..{MaxUploadChunkRetries}.");
+        }
+
+        AddUploadTimeoutProblem(
+            problems,
+            nameof(YouTubeUploadOptions.StartTimeoutSeconds),
+            options.Upload.StartTimeoutSeconds,
+            MaxUploadHandshakeTimeoutSeconds);
+
+        AddUploadTimeoutProblem(
+            problems,
+            nameof(YouTubeUploadOptions.ProbeTimeoutSeconds),
+            options.Upload.ProbeTimeoutSeconds,
+            MaxUploadHandshakeTimeoutSeconds);
+
+        AddUploadTimeoutProblem(
+            problems,
+            nameof(YouTubeUploadOptions.ChunkTimeoutSeconds),
+            options.Upload.ChunkTimeoutSeconds,
+            MaxUploadChunkTimeoutSeconds);
+
         return problems;
+    }
+
+    /// <summary>Reports one <c>Upload:*TimeoutSeconds</c> outside 1..<paramref name="max"/>.</summary>
+    private static void AddUploadTimeoutProblem(
+        List<string> problems,
+        string key,
+        int seconds,
+        int max)
+    {
+        if (seconds < MinUploadTimeoutSeconds || seconds > max)
+        {
+            problems.Add(
+                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.Upload)}:{key}' must be "
+                + $"{MinUploadTimeoutSeconds}..{max}.");
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="uploadBaseUrl"/> can be the resumable-upload root: absolute, http or https, no
+    /// user-info, no query and no fragment, and ending in <c>/</c> so that the <c>videos?uploadType=resumable</c>
+    /// path appended to it lands under the configured path instead of replacing its last segment.
+    /// </summary>
+    private static bool IsUploadBaseUrl(string uploadBaseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(uploadBaseUrl)
+            || !uploadBaseUrl.EndsWith('/')
+            || !Uri.TryCreate(uploadBaseUrl, UriKind.Absolute, out var uri)
+            || !IsHttpScheme(uri.Scheme))
+        {
+            return false;
+        }
+
+        return uri.UserInfo.Length == 0
+            && uri.Query.Length == 0
+            && uri.Fragment.Length == 0;
     }
 
     /// <summary>

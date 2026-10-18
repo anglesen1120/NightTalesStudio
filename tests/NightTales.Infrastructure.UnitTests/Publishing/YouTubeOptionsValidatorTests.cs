@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,9 +14,10 @@ using Xunit;
 namespace NightTales.Infrastructure.UnitTests.Publishing;
 
 /// <summary>
-/// The <c>YouTube</c> section of 06.1.2-T1 (06 README D11): a complete section binds, every invalid combination
-/// fails the start-up with a message that names the key and carries no secret value, and a host that already bound
-/// the section through 06.3.1-T1's registration keeps one binding and one start-up validation.
+/// The <c>YouTube</c> section of 06.1.2-T1 (06 README D11) plus 06.2.3-T1's upload keys: a complete section binds,
+/// every invalid combination fails the start-up with a message that names the key and carries no secret value, and a
+/// host that already bound the section through 06.3.1-T1's registration keeps one binding and one start-up
+/// validation.
 /// </summary>
 /// <remarks>
 /// The scheme rule is the Infrastructure adapter's (<c>YouTubeOptionsValidation</c>): outside Development each
@@ -36,6 +38,7 @@ public sealed class YouTubeOptionsValidatorTests
     private const string TokenEndpoint = "https://oauth2.googleapis.com/token";
     private const string RevokeEndpoint = "https://oauth2.googleapis.com/revoke";
     private const string ApiBaseUrl = "https://www.googleapis.com";
+    private const string UploadBaseUrl = "https://www.googleapis.com/upload/youtube/v3/";
 
     [Fact]
     public void A_complete_section_binds()
@@ -50,6 +53,12 @@ public sealed class YouTubeOptionsValidatorTests
         options.TokenEndpoint.ShouldBe(TokenEndpoint);
         options.RevokeEndpoint.ShouldBe(RevokeEndpoint);
         options.ApiBaseUrl.ShouldBe(ApiBaseUrl);
+        options.UploadBaseUrl.ShouldBe(UploadBaseUrl);
+        options.Upload.ChunkSizeBytes.ShouldBe(10 * 1024 * 1024);
+        options.Upload.MaxChunkRetries.ShouldBe(3);
+        options.Upload.StartTimeoutSeconds.ShouldBe(30);
+        options.Upload.ProbeTimeoutSeconds.ShouldBe(15);
+        options.Upload.ChunkTimeoutSeconds.ShouldBe(100);
         options.Pkce.ShouldBeTrue();
         options.OAuthStateMinutes.ShouldBe(10);
         options.Http.TimeoutSeconds.ShouldBe(15);
@@ -76,6 +85,25 @@ public sealed class YouTubeOptionsValidatorTests
     [InlineData("TokenEndpoint", "http://oauth2.googleapis.com/token", $"{Section}:TokenEndpoint")]
     [InlineData("RevokeEndpoint", "http://oauth2.googleapis.com/revoke", $"{Section}:RevokeEndpoint")]
     [InlineData("ApiBaseUrl", "http://127.0.0.1:5000", $"{Section}:ApiBaseUrl")]
+    [InlineData("UploadBaseUrl", "", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "upload/youtube/v3/", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "file:///upload/youtube/v3/", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "https://www.googleapis.com/upload/youtube/v3", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "https://user:pass@www.googleapis.com/upload/youtube/v3/", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "https://www.googleapis.com/upload/youtube/v3/?uploadType=resumable", $"{Section}:UploadBaseUrl")]
+    [InlineData("UploadBaseUrl", "https://www.googleapis.com/upload/youtube/v3/#session", $"{Section}:UploadBaseUrl")]
+    [InlineData("Upload:ChunkSizeBytes", "0", $"{Section}:Upload:ChunkSizeBytes")]
+    [InlineData("Upload:ChunkSizeBytes", "-1048576", $"{Section}:Upload:ChunkSizeBytes")]
+    [InlineData("Upload:ChunkSizeBytes", "262145", $"{Section}:Upload:ChunkSizeBytes")]
+    [InlineData("Upload:ChunkSizeBytes", "268435457", $"{Section}:Upload:ChunkSizeBytes")]
+    [InlineData("Upload:MaxChunkRetries", "0", $"{Section}:Upload:MaxChunkRetries")]
+    [InlineData("Upload:MaxChunkRetries", "11", $"{Section}:Upload:MaxChunkRetries")]
+    [InlineData("Upload:StartTimeoutSeconds", "0", $"{Section}:Upload:StartTimeoutSeconds")]
+    [InlineData("Upload:StartTimeoutSeconds", "601", $"{Section}:Upload:StartTimeoutSeconds")]
+    [InlineData("Upload:ProbeTimeoutSeconds", "0", $"{Section}:Upload:ProbeTimeoutSeconds")]
+    [InlineData("Upload:ProbeTimeoutSeconds", "601", $"{Section}:Upload:ProbeTimeoutSeconds")]
+    [InlineData("Upload:ChunkTimeoutSeconds", "0", $"{Section}:Upload:ChunkTimeoutSeconds")]
+    [InlineData("Upload:ChunkTimeoutSeconds", "3601", $"{Section}:Upload:ChunkTimeoutSeconds")]
     public void An_invalid_section_fails_the_start_without_a_secret(string key, string value, string namedKey)
     {
         var configuration = Configuration((key, value));
@@ -113,13 +141,63 @@ public sealed class YouTubeOptionsValidatorTests
     }
 
     [Fact]
+    public void The_default_UploadBaseUrl_is_the_committed_section_value()
+    {
+        // 06.2.3-T1: the class default and the shipped Api section must agree, the `ApiBaseUrl` precedent. The client
+        // appends `videos?uploadType=resumable` to this URL and accepts the session URI Google answers only on the
+        // same scheme, host and port, so the effective root must not depend on which one the host bound.
+        new YouTubeOptions().UploadBaseUrl.ShouldBe(UploadBaseUrl);
+        CommittedSectionValue(nameof(YouTubeOptions.UploadBaseUrl)).ShouldBe(UploadBaseUrl);
+    }
+
+    [Fact]
+    public void The_committed_upload_block_matches_the_class_defaults()
+    {
+        // Every `Upload:*` key the Api section ships carries the class default: a drifted chunk size or timeout would
+        // otherwise change the streaming behaviour only in the hosts that read the file (D19).
+        var defaults = new YouTubeUploadOptions();
+
+        CommittedSectionValue(nameof(YouTubeOptions.Upload), nameof(YouTubeUploadOptions.ChunkSizeBytes))
+            .ShouldBe(defaults.ChunkSizeBytes.ToString(CultureInfo.InvariantCulture));
+        CommittedSectionValue(nameof(YouTubeOptions.Upload), nameof(YouTubeUploadOptions.MaxChunkRetries))
+            .ShouldBe(defaults.MaxChunkRetries.ToString(CultureInfo.InvariantCulture));
+        CommittedSectionValue(nameof(YouTubeOptions.Upload), nameof(YouTubeUploadOptions.StartTimeoutSeconds))
+            .ShouldBe(defaults.StartTimeoutSeconds.ToString(CultureInfo.InvariantCulture));
+        CommittedSectionValue(nameof(YouTubeOptions.Upload), nameof(YouTubeUploadOptions.ProbeTimeoutSeconds))
+            .ShouldBe(defaults.ProbeTimeoutSeconds.ToString(CultureInfo.InvariantCulture));
+        CommittedSectionValue(nameof(YouTubeOptions.Upload), nameof(YouTubeUploadOptions.ChunkTimeoutSeconds))
+            .ShouldBe(defaults.ChunkTimeoutSeconds.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void The_upload_ranges_are_inclusive_at_both_ends()
+    {
+        // The bounds are the legal extremes, not "below/above" pairs: the smallest and the largest chunk size, both
+        // retry bounds and one timeout at each end of its range must all boot.
+        StartUp(Configuration(
+            ("Upload:ChunkSizeBytes", "262144"),
+            ("Upload:MaxChunkRetries", "1"),
+            ("Upload:StartTimeoutSeconds", "1"),
+            ("Upload:ProbeTimeoutSeconds", "600"),
+            ("Upload:ChunkTimeoutSeconds", "3600")));
+
+        StartUp(Configuration(
+            ("Upload:ChunkSizeBytes", "268435456"),
+            ("Upload:MaxChunkRetries", "10"),
+            ("Upload:StartTimeoutSeconds", "600"),
+            ("Upload:ProbeTimeoutSeconds", "1"),
+            ("Upload:ChunkTimeoutSeconds", "1")));
+    }
+
+    [Fact]
     public void Development_may_point_every_endpoint_at_a_loopback_fake()
     {
         var configuration = Configuration(
             ("AuthorizationEndpoint", "http://127.0.0.1:5100/o/oauth2/v2/auth"),
             ("TokenEndpoint", "http://127.0.0.1:5100/token"),
             ("RevokeEndpoint", "http://127.0.0.1:5100/revoke"),
-            ("ApiBaseUrl", "http://127.0.0.1:5100"));
+            ("ApiBaseUrl", "http://127.0.0.1:5100"),
+            ("UploadBaseUrl", "http://127.0.0.1:5100/upload/youtube/v3/"));
 
         StartUp(configuration, "Development");
     }
@@ -203,6 +281,7 @@ public sealed class YouTubeOptionsValidatorTests
         [$"{Section}:TokenEndpoint"] = TokenEndpoint,
         [$"{Section}:RevokeEndpoint"] = RevokeEndpoint,
         [$"{Section}:ApiBaseUrl"] = ApiBaseUrl,
+        [$"{Section}:UploadBaseUrl"] = UploadBaseUrl,
         [$"{Section}:Pkce"] = "true",
         [$"{Section}:OAuthStateMinutes"] = "10",
         [$"{Section}:Http:TimeoutSeconds"] = "15",
@@ -224,7 +303,14 @@ public sealed class YouTubeOptionsValidatorTests
     /// The <c>YouTube:ApiBaseUrl</c> the committed Api <c>appsettings.json</c> carries, read from the file so a class
     /// default that drifted from the shipped section (or a section that changed shape) is a failing test.
     /// </summary>
-    private static string CommittedApiBaseUrl()
+    private static string CommittedApiBaseUrl() => CommittedSectionValue(nameof(YouTubeOptions.ApiBaseUrl));
+
+    /// <summary>
+    /// One value of the committed Api <c>appsettings.json</c>, by its key path under the <c>YouTube</c> section, so a
+    /// key the section stops shipping (or a value that drifted from a class default) is a failing test. A string
+    /// value comes back unquoted and a number as its invariant text.
+    /// </summary>
+    private static string CommittedSectionValue(params string[] keyPath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "NightTales.sln")))
@@ -242,7 +328,13 @@ public sealed class YouTubeOptionsValidatorTests
             File.ReadAllBytes(path),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
 
-        return document.RootElement.GetProperty(Section).GetProperty(nameof(YouTubeOptions.ApiBaseUrl)).GetString()!;
+        var element = document.RootElement.GetProperty(Section);
+        foreach (var key in keyPath)
+        {
+            element = element.GetProperty(key);
+        }
+
+        return element.ToString();
     }
 
     /// <summary>A hand-written host environment: the validator adapter reads Development only.</summary>

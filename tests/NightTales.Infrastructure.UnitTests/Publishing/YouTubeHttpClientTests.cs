@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Common.Errors;
@@ -50,6 +51,28 @@ public sealed class YouTubeHttpClientTests
 
         client.Timeout.ShouldBe(TimeSpan.FromSeconds(timeoutSeconds));
         client.MaxResponseContentBufferSize.ShouldBe(GoogleYouTubeClient.MaxResponseContentBytes);
+    }
+
+    [Fact]
+    public void The_upload_client_carries_no_shared_timeout_a_bounded_body_and_no_request_logging()
+    {
+        using var provider = Services(15);
+
+        var client = provider
+            .GetRequiredService<IHttpClientFactory>()
+            .CreateClient(GoogleYouTubeClient.UploadHttpClientName);
+
+        // Each upload call arms its own linked deadline from `YouTube:Upload:*` (06.2.3-T1 protocol decision 3), so a
+        // shared timeout would spend one call's budget on another's and must stay off.
+        client.Timeout.ShouldBe(Timeout.InfiniteTimeSpan);
+        client.MaxResponseContentBufferSize.ShouldBe(GoogleYouTubeClient.MaxResponseContentBytes);
+
+        // The session URI is a capability and it is the request URI: the framework's own request logging for this
+        // client is off, so no line can carry it.
+        var rules = provider.GetRequiredService<IOptions<LoggerFilterOptions>>().Value.Rules;
+        rules.ShouldContain(rule =>
+            rule.CategoryName == $"System.Net.Http.HttpClient.{GoogleYouTubeClient.UploadHttpClientName}"
+            && rule.LogLevel == LogLevel.None);
     }
 
     [Fact]
