@@ -147,6 +147,10 @@ try
     // binds the same section for its ingest stamp (`Assets:UnapprovedRetentionDays`) with its own adapter;
     // every key has an in-code default, and an impossible one fails the boot.
     builder.Services.AddVideoReview();
+    // 02.8.2-T1: the gate thresholds and the calibration dry-run switch (`Autopilot:Gates`, plan §3.3). Every key
+    // has an in-code default — `DryRun` is true, so the Api never auto-approves until the owner flips it — and an
+    // impossible value fails the boot instead of a gate. The Worker binds the same section for the gate it runs.
+    builder.Services.AddAutopilotGatesOptions();
     builder.Services.AddOptions<AssetRetentionOptions>()
         .BindConfiguration(AssetRetentionOptions.SectionName)
         .ValidateOnStart();

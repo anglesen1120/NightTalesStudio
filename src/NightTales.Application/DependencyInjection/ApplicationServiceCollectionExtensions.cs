@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Research;
@@ -69,6 +70,17 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddSingleton<IAttestationTextProvider, AttestationTextProvider>();
         services.TryAddScoped<IStoryRenderInputProvider, StoryRenderInputProvider>();
         services.TryAddScoped<StoryDraftModeration>();
+
+        // 02.8.2-T1 (plan §4 UC6): the owner-action notice a gate stop writes. It adds the notice, its audit row
+        // and the `autopilot_owner_action_required` e-mail row to the caller's unit of work — the gate evaluator's,
+        // in the Worker — and the remaining gate services of this feature are registered by 02.8.2-T1's own
+        // composition lines beside it.
+        services.TryAddScoped<AutopilotNotificationService>();
+
+        // 02.8.2-T1 (plan §4): the gate engine itself — the two evaluators, the gate_results writer, the outcome
+        // recorder, the approval service and the instruments. `Autopilot:Gates` is bound by each host through
+        // AddAutopilotGatesOptions (Application cannot reference the options binder).
+        services.AddAutopilotGates();
 
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();

@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
+using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Research.Fetcher;
@@ -32,6 +33,7 @@ using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
 using NightTales.Domain.Research.Events;
 using NightTales.Domain.Series.Bible;
+using NightTales.Domain.Series.Events;
 using NightTales.Domain.Stories.Events;
 using NightTales.Domain.Stories.Generation.Events;
 using NightTales.Infrastructure.Compliance.Deletion;
@@ -299,6 +301,12 @@ public static class WorkerServiceCollectionExtensions
         // ceiling and `IdeaLimits` come from `Autopilot:Ideas`, bound by persistence for both hosts.
         services.AddIdeaGeneration();
 
+        // 02.8.2-T1 (plan §5, UC6): the realtime half of the gate's owner-action notice. The e-mail and the audit
+        // row are written by `AutopilotNotificationService` in the gate verdict's own transaction — so an outbox
+        // redelivery cannot queue a second message — and this handler only publishes `EpisodeUpdated`; the Api
+        // never resolves it.
+        services.AddOutboxHandler<AutopilotOwnerActionRequired, AutopilotOwnerActionRequiredHandler>();
+
         // `Bible:Proposal` is read by both halves of this feature: the handler reads the kill switch through
         // `IBibleProposalSwitch`, whose Worker implementation holds the `IOptionsMonitor` so the switch takes
         // effect without a restart, and the job takes the four batch caps. This root binds the Application
@@ -465,6 +473,11 @@ public static class WorkerServiceCollectionExtensions
         // (`Assets:RetentionDays`, the sibling key of the section above). It has an in-code default, an
         // out-of-range value fails the boot, and the bound value is exposed as the snapshot the approve path
         // takes directly — the Api binds the same section for its own copy of that path.
+        // 02.8.2-T1 (plan §3.3): the gate thresholds and the dry-run switch the Worker's gate evaluates with.
+        // Every key has an in-code default, an impossible value fails the boot, and the bound value is exposed
+        // scoped from the monitor so a threshold change needs no restart — the Api binds the same section.
+        services.AddAutopilotGatesOptions();
+
         services.AddOptions<AssetRetentionOptions>()
             .BindConfiguration(AssetRetentionOptions.SectionName)
             .ValidateOnStart();
