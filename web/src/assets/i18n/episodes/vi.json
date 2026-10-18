@@ -1,4 +1,61 @@
 {
+  "render": {
+    "timeline": {
+      "heading": "Đang dựng video",
+      "percent": "{{percent}}%",
+      "elapsed": "Đã chạy {{duration}}",
+      "emailNotice": "Chúng tôi sẽ gửi e-mail khi video xong",
+      "leave": "Bạn có thể rời trang và quay lại sau",
+      "announce": "Tiến độ video: {{stage}}",
+      "state": {
+        "done": "Đã xong",
+        "active": "Đang thực hiện",
+        "todo": "Chưa bắt đầu",
+        "failed": "Không thành công"
+      }
+    },
+    "stage": {
+      "queued": "Đang xếp hàng",
+      "running": "Đang dựng",
+      "ingesting": "Đang đưa vào thư viện"
+    },
+    "subStep": {
+      "voice": "Giọng đọc",
+      "subtitles": "Phụ đề",
+      "images": "Hình ảnh",
+      "assembling": "Ghép video",
+      "checking": "Kiểm tra chất lượng"
+    },
+    "waiting": {
+      "slot": "Đang chờ một chỗ trống trong studio — video sẽ tự bắt đầu"
+    },
+    "failure": {
+      "title": "Không dựng được video",
+      "scenes": "Cảnh bị bỏ qua",
+      "editScenes": "Sửa cảnh",
+      "editScenesHint": "Mở lại kịch bản để bạn chỉnh các cảnh này",
+      "retry": "Dựng lại",
+      "generic": "Xem lại các cảnh gặp vấn đề và các bước xử lý hiện có.",
+      "code": {
+        "images_incomplete": "Nhiều cảnh không tạo được",
+        "provider_funds_exhausted": "Nhà cung cấp hình ảnh tạm hết hạn mức",
+        "upstream_error": "Lỗi tạm thời từ dịch vụ hình ảnh"
+      }
+    },
+    "images": {
+      "sceneUnnamed": "Cảnh {{index}}",
+      "skippedBanner": "Một số cảnh bị bỏ qua",
+      "moderatedScene": "Đổi mô tả hình cho cảnh này rồi dựng lại.",
+      "reason": {
+        "moderated": "Bị chặn bởi kiểm duyệt hình ảnh",
+        "rate_limited": "Dịch vụ hình ảnh đã đạt giới hạn yêu cầu",
+        "relay_rejected": "Yêu cầu tạo hình ảnh bị từ chối",
+        "timeout": "Yêu cầu tạo hình ảnh quá thời gian chờ",
+        "upstream_error": "Dịch vụ hình ảnh gặp lỗi",
+        "unknown": "Không tạo được hình ảnh"
+      }
+    }
+  },
   "audit": {
     "advisory": "Nên xem",
     "blocking": "Cần sửa",

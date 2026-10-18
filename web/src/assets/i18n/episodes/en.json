@@ -1,4 +1,61 @@
 {
+  "render": {
+    "timeline": {
+      "heading": "Making your video",
+      "percent": "{{percent}}%",
+      "elapsed": "Running for {{duration}}",
+      "emailNotice": "We'll e-mail you when it's ready",
+      "leave": "You can leave this page and come back",
+      "announce": "Video progress: {{stage}}",
+      "state": {
+        "done": "Complete",
+        "active": "In progress",
+        "todo": "Not started",
+        "failed": "Failed"
+      }
+    },
+    "stage": {
+      "queued": "Queued",
+      "running": "Rendering",
+      "ingesting": "Uploading to library"
+    },
+    "subStep": {
+      "voice": "Voice",
+      "subtitles": "Subtitles",
+      "images": "Images",
+      "assembling": "Assembling",
+      "checking": "Quality check"
+    },
+    "waiting": {
+      "slot": "Waiting for a free studio slot — it will start on its own"
+    },
+    "failure": {
+      "title": "The video could not be made",
+      "scenes": "Skipped scenes",
+      "editScenes": "Edit scenes",
+      "editScenesHint": "Reopens the story so you can fix these scenes",
+      "retry": "Try again",
+      "generic": "Review the affected scenes and the available next steps.",
+      "code": {
+        "images_incomplete": "Several scenes could not be generated",
+        "provider_funds_exhausted": "The image provider is temporarily out of funds",
+        "upstream_error": "A temporary error from the image service"
+      }
+    },
+    "images": {
+      "sceneUnnamed": "Scene {{index}}",
+      "skippedBanner": "Some scenes were skipped",
+      "moderatedScene": "Change the image description for this scene, then render again.",
+      "reason": {
+        "moderated": "Blocked by image moderation",
+        "rate_limited": "The image service reached its request limit",
+        "relay_rejected": "The image request was rejected",
+        "timeout": "The image request timed out",
+        "upstream_error": "The image service encountered an error",
+        "unknown": "The image could not be generated"
+      }
+    }
+  },
   "audit": {
     "advisory": "Worth a look",
     "blocking": "Must fix",

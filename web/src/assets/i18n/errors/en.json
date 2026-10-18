@@ -1,4 +1,13 @@
 {
+  "image_moderated": "An image was blocked by moderation",
+  "image_generation_failed": "The scene images could not be generated",
+  "tts_failed": "The narration could not be generated",
+  "render_quality_failed": "The video did not pass the quality check",
+  "render_node_error": "The rendering service encountered an error",
+  "render_assembly_failed": "The video could not be assembled",
+  "render_lost": "The rendering job could not be found",
+  "render_timeout": "The rendering job timed out",
+  "render_output_invalid": "The rendered video could not be used",
   "validation_failed": "Some fields are not valid. Check them and try again.",
   "voice_language_mismatch": "The voice language does not match the series language.",
   "story_invalid_content": "The story has content that is not valid. Check the highlighted parts.",

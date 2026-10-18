@@ -16,9 +16,14 @@ import { ApprovalStore } from '../application/approval.store';
 import { EPISODE_GATE } from '../application/episode-gate';
 import type { GateState } from '../domain/episode-gate';
 import { ResearchStore } from '../application/research.store';
+import { RenderTimelineStore } from '../application/render-timeline.store';
+import { GENERIC_TITLE_KEY, failureCopy } from '../application/render-failure';
 import type { EpisodeDetail } from '../domain/episode.model';
+import type { FailureCopy } from '../domain/render.model';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
+import { RenderFailureComponent } from '../ui/render-failure/render-failure.component';
+import { RenderTimelineComponent } from '../ui/render-timeline/render-timeline.component';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { VersionsStore } from '../application/versions.store';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
@@ -78,8 +83,8 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
+  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent, RenderTimelineComponent, RenderFailureComponent],
+  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, RenderTimelineStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -88,6 +93,8 @@ export class StoryReviewPage {
   private readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
   protected readonly approval = inject(ApprovalStore);
+  /** The render timeline of this episode (WD1/F5): component-scoped, so its subscription, tick and baseline die with the page. */
+  protected readonly renderStore = inject(RenderTimelineStore);
   /** Component-owned so the gate and its reads are discarded when this editor is destroyed. */
   private readonly researchGate = inject(EPISODE_GATE);
   private readonly research = inject(ResearchStore);
@@ -296,6 +303,25 @@ export class StoryReviewPage {
   });
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
+  /**
+   * The render view of `/episodes/:id` (WD1): a `rendering` episode, and a `failed` one whose job row still exists — the
+   * two states the timeline and the failure panel own. Every other status renders the story editor below.
+   */
+  protected readonly renderView = computed<boolean>(() => {
+    const episode = this.episode();
+    if (episode === null) return false;
+    return episode.status === 'rendering' || (episode.status === 'failed' && episode.renderJob !== null);
+  });
+  /** The failure panel's copy, resolved to keys only (F7/D9): the server's own prose is never read or rendered. */
+  protected readonly renderFailureCopy = computed<FailureCopy>(() => {
+    const failure = this.renderStore.failure();
+    return failure === null
+      ? { titleKey: GENERIC_TITLE_KEY, bodyKeys: [], actionKeys: [] }
+      : failureCopy(failure.code, failure.scenes);
+  });
+  /** The actions a failed render offers: the server's own `nextActions`, minus `retry_render` (10.6.1-T2 binds that one). */
+  protected readonly renderActions = computed<readonly string[]>(() =>
+    (this.episode()?.nextActions ?? []).filter((action) => action !== 'retry_render'));
   /** The read-only research gate (02 F13): `not_applicable` and an unloaded gate are `open`. */
   protected readonly researchGateState = computed<GateState>(() => this.researchGate());
   /** Only the two blocking states disable "Write story"; the server stays the ultimate authority (a 409 on generate). */
@@ -380,6 +406,9 @@ export class StoryReviewPage {
           void this.store.load(id);
           // One component-owned gate load; a return to this editor gets a fresh instance and fresh metadata.
           void this.research.load(id);
+          // The render store is armed for every id in this view (its `start` is idempotent per id): a `:id` reuse drops
+          // the previous job's baseline, subscription and tick, and a story-editor episode never renders the timeline.
+          this.renderStore.start(id);
         });
       }
       const rawAddress = query.get('segment');
@@ -395,6 +424,15 @@ export class StoryReviewPage {
     effect(() => {
       const hasSources = this.store.snapshot() !== null && this.research.loaded() && this.research.sources().length > 0;
       untracked(() => this.store.setSourcesExist(hasSources));
+    });
+    /**
+     * A `rendering` episode whose job row has not landed yet (the failure-handling row): `LoadingState` plus exactly one
+     * background re-read. The effect tracks the *value* of the condition, so the same still-pending state never queues a
+     * second read — a fresh occurrence (`false → true`) does, and the refetch's own answer cannot re-trigger it.
+     */
+    effect(() => {
+      if (!this.renderStore.needsRefetch()) return;
+      untracked(() => { void this.renderStore.refresh(); });
     });
     this.destroyRef.onDestroy(() => {
       this.closeApprovalConflict?.();
