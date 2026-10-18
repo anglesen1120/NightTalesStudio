@@ -165,6 +165,27 @@ public interface IAppDbContext
     Task LockRenderJobForUpdateAsync(Guid renderJobId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Takes the same row lock as <see cref="LockRenderJobForUpdateAsync(Guid, CancellationToken)"/> with a
+    /// bounded wait (09.6.4-T1; the P4 hand-over of 09.6.3-T1). <c>lock_timeout</c> covers the
+    /// <c>SELECT … FOR NO KEY UPDATE</c> alone — the value in force is captured before the lock and restored right
+    /// after it, so the later statements of the same transaction (the episode update, the audit and outbox inserts,
+    /// the ledger refund) keep the bound they started with — and the caller is refused instead of queueing behind
+    /// the submit that holds this row across its adapter call (WT55): the cancel path must answer the client. The
+    /// provider's refusal (<c>55P03</c>, <c>lock_not_available</c>) reaches the caller as a
+    /// <see cref="System.Data.Common.DbException"/>, and the caller maps it to the existing 409
+    /// <c>concurrency_conflict</c>. A refused lock aborts the transaction and the caller rolls it back, so the
+    /// setting reverts with it; the unbounded locks the jobs take are unchanged. It requires the caller's
+    /// transaction — outside one the bound would apply to its own statement alone and never reach the lock, so the
+    /// port refuses with an <see cref="InvalidOperationException"/> instead of silently losing the bound (as
+    /// <see cref="LockUserSourceCapAsync"/> does for the advisory lock).
+    /// </summary>
+    /// <param name="renderJobId">The render job to lock; nothing is locked for another user's id or an unknown one.</param>
+    /// <param name="lockTimeout">How long the lock waits before the provider refuses it; at least one millisecond,
+    /// because the provider reads a bound truncated to zero as "no timeout at all".</param>
+    /// <param name="cancellationToken">Cancels the statements.</param>
+    Task LockRenderJobForUpdateAsync(Guid renderJobId, TimeSpan lockTimeout, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
     /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
     /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>

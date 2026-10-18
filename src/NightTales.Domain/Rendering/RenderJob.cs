@@ -604,6 +604,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
         }
 
         CancelRequestedAt = now;
+        Raise(new RenderCancelRequested(Id, EpisodeId, UserId, now));
 
         return Result.Success;
     }
