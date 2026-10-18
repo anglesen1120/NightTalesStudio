@@ -30,8 +30,8 @@ namespace NightTales.Api.IntegrationTests.Features.VideoReview;
 /// Independent QA of 09.7.1-T1's two routes (09 README BD1/D7/D10/D15, WT3/WT56): the boundaries and
 /// error paths the task's own acceptance tests leave open — the reject route's missing weak/blank/listed
 /// <c>If-Match</c>, a duplicate rejection without the same key, an unreadable or oversized body, an
-/// anonymous caller, the required-target discriminator, the re-stamp's episode scoping and an
-/// approve/reject race on one row.
+/// anonymous caller, an absent or null <c>target</c> answering the coded 400, the re-stamp's episode
+/// scoping and an approve/reject race on one row.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,8 +40,9 @@ namespace NightTales.Api.IntegrationTests.Features.VideoReview;
 /// seeds its own user, so no count is global.
 /// </para>
 /// <para>
-/// The tests assert what the task, plan §5 and the endpoints' own contracts say a client must see; a red
-/// test here is a reported defect, never a flaky caveat.
+/// Each test is a plain regression pin of the behaviour head ships: the status and <c>code</c> the
+/// endpoints' own contracts name, the row state a refused request leaves behind, and the scoping of the
+/// re-stamp and of the row lock.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -218,8 +219,8 @@ public sealed class VideoReviewQaTests(TestDatabase database) : IntegrationTest(
         var tag = Etag(world.EpisodeId);
 
         // A note that is not a string, an array root and truncated JSON: each is a coded 400 under the member
-        // the client must fix, never a 500 and never an approval. A body the route's media type refuses is a
-        // separate case - it never reaches these readers (see the theory below).
+        // the client must fix, never a 500 and never an approval. A non-JSON media type is the separate case
+        // below: both routes are mapped with `Accepts("*/*")`, so that body reaches the same reader.
         using (var notAString = await ApproveVideoAsync(
                    client,
                    world.EpisodeId,
@@ -270,12 +271,10 @@ public sealed class VideoReviewQaTests(TestDatabase database) : IntegrationTest(
         var tag = Etag(world.EpisodeId);
         var body = route == "approve" ? """{"note":"Looks good"}""" : StoryBody("Too dark at the start");
 
-        // Both routes document that any unreadable body is a coded 400 `validation_failed` under the member
-        // the client must fix, and the story-approval route answers exactly that for this input. Observed
-        // instead: the `Accepts<...>("application/json")` metadata answers the framework's 415 before the
-        // handler and with an empty body, so a client branching on `code` gets nothing at all. Reported as
-        // defect D4; this case is red until the routes agree with their own documentation (drop the media
-        // type from `Accepts`, or document 415 - the plan's status list does not carry it either).
+        // Both routes are mapped with `Accepts("*/*")`, so a non-JSON media type is not refused by the
+        // framework's 415 before the handler: it reaches the bounded body reader, which answers the
+        // documented coded 400 `validation_failed` - the reader's answer for an unreadable body - and a
+        // client branching on `code` always gets one. This pins that mapping as head ships it.
         using var response = await SendAsync(
             client,
             route == "approve" ? ApproveRoute(world.EpisodeId) : RejectRoute(world.EpisodeId),
@@ -425,16 +424,10 @@ public sealed class VideoReviewQaTests(TestDatabase database) : IntegrationTest(
             "video_rejected.v1",
             new VideoRejected(world.EpisodeId, world.SeriesId, world.UserId, RejectTarget.Story, Start));
 
-        // The class shares one database with the route tests, whose rows are due as well: only this
-        // delivery's two rows belong to this test, so the rest are settled instead of being delivered.
-        await Database.ExecuteAsync(
-            $"""
-             UPDATE outbox_messages SET processed_at = '{Start:O}'
-             WHERE type IN ('video_approved.v1', 'video_rejected.v1') AND processed_at IS NULL
-             AND id <> '{approved}' AND id <> '{rejected}'
-             """,
-            Ct);
-
+        // The class database belongs to this test class alone, and sibling tests leave their own video-review
+        // rows due because the route tests never start a worker. Nothing here settles those rows: every
+        // assertion below is scoped to this test's own user and episode, so a sibling delivery can neither
+        // pass nor fail this test.
         await using var host = new WorkerHost(Database, new FakeClock(Start))
             .WithSetting("Budget:MaxPlatformCostUsdPerDay", "1000")
             .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000");
@@ -445,7 +438,13 @@ public sealed class VideoReviewQaTests(TestDatabase database) : IntegrationTest(
         });
 
         await host.StartAsync(Ct);
-        await host.RunOutboxOnceAsync(Ct);
+
+        // One claim takes one batch of due rows, and a sibling's leftover rows may fill it: drain until this
+        // test's two rows are delivered instead of assuming they fit the first claim.
+        for (var batch = 1; (!Processed(approved) || !Processed(rejected)) && batch <= 8; batch++)
+        {
+            await host.RunOutboxOnceAsync(Ct);
+        }
 
         Processed(approved).ShouldBeTrue("the approval consumer delivered and the row is processed (D11)");
         Processed(rejected).ShouldBeTrue("the rejection consumer delivered and the row is processed (D11)");
@@ -453,7 +452,7 @@ public sealed class VideoReviewQaTests(TestDatabase database) : IntegrationTest(
         var events = notifier.EventsFor(world.UserId);
         events
             .Count(entry => entry.Name == RealtimeEventName.EpisodeUpdated && entry.Ids.EpisodeId == world.EpisodeId)
-            .ShouldBeGreaterThanOrEqualTo(2, "both video-review events invalidate the owner's episode page");
+            .ShouldBe(2, "exactly one event per video-review message, both invalidating the owner's episode page");
         events.All(entry => entry.Data is null).ShouldBeTrue("the invalidation carries ids only (BD11)");
     }
 

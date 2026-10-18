@@ -218,10 +218,10 @@ public sealed class ApproveVideoTests(TestDatabase database) : IntegrationTest(d
                 Database,
                 $"SELECT count(*) FROM assets WHERE {live} AND retention_until = TIMESTAMPTZ '{ingestStamp:O}'")
             .ShouldBe(0, "the ingest's unapproved stamp does not survive the approval");
-        SqlProbe.Count(
+        SqlProbe.ScalarText(
                 Database,
-                $"SELECT count(*) FROM assets WHERE id IN ('{video.Id}', '{subtitles.Id}')")
-            .ShouldBe(2);
+                $"SELECT (count(*) = 2 AND bool_and(deleted_at IS NULL))::text FROM assets WHERE id IN ('{video.Id}', '{subtitles.Id}')")
+            .ShouldBe("true", "approve keeps both cut rows live; only their stamp moves");
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT (retention_until = TIMESTAMPTZ '{ingestStamp:O}')::text FROM assets WHERE id = '{deleted.Id}'")

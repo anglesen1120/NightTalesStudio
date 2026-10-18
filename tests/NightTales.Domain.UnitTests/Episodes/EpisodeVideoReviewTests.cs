@@ -13,7 +13,8 @@ namespace NightTales.Domain.UnitTests.Episodes;
 /// <c>video_review → story_review | story_approved</c>, WT3) plus <see cref="Asset.ScheduleRetention"/>
 /// (WT56). The episode is driven from every state through the reflection setter the neighbouring
 /// <c>EpisodeApproveReopenTests</c> uses, because the write path that would reach those states is a later
-/// story's.
+/// story's. The SEC-1/SEC-2 pins also cover the refusal of a NUL in the reason and the clearing of the
+/// approval pointer on the <c>story</c> target (both mirroring <c>ReopenStory</c>).
 /// </summary>
 public sealed class EpisodeVideoReviewTests
 {
@@ -143,6 +144,57 @@ public sealed class EpisodeVideoReviewTests
             .ShouldNotContain("Reason");
         typeof(VideoRejected).GetProperties().Select(property => property.Name)
             .ShouldNotContain("VideoRejectReason");
+    }
+
+    [Fact]
+    public void RejectVideo_ToStoryTarget_ClearsTheApprovalPointerAndStamp()
+    {
+        var episode = EpisodeIn(EpisodeStatus.VideoReview, Guid.NewGuid());
+        Set(episode, nameof(EpisodeAggregate.ApprovedStoryVersionId), Guid.NewGuid());
+        Set(episode, nameof(EpisodeAggregate.ApprovedAt), FixedNow.AddMinutes(-30));
+
+        episode.RejectVideo("Send it back for another edit", RejectTarget.Story, FixedNow.AddMinutes(1))
+            .IsError.ShouldBeFalse();
+
+        episode.Status.ShouldBe(EpisodeStatus.StoryReview);
+        // SEC-2: entering `story_review` clears the approval pointer exactly as `ReopenStory` does, so a
+        // consumer that keys on the pointer alone cannot read a version that is under review again.
+        episode.ApprovedStoryVersionId.ShouldBeNull();
+        episode.ApprovedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void RejectVideo_ToReRender_KeepsTheApprovalPointerAndStamp()
+    {
+        var episode = EpisodeIn(EpisodeStatus.VideoReview, Guid.NewGuid());
+        var approvedVersionId = Guid.NewGuid();
+        var approvedAt = FixedNow.AddMinutes(-30);
+        Set(episode, nameof(EpisodeAggregate.ApprovedStoryVersionId), approvedVersionId);
+        Set(episode, nameof(EpisodeAggregate.ApprovedAt), approvedAt);
+
+        episode.RejectVideo("Render it again from the same story", RejectTarget.ReRender, FixedNow.AddMinutes(1))
+            .IsError.ShouldBeFalse();
+
+        episode.Status.ShouldBe(EpisodeStatus.StoryApproved);
+        // SEC-2: a re-render renders the approved story again, so its pointer and stamp are untouched.
+        episode.ApprovedStoryVersionId.ShouldBe(approvedVersionId);
+        episode.ApprovedAt.ShouldBe(approvedAt);
+    }
+
+    [Fact]
+    public void RejectVideo_ReasonContainingNul_ReturnsValidationWithoutMutation()
+    {
+        var episode = EpisodeIn(EpisodeStatus.VideoReview, Guid.NewGuid());
+        Set(episode, nameof(EpisodeAggregate.ApprovedStoryVersionId), Guid.NewGuid());
+        Set(episode, nameof(EpisodeAggregate.ApprovedAt), FixedNow.AddMinutes(-30));
+
+        // SEC-1: PostgreSQL refuses a NUL in the varchar column (22021), so the aggregate refuses it here
+        // rather than letting the write surface as an unhandled 500.
+        var result = AssertRejected(episode, "video_reject_reason_invalid",
+            () => episode.RejectVideo("dark\u0000cut", RejectTarget.Story, FixedNow.AddMinutes(1)));
+
+        result.FirstError.Type.ShouldBe(ErrorType.Validation);
+        episode.VideoRejectReason.ShouldBeNull();
     }
 
     [Fact]
@@ -293,9 +345,10 @@ public sealed class EpisodeVideoReviewTests
     }
 
     private static (EpisodeStatus Status, DateTimeOffset? ReadyAt, string? VideoRejectReason,
-        Guid? FinalVideoAssetId, DateTimeOffset UpdatedAt, int EventCount) Snapshot(EpisodeAggregate episode) =>
+        Guid? FinalVideoAssetId, Guid? ApprovedStoryVersionId, DateTimeOffset? ApprovedAt,
+        DateTimeOffset UpdatedAt, int EventCount) Snapshot(EpisodeAggregate episode) =>
         (episode.Status, episode.ReadyAt, episode.VideoRejectReason, episode.FinalVideoAssetId,
-            episode.UpdatedAt, episode.DomainEvents.Count);
+            episode.ApprovedStoryVersionId, episode.ApprovedAt, episode.UpdatedAt, episode.DomainEvents.Count);
 
     private static void Set(EpisodeAggregate episode, string property, object? value) =>
         typeof(EpisodeAggregate).GetProperty(property)!.GetSetMethod(nonPublic: true)!

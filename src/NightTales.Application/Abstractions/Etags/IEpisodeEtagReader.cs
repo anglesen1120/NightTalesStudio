@@ -7,10 +7,17 @@ namespace NightTales.Application.Abstractions.Etags;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The value cannot travel in the event payload: <c>xmin</c> is assigned by PostgreSQL at commit, so the tag
-/// a rejection was accepted under is already stale by the time the re-render runs, and a render refuses a
-/// precondition it cannot match. Reading it at send time is what turns "the episode moved under us" into the
+/// The value cannot travel in the event payload: <c>xmin</c> is assigned by PostgreSQL at commit, so the
+/// rejection that scheduled the re-render is itself what bumped it, and the tag the rejecting request was
+/// accepted under is stale by the time this handler runs — a render refuses a precondition it cannot match.
+/// The send-time read therefore supplies the current tag. The read happens milliseconds before the send in the
+/// same handler, so it is not what detects "the episode moved under us": only an interleaving write landing in
+/// that sub-millisecond window makes the render's <c>If-Match</c> stale, and that is the narrow case whose
 /// retryable 412 the dispatcher backs off on instead of a lost action.
+/// </para>
+/// <para>
+/// The port exists because its caller is Application code that has no request to take a tag from, while the
+/// Api's <c>PostCommitETagReader</c> lives in the Api layer, which Application cannot reference.
 /// </para>
 /// <para>
 /// The read is the D10 tenant-filtered one, so it can only ever see the caller's own episode: another

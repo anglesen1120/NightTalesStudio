@@ -7,7 +7,8 @@ namespace NightTales.Application.UnitTests.Features.VideoReview;
 
 /// <summary>
 /// The rejection validator of 09.7.1-T1: a non-blank reason of at most <c>varchar(500)</c> characters <em>after
-/// trimming</em> (the handler stores the trimmed text), an episode id and a target the enum declares.
+/// trimming</em> (the handler stores the trimmed text) and free of NUL, an episode id and a target the enum
+/// declares.
 /// </summary>
 [Trait("Category", "Unit")]
 public sealed class RejectVideoCommandValidatorTests
@@ -50,6 +51,27 @@ public sealed class RejectVideoCommandValidatorTests
         var tooLong = await ValidateAsync(Command(new string('r', RejectVideoCommandValidator.MaxReasonLength + 1)));
         tooLong.IsValid.ShouldBeFalse();
         tooLong.Errors.ShouldContain(error => error.PropertyName == nameof(RejectVideoCommand.Reason));
+    }
+
+    [Fact]
+    public async Task ReasonContainingNul_Fails()
+    {
+        // SEC-1: PostgreSQL refuses a NUL in the varchar column, so the validator answers the coded 400 before
+        // the row write can surface it as a raw 500.
+        var result = await ValidateAsync(Command("too dark\u0000at the start"));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.PropertyName == nameof(RejectVideoCommand.Reason));
+    }
+
+    [Theory]
+    [InlineData("line one\nline two")]
+    [InlineData("tabs\tbetween\twords")]
+    [InlineData("plain text")]
+    public async Task ReasonWithoutNul_Passes(string reason)
+    {
+        // Only U+0000 is refused: every other character the owner typed reaches the aggregate unchanged.
+        (await ValidateAsync(Command(reason))).IsValid.ShouldBeTrue();
     }
 
     [Fact]

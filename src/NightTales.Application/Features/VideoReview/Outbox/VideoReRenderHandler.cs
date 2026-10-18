@@ -20,8 +20,10 @@ namespace NightTales.Application.Features.VideoReview.Outbox;
 /// </para>
 /// <para>
 /// The render's precondition is the episode's ETag read at send time (<see cref="IEpisodeEtagReader"/>), not a
-/// value carried in the event: the rejection bumped <c>xmin</c>, so any tag captured earlier is stale and would
-/// turn every re-render into a 412.
+/// value carried in the event: the rejection bumped <c>xmin</c>, so any tag captured earlier would be stale and
+/// fail the render's precondition. The read and the send are milliseconds apart in this handler, so the
+/// send-time read is the current tag; only a write landing in that window makes the precondition stale and the
+/// render answer the retryable 412.
 /// </para>
 /// <para>
 /// The idempotency key is <c>video-reject-rerender:{messageId}</c> and the row id is stable across the

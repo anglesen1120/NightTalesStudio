@@ -43,7 +43,8 @@ public sealed class ApproveVideoCommandHandler(
     /// <summary>
     /// The most assets one approve re-stamps. A render records a video and its subtitle track, so this bounds a
     /// hand-written row set; the bound keeps a pathological episode from turning one accept into thousands of
-    /// updates.
+    /// updates. The query orders by descending id (newest first), so the newest rows are kept and the accepted
+    /// cut is always inside the bound however many re-render cycles added assets before it.
     /// </summary>
     private const int MaxRetentionAssets = 50;
 
@@ -83,11 +84,14 @@ public sealed class ApproveVideoCommandHandler(
 
         // WT56: the ingest's unapproved window is overwritten on every live asset of the episode. The rows are
         // loaded tracked, so the write travels in this command's SaveChanges — never ExecuteUpdate, because the
-        // entity method owns the rule. An asset already marked deleted is left alone.
+        // entity method owns the rule. An asset already marked deleted is left alone. The bound is the newest
+        // rows (descending id: assets are `Guid.CreateVersion7()`, so a higher id is a later render), so the
+        // accepted cut is inside the cap even after many reject -> re-render cycles; the oldest rows outside the
+        // cap keep the ingest stamp they already carry.
         var retentionUntil = now + retention.Retention;
         var assets = await db.Assets
             .Where(asset => asset.EpisodeId == command.EpisodeId && asset.DeletedAt == null)
-            .OrderBy(asset => asset.Id)
+            .OrderByDescending(asset => asset.Id)
             .Take(MaxRetentionAssets)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

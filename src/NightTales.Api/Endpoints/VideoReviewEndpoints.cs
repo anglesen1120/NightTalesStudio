@@ -30,7 +30,8 @@ namespace NightTales.Api.Endpoints;
 /// neither carries the <c>paid</c> rate-limit policy ([DECISION] plan §Notes, BD14). Reject also requires an
 /// <c>Idempotency-Key</c> (D6): its spend happens later in the Worker, and a repeated POST must not reject
 /// twice — the stored result is replayed, target included, so the replayed answer keeps the first request's
-/// status and its 200 or 202 choice.
+/// status and its 200 or 202 choice; the <c>etag</c> it carries, however, is read after commit at replay time,
+/// so it is the current tag, not necessarily the one the first response had.
 /// </para>
 /// <para>
 /// The reject answers 200 for the <c>story</c> target (<c>video_review → story_review</c>) and 202 with
@@ -211,7 +212,9 @@ public static class VideoReviewEndpoints
     /// <para>
     /// The status is the command's own wire value (<c>story_review</c> or <c>story_approved</c>), and the
     /// 200/202 choice is the stored result's <see cref="RejectTarget"/>, so a replayed
-    /// <c>Idempotency-Key</c> keeps the first request's status and its 200 or 202 choice (D6, WT3).
+    /// <c>Idempotency-Key</c> keeps the first request's status and its 200 or 202 choice (D6, WT3). The
+    /// <c>etag</c>, though, is read after commit at replay time, so it is the current tag, not the first
+    /// response's: only the status and the target are the stored result, not the tag.
     /// </para>
     /// </remarks>
     private static async Task<IResult> RejectAsync(

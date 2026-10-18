@@ -11,8 +11,8 @@ namespace NightTales.Domain.Episodes.Events;
 /// </summary>
 /// <remarks>
 /// The reason text is deliberately absent: the owner's own words stay in
-/// <c>episodes.video_reject_reason</c> (and the audit row), so the message the platform stores and fans out
-/// carries ids and the target only.
+/// <c>episodes.video_reject_reason</c> only — the audit row records just <c>reasonPresent</c>, never the text —
+/// so the message the platform stores and fans out carries ids and the target only.
 /// </remarks>
 /// <param name="EpisodeId">The rejected episode.</param>
 /// <param name="SeriesId">The series it belongs to.</param>

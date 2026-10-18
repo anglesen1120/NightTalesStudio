@@ -75,17 +75,29 @@ public sealed partial class Episode
     /// and <see cref="VideoRejected"/> is raised.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The method only records the rejection and moves the state: starting the re-render itself is the
     /// Worker's outbox handler, outside the rejecting transaction (WT3). The reason is trimmed and bounded
     /// here as well as in the request validator, because the column is what the next reader resolves the
-    /// owner's words through.
+    /// owner's words through. A reason carrying a NUL (U+0000) is refused here as well: PostgreSQL rejects a
+    /// NUL in <c>varchar</c> (SQLSTATE 22021), which would surface as an unhandled 500 rather than the 400 the
+    /// request validator answers. Only U+0000 is refused; every other character the owner typed is kept.
+    /// </para>
+    /// <para>
+    /// A <see cref="RejectTarget.Story"/> rejection reaches <c>story_review</c>, the same state
+    /// <see cref="ReopenStory"/> reaches, so it clears <see cref="ApprovedStoryVersionId"/> and
+    /// <see cref="ApprovedAt"/> the way that method does: the approved pointer alone selects the version
+    /// (<c>RenderEpisodeCommandHandler</c>), and a stale pointer on a story back in review would make
+    /// consumers read a version that is under review again. <see cref="RejectTarget.ReRender"/> keeps both,
+    /// because the approved story is unchanged.
+    /// </para>
     /// </remarks>
-    /// <param name="reason">The owner's reason, 1–500 characters after trimming.</param>
+    /// <param name="reason">The owner's reason, 1–500 characters after trimming, without U+0000.</param>
     /// <param name="target">Where the rejection sends the episode.</param>
     /// <param name="now">The command's clock reading.</param>
     /// <returns>
-    /// <c>Success</c>; the 400 of a blank or over-long reason, or of an undefined target; or the 409 of every
-    /// state but <c>video_review</c>.
+    /// <c>Success</c>; the 400 of a blank, over-long or NUL-carrying reason, or of an undefined target; or the
+    /// 409 of every state but <c>video_review</c>.
     /// </returns>
     public ErrorOr<Success> RejectVideo(string reason, RejectTarget target, DateTimeOffset now)
     {
@@ -100,6 +112,18 @@ public sealed partial class Episode
             return Error.Validation(
                 "video_reject_reason_invalid",
                 "A rejection carries a reason of 1 to 500 characters.");
+        }
+
+        // SEC-1: PostgreSQL rejects a NUL in the varchar column (SQLSTATE 22021), so storing one would be an
+        // unhandled 500, not the coded 400 the request validator answers. The check runs on `trimmed`, the exact
+        // string this method stores, which is equivalent to checking the raw reason: `string.Trim()` removes only
+        // `char.IsWhiteSpace` characters and U+0000 is not one. Only U+0000 is refused here; the request validator
+        // applies the same rule and refuses no other character.
+        if (trimmed.Contains('\0'))
+        {
+            return Error.Validation(
+                "video_reject_reason_invalid",
+                "A rejection reason cannot contain a NUL character.");
         }
 
         var next = target switch
@@ -119,6 +143,16 @@ public sealed partial class Episode
         VideoRejectReason = trimmed;
         Status = next.Value;
         UpdatedAt = now;
+
+        // SEC-2: `story` returns the episode to `story_review`, the state `ReopenStory` reaches, so it clears
+        // the approval pointer and its stamp exactly as that method does (Episode.Story.cs) — the approved
+        // pointer alone selects the version (RenderEpisodeCommandHandler, 02 D21/T28). `re_render` keeps them:
+        // the approved story is unchanged and a re-render renders it again.
+        if (target == RejectTarget.Story)
+        {
+            ApprovedStoryVersionId = null;
+            ApprovedAt = null;
+        }
 
         Raise(new VideoRejected(Id, SeriesId, UserId, target, now));
 

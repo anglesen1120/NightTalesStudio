@@ -165,7 +165,7 @@ public sealed class RejectVideoTests(TestDatabase database) : IntegrationTest(da
         using var second = await RejectVideoAsync(client, world.EpisodeId, etag, body, key);
 
         second.StatusCode.ShouldBe(HttpStatusCode.Accepted, await second.Content.ReadAsStringAsync(Ct));
-        (await second.Content.ReadAsStringAsync(Ct)).ShouldBe(firstBody, "the stored response is replayed verbatim");
+        (await second.Content.ReadAsStringAsync(Ct)).ShouldBe(firstBody, "the replay keeps the stored status and target; the etag is the current one (still equal here because no write happened between the two calls)");
         OutboxCount(world).ShouldBe(1);
         AuditCount(world).ShouldBe(1);
         SqlProbe.ScalarText(
