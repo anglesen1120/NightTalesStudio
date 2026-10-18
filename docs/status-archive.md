@@ -4,6 +4,22 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 57 wording (2026-10-18, replaced by the 09.6.3-T2 close-out)
+
+Replaced text (verbatim):
+
+- Resume bullet heading: `- **Backend (Session 57, PR #243 open):**`
+- Plan-09 Progress cell: `09.6.3-T2 **PR #243 open** (Session 57) |`
+- Open tasks row 09.6.3-T2 status start: `| 09.6.3-T2 render output ingest | **PR #243 open** (Session 57, `
+
+### Session 57 note (2026-10-18, 09.6.3-T2 PR opened)
+
+Replaced in place, not moved (kept live, amended): the Session 55 backend bullet in STATUS.md — its poller sentence gained "(lifted by 09.6.3-T2, PR #243)" and its trailing sentence `Next (backend): 09.6.3-T2 (ingest + `IngestRenderOutputJob`).` was dropped, because the Session 57 bullet now carries the lane's current state. The Session 50 Resume bullet was moved by the Session 61 block below (same text, not repeated here). The 09.6.2-T1 H1 row and the render-ingest-enqueuer row say closed.
+
+Resume bullet (Session 53 closed backend, moved out to keep the Resume block at 15 bullets when the Session 57 bullet was added), verbatim:
+
+- **Backend (Session 53 closed):** **03.2.2-T2** render keyword linter wired into the story checker (`keyword_name_detected` Q-KW-05 blocking objective; `scenes_trimmed` / `scenes_sparse` advisory hints), approve (409 `keywords_flagged` after the gate, before the moderation refresh) and the existing render 409 merged as #229 (`5f9cfdc5`, tip `3a037952`, code tip `e78d333a`, `feature/03.2.2-T2-s53`, from `develop` `3548c05b`; no migration, no route, no job, no `web/openapi.json` change; 09.6.1-T1 OPEN-5 closed). Full remote gate `GATE_RC=0` on `e78d333a` (Ubuntu arm64); CI refused: CI-01 (jobs `117420350441`, `117420350460`, 0 steps, billing annotation), owner treats as pass; T2 gates closed. Open items (owner TL to assign): `S53-1` render answers 500 on unreadable stored content, `S53-2` D22 segment list built in four places, `S53-3` `keyword_invalid` advisory in the checker.
+
 ### Superseded Session 61 rows (2026-10-18, replaced when the 06.1.2-T2 PR opened)
 
 Replaced text (verbatim):

@@ -80,4 +80,57 @@ public interface IYouTubeClient
     /// <param name="ct">The request cancellation token.</param>
     /// <returns>The channel, or an error when the account has none or the call is refused.</returns>
     Task<ErrorOr<GoogleChannel>> GetMyChannelAsync(string accessToken, CancellationToken ct);
+
+    /// <summary>
+    /// Creates a resumable upload session <em>without content</em> (06.2.3-T1, G7): one <c>POST</c> that carries the
+    /// metadata and the total length and answers the session URI. Never retried by the client: the call costs 1600
+    /// quota units, so a replay belongs to the caller's decision.
+    /// </summary>
+    /// <param name="accessToken">The access token the caller obtained from <c>ITokenService</c>; never read from storage here and never logged.</param>
+    /// <param name="request">The snippet and status of the video; <see cref="VideoInsertRequest.Length"/> must equal <paramref name="length"/>.</param>
+    /// <param name="length">The object's total size in bytes (<c>assets.size_bytes</c>, CR-18).</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns>The opaque session URI (Google's <c>Location</c> header, never logged), or a typed YouTube error.</returns>
+    Task<ErrorOr<Uri>> StartUploadAsync(string accessToken, VideoInsertRequest request, long length, CancellationToken ct);
+
+    /// <summary>
+    /// Streams <paramref name="content"/> to an open session in chunks that are a multiple of 256 KB except the last
+    /// (G7), from the stream's <em>current</em> position, which the caller positioned with
+    /// <c>UploadStreamPositioning.EnsureAtAsync</c>. The stream is never buffered whole and is not disposed here.
+    /// </summary>
+    /// <param name="accessToken">The access token; never logged.</param>
+    /// <param name="sessionUri">The URI <see cref="StartUploadAsync"/> returned; opaque, never logged.</param>
+    /// <param name="content">The object stream, positioned at the resume offset.</param>
+    /// <param name="length">The object's total size in bytes.</param>
+    /// <param name="progress">Receives the cumulative bytes Google confirmed, monotonically non-decreasing.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns>The video id once Google answers <c>200/201</c> with one, or a typed error (<c>youtube_session_expired</c> for a 404).</returns>
+    Task<ErrorOr<UploadResult>> ResumeUploadAsync(
+        string accessToken,
+        Uri sessionUri,
+        Stream content,
+        long length,
+        IProgress<long>? progress,
+        CancellationToken ct);
+
+    /// <summary>Asks an open session how much it holds: an empty <c>PUT</c> with <c>Content-Range: bytes */total</c> (G7).</summary>
+    /// <param name="accessToken">The access token; never logged.</param>
+    /// <param name="sessionUri">The session URI; opaque, never logged.</param>
+    /// <param name="length">The object's total size in bytes.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns><see cref="UploadProbe.Complete"/>, <see cref="UploadProbe.Partial"/>, <see cref="UploadProbe.Expired"/>, or a typed error.</returns>
+    Task<ErrorOr<UploadProbe>> ProbeUploadAsync(string accessToken, Uri sessionUri, long length, CancellationToken ct);
+
+    /// <summary>
+    /// Reads the processing state of up to 50 videos (<c>videos.list?part=status</c>, 1 quota unit per call). The
+    /// caller batches; a longer list is refused without a Google call.
+    /// </summary>
+    /// <param name="accessToken">The access token; never logged.</param>
+    /// <param name="ids">One to 50 video ids.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns>One snapshot per id Google knows (an unknown id is absent), or a typed error.</returns>
+    Task<ErrorOr<IReadOnlyList<YouTubeVideoStatus>>> GetVideosAsync(
+        string accessToken,
+        IReadOnlyList<string> ids,
+        CancellationToken ct);
 }

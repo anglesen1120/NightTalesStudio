@@ -93,6 +93,32 @@ public sealed class RecordRedactionTests
         AssertRedacted(command);
     }
 
+    [Fact]
+    public void VideoInsertRequest_DoesNotPrintTheTitleTheDescriptionOrTheTags()
+    {
+        // D17: a title, a description and the tags are user content, and this record is the one the upload path
+        // logs and audits; its printed form carries lengths and counts only, so a log line, an exception message or
+        // a debugger string never shows the text.
+        var request = new VideoInsertRequest(
+            $"Title {Canary}",
+            $"Description {Canary}",
+            [Canary, $"tag-{Canary}"],
+            "private",
+            Now,
+            ContainsSyntheticMedia: true,
+            SelfDeclaredMadeForKids: false,
+            Length: 1024,
+            MimeType: "video/mp4");
+
+        AssertRedacted(request);
+
+        var text = request.ToString()!;
+
+        text.ShouldContain("TitleLength = ");
+        text.ShouldContain("DescriptionLength = ");
+        text.ShouldContain("TagCount = 2");
+    }
+
     /// <summary>The string omits the canary and still names the record type (its <c>ToString</c> shape survives).</summary>
     private static void AssertRedacted(object record)
     {

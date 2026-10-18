@@ -13,8 +13,10 @@ namespace NightTales.Application.Rendering;
 /// <see cref="RenderOptions"/> directly instead of <c>IOptions&lt;RenderOptions&gt;</c>.
 /// </para>
 /// <para>
-/// The keys <c>Render:Download:*</c> and <c>Render:MaxVideoBytes</c> of 05/09.6.2-T1 are untouched: this
-/// section only adds keys, and a key it does not declare is ignored by the binder.
+/// The keys <c>Render:Download:*</c> of 05/09.6.2-T1 are untouched: <c>Render:MaxVideoBytes</c> and
+/// <c>Render:MaxSubtitleBytes</c> are declared here as well as in the Infrastructure <c>RenderClientOptions</c>
+/// of 09.6.2-T1, because the ingest job that enforces them reads them from this side, and a key it does not
+/// declare is ignored by the binder either way.
 /// </para>
 /// </remarks>
 public sealed class RenderOptions
@@ -46,6 +48,20 @@ public sealed class RenderOptions
 
     /// <summary>How many claimed rows one poll tick processes at once (BD7: 4).</summary>
     public int PollParallelism { get; set; } = 4;
+
+    /// <summary>
+    /// The byte cap of a downloaded video (<c>Render:MaxVideoBytes</c>, BD6/BD7: 2 GiB), read by the ingest of
+    /// 09.6.3-T2 as the bound it hands <c>IRenderDownloadClient.DownloadAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// The key is the one 09.6.2-T1 already binds into its own <c>RenderClientOptions</c> (the download client
+    /// takes the stricter of the two, <c>RenderDownloadClient.CapFor</c>), and the default is that class's own:
+    /// the value has one home per layer, never a second configuration key.
+    /// </remarks>
+    public long MaxVideoBytes { get; set; } = 2_147_483_648L;
+
+    /// <summary>The byte cap of a downloaded subtitle track (<c>Render:MaxSubtitleBytes</c>, BD6/BD7: 2 MiB).</summary>
+    public long MaxSubtitleBytes { get; set; } = 2_097_152L;
 }
 
 /// <summary>
@@ -74,6 +90,9 @@ public static class RenderOptionsValidator
 
     /// <summary>The largest accepted <see cref="RenderOptions.PollParallelism"/>.</summary>
     public const int MaxPollParallelism = 64;
+
+    /// <summary>The largest accepted download cap: 1 TiB, far above any render this platform stores.</summary>
+    public const long MaxDownloadBytes = 1_099_511_627_776L;
 
     /// <summary>
     /// Validates the bound section: every value strictly positive and inside its documented ceiling.
@@ -109,6 +128,22 @@ public static class RenderOptionsValidator
         if (options.PollParallelism is < 1 or > MaxPollParallelism)
         {
             problems.Add($"{nameof(options.PollParallelism)} must be between 1 and {MaxPollParallelism}.");
+        }
+
+        // A cap of zero or less would refuse every download and a subtitle cap above the video cap would let a
+        // subtitle track outgrow the file it belongs to: both are configuration mistakes, not clampable bounds.
+        if (options.MaxVideoBytes is < 1 or > MaxDownloadBytes)
+        {
+            problems.Add($"{nameof(options.MaxVideoBytes)} must be between 1 and {MaxDownloadBytes}.");
+        }
+
+        if (options.MaxSubtitleBytes is < 1 or > MaxDownloadBytes)
+        {
+            problems.Add($"{nameof(options.MaxSubtitleBytes)} must be between 1 and {MaxDownloadBytes}.");
+        }
+        else if (options.MaxSubtitleBytes > options.MaxVideoBytes)
+        {
+            problems.Add($"{nameof(options.MaxSubtitleBytes)} must not exceed {nameof(options.MaxVideoBytes)}.");
         }
 
         return problems;

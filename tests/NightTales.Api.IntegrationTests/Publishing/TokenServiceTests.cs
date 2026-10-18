@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Publishing.Upload;
 using NightTales.Domain.Publishing;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -282,8 +283,8 @@ public sealed class TokenServiceTests(TestDatabase database) : IntegrationTest(d
 
         refused.IsError.ShouldBeTrue("a refused refresh is a typed failure, never a token");
         refused.FirstError.Code.ShouldBe(
-            ErrorCodes.OauthExchangeFailed,
-            "a 4xx token answer travels as the client's own typed failure, `invalid_grant` included");
+            YouTubeErrorCodes.ReauthRequired,
+            "`invalid_grant` is the typed ReauthRequired failure (06.2.3-T1)");
         harness.Google.TokenRequestCount.ShouldBe(1, "the refusal is Google's, so the refresh was attempted");
 
         // The port never mutates on failure: the caller (06.4.2-T1) owns the status transition.

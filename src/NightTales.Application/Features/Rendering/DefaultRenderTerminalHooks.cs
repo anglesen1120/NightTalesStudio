@@ -1,16 +1,17 @@
+using System.Text.Json.Nodes;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
 
 namespace NightTales.Application.Features.Rendering;
 
 /// <summary>
-/// The default <see cref="IRenderTerminalHooks"/> of 09.6.3-T1: it records nothing and classifies an outcome
-/// with the adapter's own D5 code.
+/// The default <see cref="IRenderTerminalHooks"/> of 09.6.3-T1/09.6.3-T2: it records nothing, classifies an
+/// outcome with the adapter's own D5 code, merges no <c>images</c> block and writes no moderation row.
 /// </summary>
 /// <remarks>
-/// It exists so the poller's terminal order is wired end to end before 03.4.2-T1 lands, and it is registered
-/// with <c>TryAdd</c> so that task's real recorder and classifier replace it without touching the poller.
-/// Nothing here writes a row, so the default is a singleton and needs no scope.
+/// It exists so the poller's and the ingest's terminal orders are wired end to end before 03.4.2-T1 lands, and it
+/// is registered with <c>TryAdd</c> so that task's real recorder and classifier replace it without touching either
+/// job. Nothing here writes a row, so the default is a singleton and needs no scope.
 /// </remarks>
 public sealed class DefaultRenderTerminalHooks : IRenderTerminalHooks
 {
@@ -50,5 +51,30 @@ public sealed class DefaultRenderTerminalHooks : IRenderTerminalHooks
             : NodeErrorCode;
 
         return ValueTask.FromResult(new RenderFailureClassification(code, null));
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The default merges nothing: the <c>images.v1</c> block is 03.4.2-T1's write path (it owns both the image
+    /// outcome and the row it explains), and a block invented here would be a second, disagreeing record of the
+    /// same render. A <see langword="null"/> block leaves the member out of the stored verdict, which is what 05
+    /// D10's read model already tolerates for an episode whose images were never reported.
+    /// </remarks>
+    public ValueTask<JsonNode?> MergeImagesAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(status);
+
+        return ValueTask.FromResult<JsonNode?>(null);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>The default records nothing: the moderation rows of a kept video are 03.4.2-T1's.</remarks>
+    public ValueTask RecordKeptVideoAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(status);
+
+        return ValueTask.CompletedTask;
     }
 }

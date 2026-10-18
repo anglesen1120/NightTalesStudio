@@ -1,25 +1,32 @@
+using System.Text.Json.Nodes;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
 
 namespace NightTales.Application.Features.Rendering;
 
 /// <summary>
-/// The two named extension points 03.4.2-T1 fills in on the terminal path of a render (09.6.3-T1 step 5,
-/// BD7): the per-image usage recording and the classification of the adapter's failed outcome.
+/// The named extension points 03.4.2-T1 fills in on the two terminal paths of a render (09.6.3-T1 step 5 and
+/// 09.6.3-T2 steps 8-9, BD7): the per-image usage recording and the classification of the adapter's failed
+/// outcome on the poll path, and the <c>images</c> block plus the moderation rows of a kept video on the ingest
+/// path.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The order is fixed by BD7 and is the poller's, never this seam's: on a terminal <c>failed</c> status
+/// The order is fixed by BD7 and is the calling job's, never this seam's. On a terminal <c>failed</c> status
 /// <see cref="RecordImageUsageAsync"/> runs first (the images that were generated are metered and recorded
 /// before anything decides the job's fate), then <see cref="ClassifyAsync"/> answers the outcome code and
-/// its retryability, and only then does the failure recorder run. Both members are no-ops in the default
-/// implementation, so 09.6.3-T1 ships the seam without a second write path.
+/// its retryability, and only then does the failure recorder run. On an ingested <c>succeeded</c> status
+/// <see cref="MergeImagesAsync"/> runs inside the final transaction, before the verdict is stored, and
+/// <see cref="RecordKeptVideoAsync"/> after the row is marked <c>succeeded</c> and before the outbox event, in
+/// that same transaction. Every member is a no-op in the default implementation, so these tasks ship the seam
+/// without a second write path.
 /// </para>
 /// <para>
-/// 03.4.2-T1 replaces the registration with its own implementation (usage recorder plus the
-/// <c>ImageOutcomeClassifier</c>); that is why the default is registered with <c>TryAdd</c>. Neither member
-/// may log or copy story content, a scene prompt or raw adapter text (P6/P8, BD16): a classification is a
-/// D5 outcome code and a nullable retryable flag.
+/// 03.4.2-T1 replaces the registration with its own implementation (usage recorder, <c>ImageOutcomeClassifier</c>,
+/// the <c>images.v1</c> block and the <c>ImageModerationRecorder</c>); that is why the default is registered with
+/// <c>TryAdd</c>. No member may log or copy story content, a scene prompt or raw adapter text (P6/P8, BD16): a
+/// classification is a D5 outcome code, an images block is <c>images.v1</c>'s own fields and a moderation row is
+/// an id.
 /// </para>
 /// </remarks>
 public interface IRenderTerminalHooks
@@ -42,6 +49,36 @@ public interface IRenderTerminalHooks
     /// <param name="ct">Cancels the read.</param>
     /// <returns>The code and the optional per-outcome retryability.</returns>
     ValueTask<RenderFailureClassification> ClassifyAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct);
+
+    /// <summary>
+    /// Builds the <c>quality_report.images</c> block of a video the ingest is keeping (03.4.2-T1, D7 row 1), so
+    /// the verdict the owner reads carries the image outcome beside the measured checks.
+    /// </summary>
+    /// <remarks>
+    /// Called inside the ingest's final transaction, before the report is written: whatever this returns is what
+    /// <c>render_jobs.quality_report</c> stores, so a hook that writes its own rows does so atomically with the
+    /// verdict they explain. <see langword="null"/> means "this platform has no images outcome to record" and
+    /// leaves the member out of the document — never a block assembled by the ingest itself (05 D9/D10: the
+    /// <c>images</c> block has one owner, the 03 pipeline).
+    /// </remarks>
+    /// <param name="job">The attempt whose output is being kept; 03.4.2-T1 reads its params there.</param>
+    /// <param name="status">The adapter's <c>succeeded</c> body, whose <c>images</c> report is the raw material.</param>
+    /// <param name="ct">Cancels the writes.</param>
+    /// <returns>The <c>images.v1</c> block to store, or <see langword="null"/>.</returns>
+    ValueTask<JsonNode?> MergeImagesAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct);
+
+    /// <summary>
+    /// Records what the moderation of a kept video's generated slots decided (03.4.2-T1, D7 row 2), after the
+    /// ingest marked the row <c>succeeded</c> and before it raises <c>RenderSucceeded</c>.
+    /// </summary>
+    /// <remarks>
+    /// Called inside the same transaction as the verdict and the episode's move to <c>video_review</c>: a video is
+    /// only kept once its blocked slots are on record, so the two states can never disagree.
+    /// </remarks>
+    /// <param name="job">The attempt whose output is being kept.</param>
+    /// <param name="status">The adapter's <c>succeeded</c> body.</param>
+    /// <param name="ct">Cancels the writes.</param>
+    ValueTask RecordKeptVideoAsync(RenderJob job, RenderStatusV1 status, CancellationToken ct);
 }
 
 /// <summary>
