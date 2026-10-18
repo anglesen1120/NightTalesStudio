@@ -8,6 +8,7 @@ using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
@@ -29,7 +30,8 @@ namespace NightTales.Api.IntegrationTests.EpisodeEndpoints;
 /// <summary>
 /// <c>GET /api/v1/episodes/{id}</c> against the real host and a real PostgreSQL 17 (09.5.3 plan §4 UC3–UC5,
 /// §9): the episode page in one call, the D15 ETag with its <c>304</c>, the D10 tenant isolation, the two
-/// <c>nextActions</c> contracts and the exact sequential query budgets of BD16/WT46 plus CR-7.
+/// <c>nextActions</c> contracts and the exact sequential query budgets of BD16/WT46 plus CR-7 and C7's
+/// publications summary (06.2.1-T1's third read).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -70,6 +72,10 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     private static readonly string[] FinalVideoMemberNames = new[]
     {
         "assetId", "sizeBytes", "sha256", "contentType", "durationSec", "retentionUntil",
+    };
+    private static readonly string[] PublicationsMemberNames = new[]
+    {
+        "published", "scheduled", "lastPublishedAt",
     };
 
     private static CancellationToken Ct => TestContextToken.Value;
@@ -114,7 +120,8 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         body.NextActions.ShouldBe(VideoReviewActions);
 
         // The block order and the member list are the contract 10.5.2/10.6.x consume: the pages' fields,
-        // then the three blocks. `publications` sits last and stays null (06 owns the table).
+        // then the three blocks. `publications` sits last and is null here because this episode has no
+        // publication row; 06.2.1-T1's third query fills it as soon as one exists.
         MemberNames(json).ShouldBe(DetailMemberNames);
 
         body.Etag.ShouldBe(etag, "D15: one value in the header and the body");
@@ -205,7 +212,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task Publications_Block_Is_Null_In_P()
+    public async Task Publications_Block_Is_Null_WithoutAPublicationRow()
     {
         var userId = await CreateUserAsync();
         var seriesId = await SeedSeriesAsync(userId);
@@ -218,11 +225,79 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
 
         status.ShouldBe(HttpStatusCode.OK);
         body.Publications.ShouldBeNull(
-            "06 owns `publications`; the placeholder stays null in P and adds no query (BD16)");
+            "06.2.1-T1/F14: the summary is null only for an episode with no publication row — never a zeroed placeholder, and never `Optional`");
 
         // Its absence does not move, drop or reorder any other member (09.5.3 plan §Acceptance).
         json.GetProperty("publications").ValueKind.ShouldBe(JsonValueKind.Null);
         MemberNames(json).Count.ShouldBe(13);
+    }
+
+    [Fact]
+    public async Task PublicationsSummary_IsFilledInOneQuery()
+    {
+        var userId = await CreateUserAsync();
+        var seriesId = await SeedSeriesAsync(userId);
+        var episodeId = await SeedEpisodeAsync(userId, seriesId, status: EpisodeStatus.Ready);
+        var connectionId = (await Connections().CreateActiveAsync(userId, ct: Ct)).Id;
+
+        // `ux_publications_active_episode_platform` allows one row per (episode, platform) outside
+        // failed/cancelled, so the two counters are proven on two episodes of one owner: this one carries the
+        // published row plus its terminal history, the sibling carries the scheduled one.
+        var publishedAt = Start.AddDays(1);
+        await Publications().CreateAsync(
+            userId, episodeId, connectionId, PublicationStatus.Published,
+            publishedAt: publishedAt, createdAt: Start, ct: Ct);
+        await Publications().CreateAsync(
+            userId, episodeId, connectionId, PublicationStatus.Cancelled,
+            createdAt: Start.AddMinutes(1), ct: Ct);
+        await Publications().CreateAsync(
+            userId, episodeId, connectionId, PublicationStatus.Failed,
+            createdAt: Start.AddMinutes(2), ct: Ct);
+
+        var siblingId = await SeedEpisodeAsync(userId, seriesId, status: EpisodeStatus.Ready);
+        await Publications().CreateAsync(
+            userId, siblingId, connectionId, PublicationStatus.Scheduled,
+            createdAt: Start.AddMinutes(3), ct: Ct);
+
+        var interceptor = new CountingDbCommandInterceptor();
+
+        using var factory = new ApiFactory(Database, new FakeClock(Start));
+        using var host = CountingHost(factory, interceptor);
+        using var client = AuthenticatedClient(host, userId);
+
+        interceptor.Reset();
+        var (status, _, body, json) = await ReadDetailAsync(client, episodeId);
+
+        status.ShouldBe(HttpStatusCode.OK);
+        body.Publications.ShouldNotBeNull("C7/F14: a published row makes the block a real one");
+        body.Publications!.Published.ShouldBe(
+            1,
+            "the cancelled and failed rows are the published row's history, and the sibling episode is not this one");
+        body.Publications.Scheduled.ShouldBe(0, "nothing of this episode is scheduled");
+        body.Publications.LastPublishedAt.ShouldBe(publishedAt);
+
+        // The block is that triple and nothing else: no publication id, no channel, no payload.
+        MemberNames(json.GetProperty("publications")).ShouldBe(PublicationsMemberNames);
+
+        // C7 is the documented exception to 09's two-query rule: both of 09.5.3-T1's reads plus this grouped
+        // one, sequential on the one read context (WT46), and the block must not grow a fourth.
+        interceptor.Count.ShouldBe(
+            3, $"C7 adds exactly one round trip: {string.Join(" | ", interceptor.Texts)}");
+        interceptor.ObservedConcurrentExecution.ShouldBeFalse();
+        interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
+        interceptor.Commands[1].Text.ShouldContain("generation_runs", Case.Insensitive);
+        interceptor.Commands[2].Text.ShouldContain("publications", Case.Insensitive);
+        interceptor.Texts.ShouldNotContain(
+            text => text.Contains("channel_connections", StringComparison.OrdinalIgnoreCase));
+
+        // The sibling episode answers its own numbers from the same host: nothing leaks across episodes.
+        var (siblingStatus, _, sibling, _) = await ReadDetailAsync(client, siblingId);
+
+        siblingStatus.ShouldBe(HttpStatusCode.OK);
+        sibling.Publications.ShouldNotBeNull();
+        sibling.Publications!.Published.ShouldBe(0);
+        sibling.Publications.Scheduled.ShouldBe(1);
+        sibling.Publications.LastPublishedAt.ShouldBeNull();
     }
 
     [Fact]
@@ -406,8 +481,9 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
 
         var current = await ReadETagAsync(client, episodeId);
 
-        // The episode has no final video, so a 200 costs exactly one command; the conditional request must
-        // not add a second one to answer (09.5.3 plan §Acceptance, BD16).
+        // The episode has no final video, so a 200 costs three commands (the episode, CR-7's latest
+        // generation and C7's publications summary); the conditional request must not add another to answer
+        // (09.5.3 plan §Acceptance, BD16).
         interceptor.Reset();
         using var response = await ConditionalGetAsync(client, episodeId, current);
 
@@ -416,7 +492,9 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         response.Headers.ETag!.ToString().ShouldBe(current, "the 304 repeats the tag the client sent");
         response.Headers.CacheControl!.ToString().ShouldBe("no-cache", "the page is revalidated every time");
         response.Headers.Vary.ShouldContain("Authorization");
-        interceptor.Count.ShouldBe(2, "the episode projection and the CR-7 latest-generation read; no asset read for an episode without a video");
+        interceptor.Count.ShouldBe(
+            3,
+            "the episode projection, CR-7's latest-generation read and C7's publications summary; no asset read for an episode without a video");
     }
 
     [Theory]
@@ -630,9 +708,9 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         var current = await ReadETagAsync(client, episodeId);
 
         // Plan §5 [DECISION]: the handler always computes the full DTO before the endpoint compares, so a
-        // revalidation of a page with a video still pays its asset read — two commands, episode then asset
-        // — and the "read `xmin` alone, then the blocks only on a miss" optimisation is not taken. This
-        // pins that decision: a 304 here is served after the asset query, not before it.
+        // revalidation of a page with a video still pays its asset read — three commands, episode then asset
+        // then C7's summary — and the "read `xmin` alone, then the blocks only on a miss" optimisation is not
+        // taken. This pins that decision: a 304 here is served after the asset query, not before it.
         interceptor.Reset();
         using var response = await ConditionalGetAsync(client, episodeId, current);
 
@@ -640,11 +718,12 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         (await response.Content.ReadAsStringAsync(Ct)).ShouldBeEmpty();
         response.Headers.ETag!.ToString().ShouldBe(current);
         interceptor.Count.ShouldBe(
-            3,
-            "the endpoint compares only after the handler has read the episode, its video asset and the CR-7 latest generation");
+            4,
+            "the endpoint compares only after the handler has read the episode, its video asset, the CR-7 latest generation and the publications summary");
         interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
         interceptor.Commands[1].Text.ShouldContain("assets", Case.Insensitive);
         interceptor.Commands[2].Text.ShouldContain("generation_runs", Case.Insensitive);
+        interceptor.Commands[3].Text.ShouldContain("publications", Case.Insensitive);
     }
 
     [Fact]
@@ -703,7 +782,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task Uses_Three_Database_Commands_With_Final_Video_And_No_Story()
+    public async Task Uses_Four_Database_Commands_With_Final_Video_And_No_Story()
     {
         var userId = await CreateUserAsync();
         var seriesId = await SeedSeriesAsync(userId);
@@ -724,18 +803,20 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         status.ShouldBe(HttpStatusCode.OK);
         body.FinalVideo.ShouldNotBeNull();
 
-        // CR-7 adds the latest generation lookup to BD16's episode + asset reads. A second asset must
-        // not add a fourth round trip, and a null story pointer must skip the version read.
-        interceptor.Count.ShouldBe(3, string.Join(" | ", interceptor.Texts));
+        // CR-7 adds the latest generation lookup to BD16's episode + asset reads, and C7 (06.2.1-T1) adds
+        // the grouped publications summary. A second asset must not add another round trip, and a null
+        // story pointer must skip the version read.
+        interceptor.Count.ShouldBe(4, string.Join(" | ", interceptor.Texts));
         interceptor.Texts.ShouldContain(text => text.Contains("episodes", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldContain(text => text.Contains("assets", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldNotContain(text => text.Contains("render_jobs", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldContain(text => text.Contains("generation_runs", StringComparison.OrdinalIgnoreCase));
+        interceptor.Texts.ShouldContain(text => text.Contains("publications", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldNotContain(text => text.Contains("story_versions", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task Uses_Two_Database_Commands_When_No_Final_Video_Or_Story()
+    public async Task Uses_Three_Database_Commands_When_No_Final_Video_Or_Story()
     {
         var userId = await CreateUserAsync();
         var seriesId = await SeedSeriesAsync(userId);
@@ -751,9 +832,12 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         var (status, _, _, _) = await ReadDetailAsync(client, episodeId);
 
         status.ShouldBe(HttpStatusCode.OK);
-        interceptor.Count.ShouldBe(2, "CR-7 reads the episode and latest generation even when no run exists");
+        interceptor.Count.ShouldBe(
+            3,
+            "CR-7 reads the episode and latest generation even when no run exists, and C7's grouped summary runs whether or not a publication row exists");
         interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
         interceptor.Commands[1].Text.ShouldContain("generation_runs", Case.Insensitive);
+        interceptor.Commands[2].Text.ShouldContain("publications", Case.Insensitive);
         interceptor.Texts.ShouldNotContain(text => text.Contains("assets", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldNotContain(text => text.Contains("story_versions", StringComparison.OrdinalIgnoreCase));
     }
@@ -782,11 +866,12 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         // would have shown up as a command that started while another was still in flight.
         interceptor.ObservedConcurrentExecution.ShouldBeFalse(
             $"no two commands may overlap: {string.Join(" | ", interceptor.Texts)}");
-        interceptor.Commands.Count.ShouldBe(3);
+        interceptor.Commands.Count.ShouldBe(4);
         interceptor.Commands.ShouldAllBe(command => command.ActiveWhenStarted == 0);
         interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
         interceptor.Commands[1].Text.ShouldContain("assets", Case.Insensitive);
         interceptor.Commands[2].Text.ShouldContain("generation_runs", Case.Insensitive);
+        interceptor.Commands[3].Text.ShouldContain("publications", Case.Insensitive);
     }
 
     [Fact]
@@ -986,6 +1071,15 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     /// </summary>
     private EpisodeBuilder Episodes(Guid userId) =>
         new(Database, new TestCurrentUser { Id = userId }, new FakeClock(Start));
+
+    /// <summary>The channel-connection builder: a real <c>active</c> row, the only state a create accepts.</summary>
+    private ChannelConnectionBuilder Connections() => new(Database, new TestCurrentUser(), new FakeClock(Start));
+
+    /// <summary>
+    /// The publication builder: it writes the row straight into <c>publications</c>, because the two summary
+    /// counters are only observable over statuses the create path itself cannot reach.
+    /// </summary>
+    private PublicationBuilder Publications() => new(Database);
 
     private async Task<Guid> SeedSeriesAsync(Guid userId, string title = "Chuỗi thử nghiệm")
     {

@@ -1,16 +1,19 @@
 namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 
 /// <summary>
-/// The episode's publication summary (09.5.3 plan §5): a placeholder of the shape 06 will fill.
+/// The episode's publication summary (09.5.3 plan §5, 06.2.1-T1 C7/F14): how many of the episode's publications
+/// are live, how many are waiting for their upload, and when the most recent one went live.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Always <see langword="null"/> in P: <c>publications</c> arrives with 06.2.1-T1, which fills this block
-/// from its own documented third query on the same <c>DbContext</c> (sequential, WT46) or from the
-/// render/asset batch — this task adds no speculative query ([RULED] 09 README §B10 WT2/BD16, plan §5).
+/// Filled by 06.2.1-T1 from its own third query on the same <c>DbContext</c> — one grouped read over
+/// <c>publications</c>, sequential after 09.5.3-T1's two reads (WT46/BD16), and the documented exception to the
+/// two-query rule that must not grow a fourth round trip.
 /// </para>
 /// <para>
-/// The member list is [INFERENCE]: BD1 pins only that the field exists.
+/// <see langword="null"/> means the episode has no publication row at all — never "not loaded": an episode with
+/// one cancelled publication answers a summary with zeros, which is what lets the page tell "never published"
+/// from "published and cancelled" (06 README D6).
 /// </para>
 /// </remarks>
 /// <param name="Published">How many publications of the episode are live.</param>

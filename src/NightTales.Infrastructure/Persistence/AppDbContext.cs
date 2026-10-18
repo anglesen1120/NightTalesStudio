@@ -166,6 +166,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<ChannelConnection> ChannelConnections => Set<ChannelConnection>();
 
+    /// <summary>
+    /// The publications of 06.2.1-T1 (<c>publications</c>, 06 README D6/D20): one row per platform post of an
+    /// episode, written by <c>CreatePublicationCommandHandler</c> and advanced by the consent/upload/cancel
+    /// paths of 06.2.x. <c>IUserOwned</c>, so the D10 tenant filter applies, and the row is the
+    /// <c>"pu-&lt;xmin&gt;"</c> ETag target every later mutation echoes.
+    /// </summary>
+    public DbSet<Publication> Publications => Set<Publication>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 

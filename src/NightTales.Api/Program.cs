@@ -398,6 +398,11 @@ try
     // claims that state anonymously and answers one of two fixed relative paths.
     app.MapPublishingEndpoints();
 
+    // 06.2.1-T1 (06 README D6/D9/D17): the episode's publications — POST creates one in `awaiting_consent` with
+    // the `"pu-<xmin>"` ETag every later consent/cancel/PATCH must echo, GET lists the episode's own rows. Both
+    // are gated by the `youtube_publish` feature flag and are owner-only (foreign episode = 404).
+    app.MapEpisodePublicationEndpoints();
+
     app.Run();
 }
 catch (Exception exception) when (exception is not HostAbortedException)

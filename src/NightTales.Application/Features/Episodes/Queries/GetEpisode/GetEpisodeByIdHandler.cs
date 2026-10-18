@@ -10,6 +10,7 @@ using NightTales.Application.Features.Stories.ReadModels;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Stories.Generation;
 
 // The feature namespace `…Features.Episodes` contains the aggregate's namespace segment, so the entity
@@ -155,6 +156,19 @@ public sealed partial class GetEpisodeByIdHandler(
                 row.Kind, row.Status, row.Stage, row.ErrorCode, row.StartedAt))
             .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
 
+        // 06.2.1-T1's third query (C7/F14, the documented exception to the two-query rule): one grouped
+        // read over this episode's publications, sequential on the same context like the reads above
+        // (BD16/WT46: EF forbids concurrent operations on one context). It must stay the last read and
+        // must not grow a fourth round trip.
+        var publications = await readDb.Query<Publication>()
+            .Where(row => row.EpisodeId == episode.Id)
+            .GroupBy(_ => 1)
+            .Select(group => new PublicationsSummaryDto(
+                group.Count(row => row.Status == PublicationStatus.Published),
+                group.Count(row => row.Status == PublicationStatus.Scheduled),
+                group.Max(row => row.Status == PublicationStatus.Published ? row.PublishedAt : null)))
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
         return new EpisodeDetailDto(
             episode.Id,
             episode.SeriesId,
@@ -166,7 +180,7 @@ public sealed partial class GetEpisodeByIdHandler(
             ETags.Episode(episode.Version),
             renderJob,
             finalVideo,
-            Publications: null,
+            Publications: publications,
             Generation: generation,
             CurrentStory: currentStory);
     }
