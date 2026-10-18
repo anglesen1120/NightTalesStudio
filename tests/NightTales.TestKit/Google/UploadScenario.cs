@@ -71,6 +71,13 @@ public sealed record UploadScenario
     /// <summary>Whether every chunk request answers <c>503</c>.</summary>
     public bool ServerErrorsPersistently { get; init; }
 
+    /// <summary>
+    /// How many bytes a chunk <c>PUT</c> is allowed to append, whatever it declared; 0 (the default) appends the
+    /// whole body. <c>1</c> is the hostile-peer shape: every answer is a <c>308</c> whose <c>Range</c> moved one
+    /// byte further, so a client without a per-chunk pass budget would issue one request per byte (SEC-5).
+    /// </summary>
+    public int ChunkProgressBytes { get; init; }
+
     /// <summary>The same scenario with the drop-after-last-chunk fault set as asked.</summary>
     /// <param name="armed">False clears it.</param>
     public UploadScenario WithDropLastChunk(bool armed = true) => this with { DropLastChunk = armed };
@@ -91,6 +98,10 @@ public sealed record UploadScenario
     /// <summary>The same scenario with every chunk request answering <c>503</c>.</summary>
     public UploadScenario WithPersistentServerErrors() =>
         this with { ServerErrorsPersistently = true, ChunkServerErrors = 0 };
+
+    /// <summary>The same scenario with a bounded per-request append, 0 to append the whole body (SEC-5).</summary>
+    /// <param name="bytes">How many bytes a chunk <c>PUT</c> may append.</param>
+    public UploadScenario WithChunkProgressBytes(int bytes) => this with { ChunkProgressBytes = bytes };
 
     /// <summary>Google's <c>error.errors[].reason</c> values the upload surface refuses with.</summary>
     public static class Reasons

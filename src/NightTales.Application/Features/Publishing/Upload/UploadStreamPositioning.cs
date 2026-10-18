@@ -17,7 +17,9 @@ namespace NightTales.Application.Features.Publishing.Upload;
 /// discarding <c>offset</c>-worth of bytes through one rented <see cref="DiscardBufferBytes"/> buffer: memory stays
 /// constant whatever the offset, and no buffer is ever sized from it. A stream that ends before the offset means the
 /// stored object shrank after the session was created, so the answer is <c>youtube_session_expired</c> — the caller
-/// creates a new session — instead of resuming from a byte the session does not expect.
+/// creates a new session — instead of resuming from a byte the session does not expect. Both stream kinds report that
+/// same failure, and each learns it before reading past the end: a seekable stream from its length, a non-seekable
+/// one by reaching the end of the stream.
 /// </para>
 /// <para>
 /// Public because this solution has no <c>InternalsVisibleTo</c> and the unit tests exercise it (the
@@ -30,8 +32,16 @@ public static class UploadStreamPositioning
     public const int DiscardBufferBytes = 256 * 1024;
 
     /// <summary>
+    /// The one description both end-of-object branches answer, so a seekable stream's length check and the discard
+    /// path's end of stream cannot drift apart.
+    /// </summary>
+    private const string ObjectEndedDescription =
+        "The stored object ended before the upload's resume offset, so the session can no longer continue.";
+
+    /// <summary>
     /// Advances <paramref name="stream"/> so its next byte read is <paramref name="offset"/>, or answers
-    /// <c>youtube_session_expired</c> when the stream ends first.
+    /// <c>youtube_session_expired</c> when the object ends first: a seekable stream compares its length and is
+    /// refused without a read, while a non-seekable one is refused when the discard reaches the end.
     /// </summary>
     /// <param name="stream">The object's read stream; owned by the caller, never disposed here.</param>
     /// <param name="offset">The next byte the session still needs, as the probe answered it (&gt;= 0).</param>
@@ -59,6 +69,15 @@ public static class UploadStreamPositioning
 
         if (stream.CanSeek)
         {
+            // A seekable stream knows its own length, so an offset past the end is the same fact the discard path
+            // only discovers by reading to the end: the stored object shrank under the session. Seeking first would
+            // leave the stream past the end and the client would declare a chunk the object cannot serve, so the
+            // offset is checked before the seek, with no data read (reading the length is not a read of the stream).
+            if (offset > stream.Length)
+            {
+                return StreamEndedBeforeOffset();
+            }
+
             stream.Seek(offset, SeekOrigin.Begin);
             return Result.Success;
         }
@@ -91,9 +110,7 @@ public static class UploadStreamPositioning
 
                 if (read == 0)
                 {
-                    return Failure(
-                        YouTubeErrorCodes.SessionExpired,
-                        "The stored object ended before the upload's resume offset, so the session can no longer continue.");
+                    return StreamEndedBeforeOffset();
                 }
 
                 remaining -= read;
@@ -106,6 +123,12 @@ public static class UploadStreamPositioning
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// The one failure both stream kinds answer when the object ends before the offset: a session created for a
+    /// longer object cannot continue from a byte the store no longer holds, so the caller creates a new one.
+    /// </summary>
+    private static Error StreamEndedBeforeOffset() => Failure(YouTubeErrorCodes.SessionExpired, ObjectEndedDescription);
 
     /// <summary>The fixed failure every branch answers: one of the client's internal codes plus the empty failure.</summary>
     private static Error Failure(string code, string description) =>

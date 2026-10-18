@@ -18,11 +18,17 @@ namespace NightTales.TestKit.Google;
 /// </remarks>
 public sealed class FakeGoogleOptions
 {
+    /// <summary>The client id the host's <c>YouTube:ActiveClientId</c> points at by default.</summary>
+    public const string DefaultClientId = "canary-oauth-client-primary";
+
+    /// <summary>The default client's secret, resolved through the secret port.</summary>
+    public const string DefaultClientSecret = "canary-oauth-primary-aaaa";
+
     /// <summary>The client the host's <c>YouTube:ActiveClientId</c> is pointed at.</summary>
-    public string ActiveClientId { get; set; } = "canary-oauth-client-primary";
+    public string ActiveClientId { get; set; } = DefaultClientId;
 
     /// <summary>The <see cref="ActiveClientId"/> client's secret, resolved through the secret port.</summary>
-    public string ActiveClientSecret { get; set; } = "canary-oauth-primary-aaaa";
+    public string ActiveClientSecret { get; set; } = DefaultClientSecret;
 
     /// <summary>A second client, so a test can prove the exchange uses the client pinned to the state row.</summary>
     public string SecondClientId { get; set; } = "canary-oauth-client-secondary";
@@ -59,6 +65,12 @@ public sealed class FakeGoogleOptions
 
     /// <summary>When true, a successful exchange omits <c>refresh_token</c> (a silent prior grant).</summary>
     public bool OmitRefreshToken { get; set; }
+
+    /// <summary>
+    /// The <c>expires_in</c> every successful token answer claims. A test sets it to an absurd value to prove the
+    /// client bounds an untrusted lifetime instead of throwing out of its typed error model (SEC-6).
+    /// </summary>
+    public long ExpiresInSeconds { get; set; } = 3600;
 
     /// <summary>
     /// The <c>videos.list?part=status</c> row of every id the fake knows (06.2.3-T1): keyed by video id, so a

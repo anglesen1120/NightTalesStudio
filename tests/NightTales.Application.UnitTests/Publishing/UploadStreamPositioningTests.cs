@@ -9,8 +9,9 @@ namespace NightTales.Application.UnitTests.Publishing;
 /// <summary>
 /// <c>UploadStreamPositioning.EnsureAtAsync</c> (06.2.3-T1, G7): a seekable stream is positioned without a single
 /// read, a non-seekable one (an S3 response body, CR-17) is advanced through one rented 256 KiB buffer whatever the
-/// offset is, a negative offset is refused before anything is touched, and a stream that ends before the offset
-/// answers <c>youtube_session_expired</c> instead of resuming from a byte the session does not expect.
+/// offset is, a negative offset is refused before anything is touched, and a stream that ends before the offset —
+/// a seekable one by its length, a non-seekable one at the end of the stream — answers
+/// <c>youtube_session_expired</c> instead of resuming from a byte the session does not expect.
 /// </summary>
 /// <remarks>
 /// No mocking library (09 D13): the two doubles below are hand-written streams that record how the helper read them
@@ -77,6 +78,35 @@ public sealed class UploadStreamPositioningTests
 
         result.IsError.ShouldBeFalse();
         stream.Consumed.ShouldBe(Offset);
+    }
+
+    [Fact]
+    public async Task UploadStreamPositioning_SeekableStreamEndsBeforeOffset_IsSessionExpired()
+    {
+        // The same fact the non-seekable path learns by reaching the end, read here from the length: the object is
+        // shorter than the offset the session needs, so the resume cannot continue — and the check costs no read,
+        // which is what keeps a 2 GB resume as cheap on a seekable body as on a streamed one.
+        using var stream = new RecordingSeekableStream(CreatePayload(100));
+
+        var result = await UploadStreamPositioning.EnsureAtAsync(stream, Offset, Ct);
+
+        AssertFailure(result, YouTubeErrorCodes.SessionExpired);
+        stream.ReadCalls.ShouldBe(0);
+        stream.Position.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task UploadStreamPositioning_SeekableStreamEndsExactlyAtTheOffset_SucceedsAtTheEnd()
+    {
+        // The boundary the refusal must not swallow: an object exactly as long as the offset stands at its end, the
+        // client sends no further chunk for it, and the seek itself is still not a read.
+        using var stream = new RecordingSeekableStream(CreatePayload((int)Offset));
+
+        var result = await UploadStreamPositioning.EnsureAtAsync(stream, Offset, Ct);
+
+        result.IsError.ShouldBeFalse();
+        stream.Position.ShouldBe(Offset);
+        stream.ReadCalls.ShouldBe(0);
     }
 
     [Fact]

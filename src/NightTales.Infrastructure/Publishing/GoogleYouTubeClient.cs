@@ -117,6 +117,10 @@ public sealed partial class GoogleYouTubeClient(
     /// </summary>
     private const int DefaultTokenLifetimeSeconds = 3600;
 
+    /// <summary>The longest token lifetime a token answer may claim (one day); anything above it is not a lifetime
+    /// this product will honour, so it is treated like a missing one (SEC-6).</summary>
+    private const int MaxTokenLifetimeSeconds = 86400;
+
     /// <inheritdoc />
     public string BuildAuthorizationUrl(
         OAuthClient client,
@@ -294,6 +298,19 @@ public sealed partial class GoogleYouTubeClient(
             return UploadRefusedBeforeTheCall();
         }
 
+        // SEC-7: the media type travels as a raw request header, so only a conservative token pair is accepted
+        // here; anything else (empty, a CR/LF, a parameter) is refused before a Google call rather than handed to
+        // the transport to reject as an untyped exception. The offending value is never logged or described.
+        // The same rule covers text a UTF-16 string can carry and a UTF-8 body cannot: a title, a description or a
+        // tag with an unpaired surrogate is a caller bug, refused here rather than at the JSON writer.
+        if (!IsWellFormedMediaType(request.MimeType)
+            || !IsEncodableText(request.Title)
+            || !IsEncodableText(request.Description)
+            || !request.Tags.All(IsEncodableText))
+        {
+            return UploadRefusedBeforeTheCall();
+        }
+
         if (!TryGetUploadBaseUri(out var uploadBase))
         {
             return UploadRefusedBeforeTheCall();
@@ -301,7 +318,19 @@ public sealed partial class GoogleYouTubeClient(
 
         var upload = options.Value.Upload;
         var endpoint = new Uri(uploadBase, SessionCreatePath);
-        var body = BuildVideoInsertJson(request);
+
+        byte[] body;
+
+        try
+        {
+            body = BuildVideoInsertJson(request);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or FormatException)
+        {
+            // A title or description with an unpaired surrogate makes the writer throw (SEC-7): the request is
+            // refused as a caller bug, never as a retryable transport failure.
+            return UploadRefusedBeforeTheCall();
+        }
 
         var response = await SendUploadAsync(
             () =>
@@ -426,6 +455,11 @@ public sealed partial class GoogleYouTubeClient(
                 {
                     // The stored object is shorter than the length the caller declared: the row and the object
                     // disagree and no retry can fix it, so the answer is the one the job treats as unrecoverable.
+                    // The line carries the two numbers only — a length is not content (QA-D1).
+                    var bytesSent = sent + filled.Value;
+
+                    LogUploadShortStream(logger, OperationResume, bytesSent, length);
+
                     return YouTubeError(YouTubeErrorCodes.Transport, null, null, isTransport: true);
                 }
 
@@ -433,8 +467,21 @@ public sealed partial class GoogleYouTubeClient(
                 var resendFrom = sent;
                 var attempt = 0;
 
+                // SEC-5: a peer that answers `Range` one byte further along on every PUT would otherwise let one
+                // chunk issue a request per byte. The budget is what the chunk can legitimately need — one pass per
+                // 256 KiB step, the caller's retry budget, and the pass that completes it — and it never resets.
+                var maxPasses = (chunkLength / NonFinalChunkStepBytes) + maxRetries + 1;
+                var passes = 0;
+
                 while (true)
                 {
+                    if (passes >= maxPasses)
+                    {
+                        return YouTubeError(YouTubeErrorCodes.Transport, null, null, isTransport: true);
+                    }
+
+                    passes++;
+
                     var from = resendFrom;
                     var to = chunkEnd;
                     var offset = checked((int)(from - sent));
@@ -731,8 +778,16 @@ public sealed partial class GoogleYouTubeClient(
         Stream content,
         CancellationToken ct)
     {
-        if (content.CanSeek && content.Position < length)
+        if (content.CanSeek)
         {
+            if (content.Position >= length)
+            {
+                // A caller that positioned the stream at or past the declared end has already read the object: no
+                // offset this session could resume from is derivable, and probing would start a chunk at an offset
+                // the stream cannot serve. It is a caller bug, so it is refused before any Google call (C6).
+                return UploadRefusedBeforeTheCall();
+            }
+
             return new ResumeStart(content.Position, null);
         }
 
@@ -909,7 +964,10 @@ public sealed partial class GoogleYouTubeClient(
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linked.Token);
 
             var body = await ReadBoundedBodyAsync(response.Content, linked.Token);
-            var reason = ReasonOf(body);
+
+            // Sanitised once, here: this value feeds both the log line and `UploadResponse.Reason`, so an untrusted
+            // body can never stretch or break a line (C1/SEC-3).
+            var reason = YouTubeFailure.SanitizeReason(ReasonOf(body));
 
             var elapsedMs = ElapsedMs(started);
 
@@ -925,7 +983,9 @@ public sealed partial class GoogleYouTubeClient(
             && !ct.IsCancellationRequested)
         {
             // A timeout surfaces as an OperationCanceledException; only the caller's own token is rethrown. The
-            // type name is the only thing about the exception that may travel: a message can carry a URL.
+            // type name is the only thing about the exception that may travel: a message can carry a URL. Only the
+            // three transport classes are caught on purpose: a request this class built badly (SEC-7) is refused
+            // before it is sent, so anything else here is a real bug and must surface instead of being retried.
             var elapsedMs = ElapsedMs(started);
 
             LogUploadUnreachable(logger, operation, ex.GetType().Name, elapsedMs);
@@ -1114,16 +1174,18 @@ public sealed partial class GoogleYouTubeClient(
     }
 
     /// <summary>
-    /// Whether <paramref name="sessionUri"/> may receive this call's bearer: absolute, no user-info, and exactly
-    /// the configured upload host's scheme, host and port. The session URI is opaque otherwise — its shape is
-    /// Google's to choose.
+    /// Whether <paramref name="sessionUri"/> may receive this call's bearer: absolute, no user-info, exactly the
+    /// configured upload host's scheme, host and port, and under the configured upload root's path. The rest of
+    /// the URI is opaque — Google's own session id and query are its to choose — but a URI for another API on the
+    /// same shared host must never carry the bearer (SEC-4).
     /// </summary>
     private static bool IsAllowedSessionUri(Uri sessionUri, Uri uploadBase) =>
         sessionUri.IsAbsoluteUri
         && sessionUri.UserInfo.Length == 0
         && string.Equals(sessionUri.Scheme, uploadBase.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(sessionUri.Host, uploadBase.Host, StringComparison.OrdinalIgnoreCase)
-        && sessionUri.Port == uploadBase.Port;
+        && sessionUri.Port == uploadBase.Port
+        && sessionUri.AbsolutePath.StartsWith(uploadBase.AbsolutePath, StringComparison.Ordinal);
 
     /// <summary>Reports a confirmed byte count once, and only forward: the caller's progress never moves back.</summary>
     private static void ReportProgress(IProgress<long>? progress, long confirmed, ref long reported)
@@ -1166,6 +1228,47 @@ public sealed partial class GoogleYouTubeClient(
         foreach (var character in id)
         {
             if (!(char.IsAsciiLetterOrDigit(character) || character is '_' or '-'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="mimeType"/> may travel as <c>X-Upload-Content-Type</c>: a conservative media type,
+    /// <c>type/subtype</c>, of RFC 9110 token characters only. A parameter, whitespace, a control character or an
+    /// empty value is refused (SEC-7); the value is never echoed anywhere.
+    /// </summary>
+    private static bool IsWellFormedMediaType(string? mimeType) =>
+        mimeType is { Length: > 0 and <= MaxMediaTypeLength } && MediaTypeRegex().IsMatch(mimeType);
+
+    /// <summary>
+    /// Whether <paramref name="value"/> is text a UTF-8 JSON body can carry exactly: no unpaired surrogate. A
+    /// UTF-16 string can hold one, UTF-8 cannot, so a value that fails here cannot be sent as given (SEC-7).
+    /// </summary>
+    /// <param name="value">The text to check.</param>
+    /// <returns><see langword="true"/> when every surrogate in the value is paired.</returns>
+    private static bool IsEncodableText(string? value)
+    {
+        if (value is null)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (char.IsHighSurrogate(value[index]))
+            {
+                if (index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]))
+                {
+                    return false;
+                }
+
+                index++;
+            }
+            else if (char.IsLowSurrogate(value[index]))
             {
                 return false;
             }
@@ -1320,7 +1423,11 @@ public sealed partial class GoogleYouTubeClient(
             return null;
         }
 
-        var lifetime = payload.ExpiresInSeconds is > 0 ? payload.ExpiresInSeconds.Value : DefaultTokenLifetimeSeconds;
+        // The lifetime is untrusted input: a value that is not a sane number of seconds is treated exactly like a
+        // missing one, so `AddSeconds` can never throw out of the typed error model (SEC-6).
+        var lifetime = payload.ExpiresInSeconds is > 0 and <= MaxTokenLifetimeSeconds
+            ? payload.ExpiresInSeconds.Value
+            : DefaultTokenLifetimeSeconds;
 
         return new OAuthTokens(
             accessToken,
@@ -1474,6 +1581,15 @@ public sealed partial class GoogleYouTubeClient(
     /// <summary>The largest id list one <c>videos.list</c> call accepts (D18: one quota unit per call).</summary>
     private const int MaxVideoIdsPerCall = 50;
 
+    /// <summary>
+    /// The 256 KiB step G7 fixes for every chunk but the last: the smallest forward progress a session can
+    /// legitimately confirm, so it is what the per-chunk pass budget is measured in (SEC-5).
+    /// </summary>
+    private const int NonFinalChunkStepBytes = 262144;
+
+    /// <summary>The longest media type this class will put in a request header (SEC-7).</summary>
+    private const int MaxMediaTypeLength = 255;
+
     /// <summary>The read size of the bounded body reader; the body itself is capped at <see cref="MaxResponseContentBytes"/>.</summary>
     private const int BodyReadBufferBytes = 8 * 1024;
 
@@ -1499,6 +1615,10 @@ public sealed partial class GoogleYouTubeClient(
     [GeneratedRegex("^bytes=0-(\\d+)$", RegexOptions.CultureInvariant)]
     private static partial Regex ResumeRangeRegex();
 
+    /// <summary>The strict shape of a media type this class will put in a header (SEC-7).</summary>
+    [GeneratedRegex("^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$", RegexOptions.CultureInvariant)]
+    private static partial Regex MediaTypeRegex();
+
     [LoggerMessage(EventId = 2372, Level = LogLevel.Information, Message = "youtube.oauth.response operation={Operation} status={StatusCode}")]
     private static partial void LogOAuthResponse(ILogger logger, string operation, int statusCode);
 
@@ -1522,4 +1642,7 @@ public sealed partial class GoogleYouTubeClient(
 
     [LoggerMessage(EventId = 2379, Level = LogLevel.Warning, Message = "youtube.upload.retry operation={Operation} attempt={Attempt}")]
     private static partial void LogUploadRetry(ILogger logger, string operation, int attempt);
+
+    [LoggerMessage(EventId = 2380, Level = LogLevel.Warning, Message = "youtube.upload.short-stream operation={Operation} bytesSent={BytesSent} length={Length}")]
+    private static partial void LogUploadShortStream(ILogger logger, string operation, long bytesSent, long length);
 }

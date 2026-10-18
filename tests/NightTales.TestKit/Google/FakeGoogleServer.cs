@@ -93,8 +93,13 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     /// <summary>The path that creates a resumable session (<c>videos.insert?uploadType=resumable</c>).</summary>
     public const string UploadVideosPath = "/upload/youtube/v3/videos";
 
-    /// <summary>The prefix of a session resource: the upload <c>PUT</c>s address <c>{prefix}{id}</c>.</summary>
-    public const string UploadSessionPrefix = "/upload/session/";
+    /// <summary>
+    /// The prefix of a session resource: the upload <c>PUT</c>s address <c>{prefix}{id}</c>. It lives under the
+    /// upload root (<see cref="UploadVideosPath"/>'s directory), the way Google's own session URI is the create
+    /// request's path plus <c>upload_id</c>, so a client that requires the session to stay under the configured
+    /// upload root is exercised rather than accommodated.
+    /// </summary>
+    public const string UploadSessionPrefix = "/upload/youtube/v3/session/";
 
     /// <summary>The <c>Content-Range</c> value of a probe: <c>bytes */&lt;total&gt;</c>.</summary>
     public const string ProbeContentRangePrefix = "bytes */";
@@ -567,7 +572,7 @@ public sealed class FakeGoogleServer : IAsyncDisposable
         var body = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["access_token"] = accessToken,
-            ["expires_in"] = 3600,
+            ["expires_in"] = Options.ExpiresInSeconds,
             // Granular consent: Options.GrantedScope lets a test answer less than the request asked for (or
             // nothing at all) without touching the authorization request itself.
             ["scope"] = Options.GrantedScope ?? scope ?? DefaultScopes,
@@ -850,7 +855,10 @@ public sealed class FakeGoogleServer : IAsyncDisposable
         {
             if (range.Start == session.Held)
             {
-                session.Held = range.Start + received;
+                // SEC-5: a scenario can hold the session back to a bounded append, the hostile peer that answers a
+                // 308 one byte further along however much the request carried.
+                var limit = Scenario.ChunkProgressBytes;
+                session.Held = range.Start + (limit > 0 ? Math.Min(received, limit) : received);
             }
             else if (range.End >= session.Held)
             {
