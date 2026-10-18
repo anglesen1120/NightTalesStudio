@@ -55,9 +55,14 @@ public static class VideoReviewEndpoints
     /// (<c>Program</c> configures the same one for every JSON route), so <c>story</c> and <c>re_render</c> bind
     /// exactly as they do on the framework's own bodies (09 README D14).
     /// </summary>
+    /// <remarks>
+    /// Integer enum values are refused (<c>allowIntegerValues: false</c>, the outbox serializer's choice): a
+    /// numeric <c>target</c> is a member no client can read back, so it is a body error under <c>target</c>
+    /// rather than a silent <c>story</c> or <c>re_render</c> (D1).
+    /// </remarks>
     private static readonly JsonSerializerOptions BodyJson = new(JsonSerializerDefaults.Web)
     {
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) },
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower, allowIntegerValues: false) },
     };
 
     /// <summary>Maps the video-review routes onto the host's route builder.</summary>
@@ -68,14 +73,16 @@ public static class VideoReviewEndpoints
     {
         ArgumentNullException.ThrowIfNull(routes);
 
-        // Both bodies are read by the handlers below (bounded, optional for approve, required for reject), so a
-        // content type the matcher would refuse as 415 is a coded 400 and the payload cap is the host's.
-        // The request bodies are still documented through `Accepts`.
+        // Both bodies are read by the handlers below (bounded, optional for approve, required for reject), so the
+        // routes declare the catch-all media type and let those readers own content-type validation (400), not
+        // routing's 415 matcher - the story-approval route's choice (StoryEndpoints.ApproveRoute). The
+        // transformer below documents each body under `application/json` again, so the catch-all never reaches
+        // the OpenAPI document.
         EpisodeIdRouteParameter.Declare(
-            routes.MapPost(ApproveRoute, ApproveAsync)
+            DocumentBodyAsJson(routes.MapPost(ApproveRoute, ApproveAsync)
                 .RequireIfMatch()
                 .RequireAuthorization()
-                .Accepts<ApproveVideoRequest>(isOptional: true, "application/json")
+                .Accepts<ApproveVideoRequest>(isOptional: true, "*/*")
                 .Produces<EpisodeStateDto>(StatusCodes.Status200OK)
                 .ProducesProblem(StatusCodes.Status400BadRequest)
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -84,14 +91,14 @@ public static class VideoReviewEndpoints
                 .ProducesProblem(StatusCodes.Status412PreconditionFailed)
                 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
-                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
 
         EpisodeIdRouteParameter.Declare(
-            routes.MapPost(RejectRoute, RejectAsync)
+            DocumentBodyAsJson(routes.MapPost(RejectRoute, RejectAsync)
                 .RequireIfMatch()
                 .RequireIdempotencyKey()
                 .RequireAuthorization()
-                .Accepts<RejectVideoRequest>("application/json")
+                .Accepts<RejectVideoRequest>("*/*")
                 .Produces<EpisodeStateDto>(StatusCodes.Status200OK)
                 .Produces<EpisodeStateDto>(StatusCodes.Status202Accepted)
                 .ProducesProblem(StatusCodes.Status400BadRequest)
@@ -101,10 +108,29 @@ public static class VideoReviewEndpoints
                 .ProducesProblem(StatusCodes.Status412PreconditionFailed)
                 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
-                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
 
         return routes;
     }
+
+    /// <summary>
+    /// Documents a request body declared with the catch-all media type under <c>application/json</c>: the
+    /// readers above own content-type validation (400) while the document keeps the JSON body
+    /// (StoryEndpoints.ApproveRoute, D4).
+    /// </summary>
+    /// <param name="route">The mapped route.</param>
+    /// <returns>The same builder, for chaining.</returns>
+    private static RouteHandlerBuilder DocumentBodyAsJson(RouteHandlerBuilder route) =>
+        route.AddOpenApiOperationTransformer((operation, _, _) =>
+        {
+            if (operation.RequestBody?.Content is { } content && content.TryGetValue("*/*", out var body))
+            {
+                content["application/json"] = body;
+                content.Remove("*/*");
+            }
+
+            return Task.CompletedTask;
+        });
 
     /// <summary>
     /// <c>POST /api/v1/episodes/{id}/video/approve</c>: 200 with the <c>ready</c> state and its post-commit
@@ -118,6 +144,11 @@ public static class VideoReviewEndpoints
     /// maps its invalid body to. Because the body is read here, that 400 precedes the tenant lookup, exactly as
     /// the framework's own binding failure does on every other body route; note length is the command
     /// validator's check (400 <c>validation_failed</c>).
+    /// </para>
+    /// <para>
+    /// The route declares the catch-all media type (<c>*/*</c>), so a body sent as, say, <c>text/plain</c>
+    /// reaches this reader and is the same coded 400 — not the framework's empty-bodied 415 (D4). The OpenAPI
+    /// document still shows the JSON body.
     /// </para>
     /// <para>
     /// Approve needs no <c>final_video_asset_id</c> guard (task §Failure handling): a hand-inserted
@@ -171,9 +202,11 @@ public static class VideoReviewEndpoints
     /// <remarks>
     /// <para>
     /// The body is required and read here (bounded, the approval route's reader) rather than by the framework's
-    /// binder, so an unknown <c>target</c> — or any other unreadable body — is a coded 400
-    /// <c>validation_failed</c> problem under the offending member in every environment, and the
-    /// <c>If-Match</c>/<c>Idempotency-Key</c> filters still answer 428/400 first.
+    /// binder, so the route declares the catch-all media type (<c>*/*</c>) and an unknown, numeric, absent or
+    /// null <c>target</c> — or any other unreadable body, whatever its content type — is a coded 400
+    /// <c>validation_failed</c> problem under the offending member in every environment, never the framework's
+    /// empty-bodied 415 (D1, D4). The <c>If-Match</c>/<c>Idempotency-Key</c> filters still answer 428/400 first,
+    /// and the OpenAPI document still shows the JSON body.
     /// </para>
     /// <para>
     /// The status is the command's own wire value (<c>story_review</c> or <c>story_approved</c>), and the
@@ -320,8 +353,9 @@ public static class VideoReviewEndpoints
     /// </summary>
     /// <remarks>
     /// The member a failing body names comes from the reader's path (<c>$.target</c>), so the problem's field
-    /// points at the value the client must fix; anything else is reported under <c>body</c>. The reason's own
-    /// 1–500 check stays in the command validator.
+    /// points at the value the client must fix; anything else is reported under <c>body</c>. The discriminator is
+    /// required, so a body that omits, nulls or numbers it is refused with <c>target</c> as the field instead of
+    /// silently taking the <c>story</c> branch (D1); the reason's own 1–500 check stays in the command validator.
     /// </remarks>
     private static ErrorOr<RejectVideoRequest> ReadRejectBody(ReadOnlyMemory<byte> raw, HttpRequest request)
     {
@@ -343,12 +377,44 @@ public static class VideoReviewEndpoints
         }
         catch (JsonException exception)
         {
-            return Errors.ValidationFailed(FieldOf(exception.Path), "The request body is not a valid rejection.");
+            return Errors.ValidationFailed(
+                OmitsTarget(exception.Path, raw) ? "target" : FieldOf(exception.Path),
+                "The request body is not a valid rejection.");
         }
         catch (InvalidOperationException)
         {
             // A lone surrogate escape cannot be transcoded. Do not expose body text through an exception.
             return Errors.ValidationFailed("body", "The request body is not a valid rejection.");
+        }
+    }
+
+    /// <summary>
+    /// Whether a refused reject body omitted its required <c>target</c>.
+    /// </summary>
+    /// <param name="path">The path of the refusal, <c>$.target</c> for a member the serializer reached.</param>
+    /// <param name="raw">The body that was refused.</param>
+    /// <returns><see langword="true"/> when the body omits the member.</returns>
+    /// <remarks>
+    /// The serializer reports a member it never saw at the body's own path, and reports every refusal it can
+    /// locate at that member's path — so a root path leaves two possibilities: the omitted member, or a body that
+    /// is not an object at all. A body that reads as a JSON object here is the first one, because the parser
+    /// accepted it (a body it cannot read, such as truncated or over-deep JSON, is not an object).
+    /// </remarks>
+    private static bool OmitsTarget(string? path, ReadOnlyMemory<byte> raw)
+    {
+        if (path is not (null or "" or "$"))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            return document.RootElement.ValueKind is JsonValueKind.Object;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

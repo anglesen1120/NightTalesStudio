@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using NightTales.Domain.Episodes;
 
 namespace NightTales.Api.Contracts.VideoReview;
@@ -14,10 +15,16 @@ namespace NightTales.Api.Contracts.VideoReview;
 /// framework 400 whose code a client cannot match.
 /// </para>
 /// <para>
+/// The member is a required discriminator (<see cref="JsonRequiredAttribute"/>), so a body that omits it is
+/// refused the same way, under <c>target</c>, instead of defaulting to <c>story</c> and silently sending the
+/// episode to the story editor. The property stays non-nullable so the published contract keeps saying that
+/// <c>reason</c> and <c>target</c> are required.
+/// </para>
+/// <para>
 /// The reason is user text: it is stored on the episode and audited as a present/absent flag only, never as
 /// text.
 /// </para>
 /// </remarks>
 /// <param name="Reason">The owner's reason, 1–500 characters after trimming; a blank one is invalid.</param>
-/// <param name="Target">Where the rejection sends the episode (WT3).</param>
-public sealed record RejectVideoRequest(string Reason, RejectTarget Target);
+/// <param name="Target">Where the rejection sends the episode (WT3); a body without it is refused.</param>
+public sealed record RejectVideoRequest(string Reason, [property: JsonRequired] RejectTarget Target);
