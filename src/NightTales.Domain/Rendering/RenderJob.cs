@@ -38,7 +38,11 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     /// <summary>The <c>stage</c> text of a row nobody has submitted yet (BD5's acceptance wording: <c>queued</c>).</summary>
     public const string QueuedStage = "queued";
 
-    /// <summary>BD7's poll cadence (<c>Render:PollSeconds</c>, 10 s): the distance <see cref="MarkSubmitted"/> stamps on <see cref="NextPollAt"/>.</summary>
+    /// <summary>
+    /// BD7's default poll cadence (<c>Render:PollSeconds</c>, 10 s): the distance <see cref="MarkSubmitted"/> and
+    /// <see cref="UpdateProgress"/> stamp on <see cref="NextPollAt"/>. <see cref="ReschedulePoll"/> takes the
+    /// interval from its caller instead, because the poller passes the adapter's own wait when it gave one.
+    /// </summary>
     public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -102,6 +106,14 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     /// exactly it, by reservation id, never by job id (WT50).
     /// </summary>
     public Guid ReservationId { get; private set; }
+
+    /// <summary>
+    /// The worst-case cost in USD this attempt reserved, written once by <see cref="Create"/> from the bound the
+    /// command reserved against (03 D8, <c>numeric(12,6)</c>). The open-bounds reader sums it with the generation
+    /// runs' bound, which is what makes the platform spend cap cover a render in flight (02.2.2-T2); the value is
+    /// never recomputed, so a later price change cannot move an open row.
+    /// </summary>
+    public decimal WorstCaseUsd { get; private set; }
 
     /// <summary>Where the attempt is in the BD5 lifecycle (00 §7).</summary>
     public RenderJobStatus Status { get; private set; }
@@ -179,6 +191,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     /// <param name="episodeId">The episode being rendered.</param>
     /// <param name="storyVersionId">The approved story version the submit reads content from.</param>
     /// <param name="reservationId">The reservation that pays for the attempt (NOT NULL, WT50).</param>
+    /// <param name="worstCaseUsd">The non-negative worst-case cost in USD the reservation was taken for (03 D8).</param>
     /// <param name="params">The D11 settings document, built by <c>RenderSubmitMapper.BuildParams</c>.</param>
     /// <param name="attempt">The attempt number, from 1.</param>
     /// <param name="now">The command's clock reading.</param>
@@ -189,6 +202,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
         Guid episodeId,
         Guid storyVersionId,
         Guid reservationId,
+        decimal worstCaseUsd,
         RenderParamsV1 @params,
         int attempt,
         DateTimeOffset now)
@@ -220,6 +234,14 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
             return Missing("reservation_id");
         }
 
+        if (worstCaseUsd < 0m)
+        {
+            return Error.Validation(
+                ValidationFailedCode,
+                "A render job's worst-case cost cannot be negative.",
+                Field("worst_case_usd"));
+        }
+
         if (attempt < 1)
         {
             return Error.Validation(ValidationFailedCode, "A render attempt counts from 1.", Field("attempt"));
@@ -232,6 +254,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
             EpisodeId = episodeId,
             StoryVersionId = storyVersionId,
             ReservationId = reservationId,
+            WorstCaseUsd = worstCaseUsd,
             Status = RenderJobStatus.Queued,
             Stage = QueuedStage,
             Percent = 0,
@@ -341,6 +364,46 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     }
 
     /// <summary>
+    /// Moves a job the poller is watching to its next poll instant without recording progress (BD7's
+    /// <c>Render:PollSeconds</c> cadence).
+    /// </summary>
+    /// <remarks>
+    /// A poll that reports nothing new — the adapter's <c>deferred</c> answer, or a status that repeats the stored
+    /// stage and percent — goes through <see cref="UpdateProgress"/> (or no call at all), so without this method the
+    /// row would keep its old <see cref="NextPollAt"/> and be re-claimed by every tick. The claim is
+    /// <c>ORDER BY next_poll_at LIMIT PollBatchSize</c>, so those rows would also starve every job behind them.
+    /// <para>
+    /// The distance is the caller's, not <see cref="PollInterval"/>: BD7's step 3/6 stamps
+    /// <c>now + Render:PollSeconds</c>, and the adapter's own <c>Deferred.RetryAfter</c> wins over that cadence when
+    /// it gives one, so the poller passes the interval it is about to wait. <see cref="PollInterval"/> stays the
+    /// contract default of the two write paths (<see cref="MarkSubmitted"/>, <see cref="UpdateProgress"/>), which do
+    /// not know the bound section.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The Worker's clock reading.</param>
+    /// <param name="interval">The distance to the next poll; must be positive.</param>
+    /// <returns><c>Success</c>, the 400 of a non-positive interval, or the 409 of a row the poller is not watching.</returns>
+    public ErrorOr<Success> ReschedulePoll(DateTimeOffset now, TimeSpan interval)
+    {
+        if (interval <= TimeSpan.Zero)
+        {
+            return Error.Validation(
+                ValidationFailedCode,
+                "A render poll interval must be positive.",
+                Field("interval"));
+        }
+
+        if (Status is not (RenderJobStatus.Submitted or RenderJobStatus.Running))
+        {
+            return InvalidState("be polled again");
+        }
+
+        NextPollAt = now + interval;
+
+        return Result.Success;
+    }
+
+    /// <summary>
     /// Takes the row out of the poller's claim (UC5, WT45): <c>submitted</c>/<c>running</c> → <c>ingesting</c> and
     /// <see cref="NextPollAt"/> cleared, committed before the first byte of the output is downloaded.
     /// </summary>
@@ -378,17 +441,29 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     }
 
     /// <summary>
-    /// Ends the attempt with one of the 05 D5 outcome codes: a submitted, running or ingesting row → <c>failed</c>.
+    /// Ends the attempt with one of the 05 D5 outcome codes: a <c>queued</c>, submitted, running or ingesting row →
+    /// <c>failed</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The code must be on <see cref="OutcomeCodes"/>; anything else is refused as <c>validation_failed</c> (400) rather
     /// than stored, so <c>render_jobs.error_code</c> can never hold an uncatalogued value. <see cref="ErrorMessage"/>
     /// is left empty by this method: the fixed D15 S4 sentence belongs to the node contract, and the node's raw error
     /// text is never stored (05 C8).
+    /// </para>
+    /// <para>
+    /// A <c>queued</c> row fails too (09.6.3-T1, WT55's aftermath): its submit never adopted an
+    /// <c>adapter_task_id</c>, either because no node was dispatchable, because the recipe could not be built, or
+    /// because the adapter answered a terminal failure to the submit itself. Without this the row would stay
+    /// <c>queued</c> forever, holding its <see cref="WorstCaseUsd"/> inside the open-bounds sum and keeping
+    /// <c>ux_render_jobs_active_episode</c> busy, while no refund of <see cref="ReservationId"/> could ever run
+    /// (<c>SubmitRenderJob</c> and <c>RenderFailureRecorder</c> are the one failure path). Every terminal state is
+    /// still refused, so one attempt records exactly one verdict.
+    /// </para>
     /// </remarks>
     /// <param name="code">The outcome code.</param>
     /// <param name="now">The Worker's clock reading.</param>
-    /// <returns><c>Success</c>, the 400 of an unknown code, or the 409 of a queued or terminal row.</returns>
+    /// <returns><c>Success</c>, the 400 of an unknown code, or the 409 of a terminal row.</returns>
     public ErrorOr<Success> Fail(string code, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
@@ -398,7 +473,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
             return Error.Validation(ValidationFailedCode, "The code is not a catalogued render outcome (05 D5).", Field("code"));
         }
 
-        if (Status is not (RenderJobStatus.Submitted or RenderJobStatus.Running or RenderJobStatus.Ingesting))
+        if (Status is not (RenderJobStatus.Queued or RenderJobStatus.Submitted or RenderJobStatus.Running or RenderJobStatus.Ingesting))
         {
             return InvalidState("fail");
         }
@@ -407,6 +482,33 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
         ErrorCode = code;
         FinishedAt = now;
         NextPollAt = null;
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Raises the <see cref="RenderFailed"/> of a failed attempt (WT28), so the outbox writes its
+    /// <c>render_failed.v1</c> row in the same transaction as the refund and the episode transition.
+    /// </summary>
+    /// <remarks>
+    /// Valid only on an already <see cref="RenderJobStatus.Failed"/> row — <see cref="Fail"/> is what decides the
+    /// outcome code, and this method never writes state, so it cannot move a row into <c>failed</c> behind the
+    /// caller's back. The instant is <see cref="FinishedAt"/>, the reading <see cref="Fail"/> stored, so the event
+    /// and the row agree on when the attempt ended (the clock is the caller's; the aggregate never reads one).
+    /// <paramref name="final"/> is the retry verdict of the caller (<c>RenderRetryPolicy</c>): <see langword="true"/>
+    /// when no retry row follows, <see langword="false"/> while the attempt will be tried again (WT28/WT50).
+    /// Raising it twice is the caller's concern: one terminal transition raises exactly one event.
+    /// </remarks>
+    /// <param name="final">Whether no retry follows this failure.</param>
+    /// <returns><c>Success</c>, or the 409 of a row that is not <c>failed</c>.</returns>
+    public ErrorOr<Success> RaiseFailed(bool final)
+    {
+        if (Status != RenderJobStatus.Failed)
+        {
+            return InvalidState("raise a failure event");
+        }
+
+        Raise(new RenderFailed(EpisodeId, Id, ErrorCode!, Attempt, final, FinishedAt!.Value));
 
         return Result.Success;
     }

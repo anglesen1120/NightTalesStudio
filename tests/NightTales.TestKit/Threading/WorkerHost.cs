@@ -279,6 +279,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         // test resolves it and calls `PollOnceAsync`/`TickAsync` itself.
         WorkerComposition.WithoutNodeHealthPoller(builder.Services);
 
+        // 09.6.3-T1 (09 README BD7): the render poller's `Render:PollSeconds` loop claims due jobs and calls
+        // the adapter immediately at start, which no test can control. The poller singleton stays, so a test
+        // resolves it and drives one tick through `RenderPollingService.TickAsync`.
+        WorkerComposition.WithoutRenderPollingService(builder.Services);
+
         // The host's filter chain, with the observer first: it must be the last IJobFilterProvider
         // registration (AddJobs registers the platform chain), so Hangfire's client and server both
         // see the observer plus the platform filters.

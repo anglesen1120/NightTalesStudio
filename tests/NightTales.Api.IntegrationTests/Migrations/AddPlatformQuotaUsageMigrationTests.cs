@@ -17,8 +17,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// platform and Pacific quota day. The composite primary key <c>(platform, quota_day)</c> is its only index, and the
 /// three CHECKs reject a negative count, a non-positive limit and an unknown platform. The migration finds itself by
 /// name, because its timestamp is generated when the migration is added. 02.7.2-T2 appended a migration after this one,
-/// so this class no longer owns the last-migration check (<c>AddEpisodeIdeasMigrationTests</c> does) and finds its
-/// own migration by name everywhere.
+/// so this class no longer owns the last-migration check (<c>AddRenderJobWorstCaseUsdMigrationTests</c> does) and finds
+/// its own migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]

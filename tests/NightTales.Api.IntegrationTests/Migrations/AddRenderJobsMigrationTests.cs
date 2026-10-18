@@ -17,7 +17,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_09_RenderJobs</c> migration (09.6.1-T1, BD5): the <c>render_jobs</c> table with its index set — the
 /// poller's due-job scan, the tenant lookups and the two same-owner key indexes — the partial unique index behind
 /// "one active render per episode", the closed status CHECK, and the composite keys to <c>episodes</c> and
-/// <c>story_versions</c> beside the owner key. The <c>_06_PlatformQuotaUsage</c> migration owns the
+/// <c>story_versions</c> beside the owner key. The <c>_09_AddRenderJobWorstCaseUsd</c> migration owns the
 /// last-migration check now; this class finds its own migration by name, like every other migration test.
 /// </summary>
 [Trait("Category", "Integration")]
@@ -31,7 +31,7 @@ public sealed class AddRenderJobsMigrationTests(TestDatabase database) : Integra
         "adapter_task_id", "attempt", "cancel_requested_at", "episode_id", "error_code", "error_message",
         "finished_at", "id", "images_needed", "next_poll_at", "params", "percent", "quality_report",
         "reservation_id", "stage", "started_at", "status", "story_version_id", "submitted_at", "user_id",
-        "worker_node_id",
+        "worker_node_id", "worst_case_usd",
     ];
 
     /// <summary>
@@ -62,6 +62,7 @@ public sealed class AddRenderJobsMigrationTests(TestDatabase database) : Integra
         "submitted_at|timestamp with time zone||YES",
         "user_id|uuid||NO",
         "worker_node_id|uuid||YES",
+        "worst_case_usd|numeric||NO",
     ];
 
     private static readonly string[] ExpectedIndexes =
