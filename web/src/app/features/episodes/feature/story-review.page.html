@@ -9,7 +9,32 @@
       (retry)="retry()"
     />
   } @else if (episode(); as detail) {
-    @if (detail.currentStory === null) {
+    @if (renderView()) {
+      <nts-page-header [title]="store.title() || undefined" titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      @if (renderStore.needsRefetch()) {
+        <nts-loading-state [rows]="3" labelKey="episodes.render.timeline.heading" />
+      } @else if (renderStore.failure(); as failure) {
+        <nts-render-failure
+          [failure]="failure"
+          [copy]="renderFailureCopy()"
+          [actions]="renderActions()"
+          [episodeId]="detail.id"
+          [canEditScenes]="approval.canReopen()"
+          (editScenes)="openReopen()"
+        />
+      } @else {
+        <nts-render-timeline
+          [steps]="renderStore.steps()"
+          [percent]="renderStore.percent()"
+          [subStepKey]="renderStore.subStepKey()"
+          [elapsedSec]="renderStore.elapsedSec()"
+          [waitingForSlot]="renderStore.waitingForSlot()"
+          [showEmailNotice]="renderStore.active()"
+        />
+      }
+    } @else if (detail.currentStory === null) {
       <nts-page-header titleKey="episodes.editor.pageTitle" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
       </nts-page-header>
@@ -118,9 +143,9 @@
       @if (approveOpen()) {
         <nts-approve-dialog [episodeId]="detail.id" [attestation]="approval.attestation()" [hintCount]="approval.hintCount()" [busy]="approval.approving()" [blocked]="approval.blocked() ?? approval.error()" [accepted]="approval.attestationAccepted()" [checkboxInvalid]="approval.checkboxInvalid()" [retryAfterSec]="approval.retryAfterSec()" [confirmDisabled]="!approval.canApprove()" (acceptedChange)="approval.setAccepted($event)" (approved)="confirmApproval('approve', detail.id)" (cancelled)="closeApprovalDialogs()" />
       }
-      @if (reopenOpen()) {
-        <nts-reopen-dialog [busy]="approval.reopening()" [blocked]="approval.blocked() ?? approval.error()" [retryAfterSec]="approval.retryAfterSec()" (reopened)="confirmApproval('reopen', detail.id)" (cancelled)="closeApprovalDialogs()" />
-      }
+    }
+    @if (reopenOpen()) {
+      <nts-reopen-dialog [busy]="approval.reopening()" [blocked]="approval.blocked() ?? approval.error()" [retryAfterSec]="approval.retryAfterSec()" (reopened)="confirmApproval('reopen', detail.id)" (cancelled)="closeApprovalDialogs()" />
     }
   }
   <div class="story-review-page__announcement" role="status" aria-live="polite" aria-atomic="true">

@@ -7,16 +7,19 @@ import { TranslocoTestingModule } from '@jsverse/transloco';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
+import { RealtimeService } from '@core/realtime';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
+import { RenderTimelineStore } from '../application/render-timeline.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
 import { VersionsStore } from '../application/versions.store';
 import { fakeVersionsStore } from '../testing/fake-versions.store';
+import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-research.store';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
@@ -43,7 +46,7 @@ const snapshot: StorySnapshot = {
 
 const detail: EpisodeDetail = {
   id: 'episode-1', seriesId: 'series-1', status: 'story_review', lengthTier: 'standard', etag: '"ep-1"', generation: null,
-  hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'],
+  hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'], renderJob: null,
 };
 
 function fakeDetailStore() {
@@ -103,6 +106,8 @@ async function setup(dirty: boolean, answer: boolean | null) {
       provideRouter([]),
       { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+      // The page provides the render timeline store, which is the only thing here that reads the socket (D11/WR4).
+      { provide: RealtimeService, useValue: new FakeEpisodeRealtime() },
       { provide: ConflictDialog, useValue: { open: vi.fn() } },
       { provide: ConfirmDialog, useValue: { confirm: leave } },
       { provide: MatSnackBar, useValue: { open: vi.fn(() => ({ onAction: () => of(undefined), dismiss: vi.fn() })) } },
@@ -111,6 +116,7 @@ async function setup(dirty: boolean, answer: boolean | null) {
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
+      RenderTimelineStore,
       { provide: VersionsStore, useValue: fakeVersionsStore() },
       { provide: ApprovalStore, useValue: fakeApprovalStore() },
       ...fakeResearchStoreProviders(fakeResearchStore()),

@@ -1,0 +1,24 @@
+<section class="failure" role="alert" data-testid="render-failure">
+  <header><nts-icon-alert aria-hidden="true" /><h2>{{ titleKey() | transloco }}</h2></header>
+  @for (key of bodyKeys(); track $index) {
+    <p>{{ key | transloco }}</p>
+  } @empty {
+    <p>{{ 'episodes.render.failure.generic' | transloco }}</p>
+  }
+  @if (failure().scenes.length) {
+    <div data-testid="render-failure-scenes">
+      <nts-skipped-scenes [skipped]="failure().scenes" [episodeId]="episodeId()" headingKey="render.failure.scenes" />
+    </div>
+  }
+  @if (offersEdit()) {
+    <p class="edit-hint" [id]="hintId">{{ 'episodes.render.failure.editScenesHint' | transloco }}</p>
+  }
+  <div class="actions">
+    @if (editAllowed()) {
+      <button mat-flat-button type="button" [attr.aria-describedby]="hintId" (click)="editScenes.emit()">{{ 'episodes.render.failure.editScenes' | transloco }}</button>
+    }
+    @if (offersRetry()) {
+      <button mat-flat-button type="button" [disabled]="!retryAllowed()" (click)="retry.emit()">{{ 'episodes.render.failure.retry' | transloco }}</button>
+    }
+  </div>
+</section>

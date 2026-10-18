@@ -29,10 +29,11 @@ import { ReviewPanelComponent } from '../ui/review-panel.component';
 import { ResearchStore } from '../application/research.store';
 import type { ResearchSource } from '../domain/research.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
-import { FakeEpisodesRepository } from '../testing/fake-episodes.repository';
+import { FakeEpisodesRepository, EPISODE_ID, episodeDetail } from '../testing/fake-episodes.repository';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { mergeAnnotations } from '../application/annotation-merge';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
+import { RenderTimelineStore } from '../application/render-timeline.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
 import { VersionsStore } from '../application/versions.store';
@@ -44,6 +45,7 @@ import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.comp
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import type { SegmentAnnotation } from '../domain/annotation.model';
 import type { EpisodeDetail } from '../domain/episode.model';
+import type { RenderJob } from '../domain/render.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from './story-review.page';
 import { SegmentEditorComponent } from '../ui/segment-editor.component';
@@ -111,7 +113,7 @@ const snapshot: StorySnapshot = {
 
 const detail: EpisodeDetail = {
   id: 'episode-1', seriesId: 'series-1', status: 'story_review', lengthTier: 'standard', etag: '"ep-1"', generation: null,
-  hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'],
+  hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'], renderJob: null,
 };
 
 function fakeDetailStore() {
@@ -253,6 +255,22 @@ function fakeConflictDialogs() {
 // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
 const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
 
+/**
+ * `FakeEpisodeRealtime` (the shared stand-in) plus the live progress map the render store reads (10.2.4-T1's
+ * `RealtimeService.progress`). The map is a signal, so `push` is exactly what the hub's coalesced flush writes: a stage
+ * and a percent for one episode, with no HTTP anywhere near it.
+ */
+class PageRealtime extends FakeEpisodeRealtime {
+  private readonly state = signal<ReadonlyMap<string, { readonly stage: string; readonly percent: number }>>(new Map());
+  readonly progress = this.state.asReadonly();
+
+  push(episodeId: string, entry: { readonly stage: string; readonly percent: number }): void {
+    const next = new Map(this.state());
+    next.set(episodeId, entry);
+    this.state.set(next);
+  }
+}
+
 /** `langs` overrides the loaded scopes, so a spec can leave one out and exercise its failed/absent load. */
 async function createPage(options: { readonly langs?: Record<string, Translation>; readonly loader?: TranslocoLoader; readonly panel?: boolean } = {}) {
   const detailStore = fakeDetailStore();
@@ -260,6 +278,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   const versions = fakeVersionsStore();
   const repo = new FakeStoryRepository();
   const research = fakeResearchStore();
+  const realtime = new PageRealtime();
   const params = new BehaviorSubject(convertToParamMap({ id: 'episode-1' }));
   const query = convertToParamMap(options.panel ? { panel: 'versions' } : {});
   const snack = fakeSnackBar();
@@ -276,6 +295,8 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
       { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: StoryRepository, useValue: repo },
+      // The page provides the render timeline store, which is the only thing here that reads the socket (D11/WR4).
+      { provide: RealtimeService, useValue: realtime },
       { provide: ConflictDialog, useValue: dialogs },
       { provide: ConfirmDialog, useValue: { confirm } },
       { provide: MatSnackBar, useValue: { open: snack.open } },
@@ -290,6 +311,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
       { provide: VersionsStore, useValue: versions },
+      RenderTimelineStore,
       ...fakeResearchStoreProviders(research),
       ApprovalStore,
     ] },
@@ -297,7 +319,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   const fixture = TestBed.createComponent(StoryReviewPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, storyStore, detailStore, repo, params, research, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
+  return { fixture, storyStore, detailStore, repo, params, research, realtime, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
 }
 
 const reviewSource: ResearchSource = {
@@ -500,11 +522,11 @@ describe('StoryReviewPage self-review wiring', () => {
         ...ZONELESS_TEST_PROVIDERS, provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
         { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: stories },
-        { provide: RealtimeService, useValue: new FakeEpisodeRealtime() },
+        { provide: RealtimeService, useValue: new PageRealtime() },
         { provide: SessionApi, useValue: new FakeSessionApi() },
       ],
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [EpisodeDetailStore, StoryEditorStore, { provide: ApprovalStore, useValue: fakeApprovalStore() }, { provide: VersionsStore, useValue: fakeVersionsStore() }, ...fakeResearchStoreProviders(research)] },
+      set: { providers: [EpisodeDetailStore, RenderTimelineStore, StoryEditorStore, { provide: ApprovalStore, useValue: fakeApprovalStore() }, { provide: VersionsStore, useValue: fakeVersionsStore() }, ...fakeResearchStoreProviders(research)] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
@@ -534,6 +556,7 @@ describe('StoryReviewPage', () => {
         provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
         { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: RealtimeService, useValue: new PageRealtime() },
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
       ],
@@ -543,6 +566,7 @@ describe('StoryReviewPage', () => {
         { provide: StoryEditorStore, useValue: storyStore },
         { provide: VersionsStore, useValue: fakeVersionsStore() },
         { provide: ApprovalStore, useValue: fakeApprovalStore() },
+        RenderTimelineStore,
         ...fakeResearchStoreProviders(fakeResearchStore()),
       ] },
     }).compileComponents();
@@ -695,6 +719,7 @@ describe('StoryReviewPage', () => {
       providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: query, snapshot: { paramMap: params, queryParamMap: query.value } } },
         { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: RealtimeService, useValue: new PageRealtime() },
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
       ],
@@ -702,7 +727,7 @@ describe('StoryReviewPage', () => {
       remove: { imports: [VersionsPanelHostComponent] },
       add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -740,13 +765,14 @@ describe('StoryReviewPage', () => {
       providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]),
         { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: query, snapshot: { paramMap: params, queryParamMap: query.value } } },
         { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: RealtimeService, useValue: new PageRealtime() },
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
       ],
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -1613,4 +1639,259 @@ describe('StoryReviewPage', () => {
     expect(calls[0]?.etag).toBe('"sv-post-save-detail"');
   });
 
+});
+
+/** One job row with the render fixtures' defaults (F5): each spec overrides only what it is about. */
+function renderJobFixture(overrides: Partial<RenderJob>): RenderJob {
+  return {
+    renderJobId: 'job-1', status: 'queued', stage: 'queued', percent: 0, attempt: 1, imagesNeeded: 3,
+    submittedAt: null, finishedAt: null, errorCode: null, hints: [], images: null, ...overrides,
+  };
+}
+
+const SECOND_EPISODE_ID = '33333333-3333-4333-8333-333333333333';
+
+/**
+ * The render-view harness (10.6.1-T1/WD1): the page with the real `EpisodeDetailStore` and the real `RenderTimelineStore`
+ * over the scriptable episodes repository and the progress-pushing realtime fake, so a spec proves the served states and
+ * the "a live event adds no HTTP" rule against the repository's own call counters. Every other store is a fake, exactly
+ * as in `createPage`; `answers` queues the responses of the reads after the first one (the store's `refresh()`).
+ */
+async function createRenderPage(detail: EpisodeDetail, options: { readonly answers?: readonly EpisodeDetail[]; readonly canReopen?: boolean } = {}) {
+  const episodes = new FakeEpisodesRepository().scriptGet(() => Promise.resolve(detail));
+  for (const answer of options.answers ?? []) episodes.scriptGet(() => Promise.resolve(answer));
+  const realtime = new PageRealtime();
+  const approval = fakeApprovalStore();
+  if (options.canReopen === true) approval.canReopen.set(true);
+  const params = new BehaviorSubject(convertToParamMap({ id: detail.id }));
+  const query = convertToParamMap({});
+  // The page's own load is what reads the detail (production: `StoryEditorStore.load` → `EpisodeDetailStore.load`), so the
+  // fake delegates it to the page's own component-scoped store over the scriptable repository: the branch's data and the
+  // call counters that prove "a live event adds no HTTP" are the real ones, not a harness shortcut.
+  let detailStore: EpisodeDetailStore | null = null;
+  const story = { ...fakeStoryStore(), load: (id: string) => detailStore?.load(id) ?? Promise.resolve(null) };
+  await TestBed.configureTestingModule({
+    imports: [StoryReviewPage, translations], deferBlockBehavior: DeferBlockBehavior.Manual,
+    providers: [
+      ...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+      { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: of(query), snapshot: { paramMap: params.value, queryParamMap: query } } },
+      { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+      { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: new FakeStoryRepository() },
+      { provide: RealtimeService, useValue: realtime },
+      { provide: SessionApi, useValue: new FakeSessionApi() },
+      { provide: ConflictDialog, useValue: fakeConflictDialogs() },
+      { provide: ConfirmDialog, useValue: { confirm: vi.fn(() => ({ afterClosed: () => of(true) })) } },
+      { provide: MatSnackBar, useValue: { open: vi.fn(() => ({ onAction: () => of(undefined), dismiss: vi.fn() })) } },
+    ],
+  }).overrideComponent(StoryReviewPage, {
+    remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
+  }).overrideComponent(StoryReviewPage, {
+    set: { providers: [
+      EpisodeDetailStore,
+      RenderTimelineStore,
+      { provide: StoryEditorStore, useValue: story },
+      { provide: ApprovalStore, useValue: approval },
+      { provide: VersionsStore, useValue: fakeVersionsStore() },
+      ...fakeResearchStoreProviders(fakeResearchStore()),
+    ] },
+  }).compileComponents();
+  const fixture = TestBed.createComponent(StoryReviewPage);
+  // The component's own injector: `providers` (and the override above) live on this element, not on the TestBed root.
+  detailStore = fixture.componentRef.injector.get(EpisodeDetailStore);
+  fixture.detectChanges(); await fixture.whenStable();
+  fixture.detectChanges(); await fixture.whenStable();
+  return { fixture, root: fixture.nativeElement as HTMLElement, episodes, realtime, approval, params };
+}
+
+describe('StoryReviewPage render view (10.6.1-T1)', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('renders the three guaranteed stages, the queued one active and the 0 % bar with the notice for a queued job', async () => {
+    const { root } = await createRenderPage(episodeDetail({
+      status: 'rendering', nextActions: ['cancel'], renderJob: renderJobFixture({}),
+    }));
+    const timeline = root.querySelector('[data-testid="render-timeline"]')!;
+    expect(timeline).not.toBeNull();
+    const stages = [...timeline.querySelectorAll('[data-testid="render-stage"]')];
+    expect(stages.map((stage) => stage.querySelector('strong')?.textContent)).toEqual([
+      episodesVi.render.stage.queued, episodesVi.render.stage.running, episodesVi.render.stage.ingesting,
+    ]);
+    expect(stages.map((stage) => stage.getAttribute('aria-current'))).toEqual(['step', null, null]);
+    expect(timeline.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('0%');
+    expect(timeline.textContent).toContain(episodesVi.render.timeline.elapsed.replace('{{duration}}', '0:00'));
+    expect(timeline.textContent).toContain(episodesVi.render.timeline.emailNotice);
+    expect(timeline.textContent).toContain(episodesVi.render.timeline.leave);
+    // The waiting notice is explicitly not an error: 0 s in, and no alert anywhere on the view.
+    expect(timeline.querySelector('[data-testid="render-waiting"]')).toBeNull();
+    expect(root.querySelector('nts-render-failure')).toBeNull();
+  });
+
+  it('takes the render branch for a rendering episode with no story on the detail and still heads it', async () => {
+    const { root, episodes } = await createRenderPage(episodeDetail({
+      status: 'rendering', hasCurrentStory: false, currentStory: null, nextActions: ['cancel'], renderJob: renderJobFixture({}),
+    }));
+    expect(root.querySelector('nts-empty-state')).toBeNull();
+    expect(root.querySelector('h1')?.textContent).toContain(snapshot.content.title);
+    expect(root.querySelector('nts-status-chip')?.getAttribute('aria-label')).toBe(coreVi.core.ui.statusChip.rendering);
+    expect(episodes.getCalls).toEqual([{ episodeId: EPISODE_ID, userAction: true }]);
+  });
+
+  it('shows the loading state and reads the detail exactly once more while the job row has not landed', async () => {
+    const pending = episodeDetail({ status: 'rendering', nextActions: ['cancel'] });
+    const { root, episodes, fixture } = await createRenderPage(pending, { answers: [pending] });
+    expect(root.querySelector('nts-loading-state')).not.toBeNull();
+    expect(root.querySelector('nts-render-timeline')).toBeNull();
+    expect(episodes.getCalls).toEqual([
+      { episodeId: EPISODE_ID, userAction: true },
+      { episodeId: EPISODE_ID, userAction: false },
+    ]);
+    // The condition still holds after its own answer, and the effect is keyed on the value: no second read, no loop.
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(episodes.getCalls).toHaveLength(2);
+  });
+
+  it('renders the failure panel from key copy only, without the bar and without an enabled retry', async () => {
+    const { root } = await createRenderPage(episodeDetail({
+      status: 'failed', nextActions: ['retry_render', 'reopen_story'],
+      renderJob: renderJobFixture({ status: 'failed', stage: 'ingesting', percent: 100, errorCode: 'render_quality_failed', finishedAt: '2026-10-18T00:00:00Z' }),
+    }));
+    const failure = root.querySelector('[data-testid="render-failure"]')!;
+    expect(failure.getAttribute('role')).toBe('alert');
+    expect(failure.textContent).toContain(errorsVi.render_quality_failed);
+    expect(root.querySelector('nts-status-chip')?.getAttribute('aria-label')).toBe(coreVi.core.ui.statusChip.failed);
+    // A completed-looking bar is never shown next to a failure, and the empty scene list is omitted.
+    expect(root.querySelector('nts-render-timeline')).toBeNull();
+    expect(root.querySelector('[data-testid="render-failure-scenes"]')).toBeNull();
+    // `retry_render` is filtered out of the actions until 10.6.1-T2 binds the retry: no enabled retry control.
+    const retry = [...failure.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes(episodesVi.render.failure.retry));
+    expect(retry?.disabled ?? true).toBe(true);
+  });
+
+  it('lists both skipped scenes with their reason keys, links the parsable one and keeps the empty edit action out', async () => {
+    const { root } = await createRenderPage(episodeDetail({
+      status: 'failed', nextActions: ['reopen_story'],
+      renderJob: renderJobFixture({
+        status: 'failed', stage: 'ingesting', errorCode: 'image_moderated',
+        images: { needed: 3, succeeded: 1, skipped: [{ segment: 'p:3', reason: 'moderated' }, { segment: 'intro', reason: 'timeout' }] },
+      }),
+    }));
+    expect(root.querySelector('[data-testid="render-failure"]')?.textContent).toContain(errorsVi.image_moderated);
+    const rows = [...root.querySelectorAll('nts-skipped-scenes li')];
+    expect(rows).toHaveLength(2);
+    const link = rows[0]!.querySelector('a')!;
+    expect(link.textContent).toBe('p:3');
+    expect(link.getAttribute('href')).toContain(`/episodes/${EPISODE_ID}`);
+    expect(link.getAttribute('href')).toContain('segment=p');
+    expect(rows[0]!.textContent).toContain(episodesVi.render.images.reason.moderated);
+    expect(rows[0]!.textContent).toContain(episodesVi.render.images.moderatedScene);
+    // `intro` is not an address this client can parse: it renders as the unnamed-scene label, no link, no throw, and the
+    // raw wire string never reaches the DOM.
+    expect(rows[1]!.querySelector('a')).toBeNull();
+    expect(rows[1]!.querySelector('.scene-address')?.textContent).toBe(episodesVi.render.images.sceneUnnamed.replace('{{index}}', '2'));
+    expect(rows[1]!.textContent).not.toContain('intro');
+    expect(rows[1]!.textContent).toContain(episodesVi.render.images.reason.timeout);
+    // The reopen flow cannot run for the `failed` status, so the hint renders and the button does not.
+    expect(root.querySelector('nts-render-failure button')).toBeNull();
+    expect(root.querySelector('nts-render-failure .edit-hint')?.textContent).toContain(episodesVi.render.failure.editScenesHint);
+  });
+
+  it('edits the scenes through the existing reopen flow once it can run', async () => {
+    const { root, fixture } = await createRenderPage(episodeDetail({
+      status: 'failed', nextActions: ['reopen_story'],
+      renderJob: renderJobFixture({ status: 'failed', errorCode: 'image_moderated', images: { needed: 3, succeeded: 1, skipped: [{ segment: 'p:3', reason: 'moderated' }] } }),
+    }), { canReopen: true });
+    const edit = [...root.querySelectorAll<HTMLButtonElement>('nts-render-failure button')]
+      .find((button) => button.textContent?.includes(episodesVi.render.failure.editScenes))!;
+    edit.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-reopen-dialog')).not.toBeNull();
+  });
+
+  it('moves the timeline from a live progress push with no extra read, and a later percent moves the bar up', async () => {
+    const { root, fixture, episodes, realtime } = await createRenderPage(episodeDetail({
+      status: 'rendering', nextActions: ['cancel'],
+      renderJob: renderJobFixture({ status: 'running', stage: 'running', percent: 10, submittedAt: '2026-10-18T00:00:00Z' }),
+    }));
+    expect(episodes.getCalls).toHaveLength(1);
+    const timeline = root.querySelector('[data-testid="render-timeline"]')!;
+    expect(timeline.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('10%');
+    realtime.push(EPISODE_ID, { stage: 'assembling', percent: 42 });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(timeline.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('42%');
+    expect(timeline.textContent).toContain(episodesVi.render.subStep.assembling);
+    expect([...timeline.querySelectorAll('[data-testid="render-stage"]')].map((stage) => stage.getAttribute('aria-current')))
+      .toEqual([null, 'step', null]);
+    realtime.push(EPISODE_ID, { stage: 'assembling', percent: 55 });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(timeline.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('55%');
+    // D17/WR11: the live path is the socket's own signal — no repository read, not even a list call.
+    expect(episodes.getCalls).toHaveLength(1);
+    expect(episodes.calls).toHaveLength(0);
+  });
+
+  it('moves the active step and the percent when a live running event beats a detail still saying queued', async () => {
+    const { root, fixture, episodes, realtime } = await createRenderPage(episodeDetail({
+      status: 'rendering', nextActions: ['cancel'], renderJob: renderJobFixture({}),
+    }));
+    realtime.push(EPISODE_ID, { stage: 'running', percent: 42 });
+    fixture.detectChanges(); await fixture.whenStable();
+    const timeline = root.querySelector('[data-testid="render-timeline"]')!;
+    expect(timeline.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('42%');
+    // The live stage proves the job is running, so the step list moves with the bar (C1): a 42 % bar under an active
+    // `queued` step would be the inconsistent state, and `running` is where the sub-step will appear.
+    expect([...timeline.querySelectorAll('[data-testid="render-stage"]')].map((stage) => stage.getAttribute('aria-current')))
+      .toEqual([null, 'step', null]);
+    expect(episodes.getCalls).toHaveLength(1);
+  });
+
+  it('opens the failure panel with its generic copy for a failed job whose code the wire did not carry', async () => {
+    const { root } = await createRenderPage(episodeDetail({
+      status: 'failed', nextActions: ['reopen_story'],
+      renderJob: renderJobFixture({
+        status: 'failed', stage: 'ingesting', percent: 100, errorCode: null,
+        images: { needed: 3, succeeded: 2, skipped: [{ segment: 'p:3', reason: 'timeout' }] },
+      }),
+    }));
+    const failure = root.querySelector('[data-testid="render-failure"]')!;
+    expect(failure.getAttribute('role')).toBe('alert');
+    expect(failure.querySelector('h2')?.textContent).toContain(episodesVi.render.failure.title);
+    expect(failure.textContent).toContain(episodesVi.render.failure.generic);
+    // Not the timeline: a failed render is never shown as a progress bar, whatever the code says.
+    expect(root.querySelector('nts-render-timeline')).toBeNull();
+    // The scene the job did report is still listed, and the generic title offers neither action.
+    expect(failure.querySelector('[data-testid="render-failure-scenes"]')).not.toBeNull();
+    expect(failure.querySelector('button')).toBeNull();
+  });
+
+  it('restarts the subscription and the job when the same component is reused for another :id', async () => {
+    const first = episodeDetail({ status: 'rendering', nextActions: ['cancel'], renderJob: renderJobFixture({}) });
+    const second = episodeDetail({ id: SECOND_EPISODE_ID, status: 'rendering', nextActions: ['cancel'], renderJob: renderJobFixture({ renderJobId: 'job-2' }) });
+    const { root, fixture, episodes, realtime, params } = await createRenderPage(first, { answers: [second] });
+    expect(realtime.subscriptions.map((entry) => entry.id)).toEqual([first.id]);
+    realtime.push(first.id, { stage: 'running', percent: 42 });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('42%');
+    params.next(convertToParamMap({ id: SECOND_EPISODE_ID }));
+    fixture.detectChanges(); await fixture.whenStable();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(realtime.subscriptions.map((entry) => entry.id)).toEqual([first.id, SECOND_EPISODE_ID]);
+    expect(realtime.subscriptions.filter((entry) => entry.unsubscribed)).toHaveLength(1);
+    expect(episodes.getCalls).toEqual([
+      { episodeId: first.id, userAction: true },
+      { episodeId: SECOND_EPISODE_ID, userAction: true },
+    ]);
+    // The previous episode's progress does not carry over: the new job's own 0 % is what the view shows.
+    expect(root.querySelector('[data-testid="render-percent"]')?.textContent?.trim()).toBe('0%');
+  });
+
+  it('leaves a story_review episode on the story editor branch with a single read', async () => {
+    const { root, episodes } = await createRenderPage(episodeDetail({
+      status: 'story_review', hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'],
+    }));
+    expect(root.querySelector('nts-render-timeline')).toBeNull();
+    expect(root.querySelector('nts-render-failure')).toBeNull();
+    expect(root.querySelector('textarea[data-segment="p:0"]')).not.toBeNull();
+    expect(episodes.getCalls).toEqual([{ episodeId: EPISODE_ID, userAction: true }]);
+  });
 });
