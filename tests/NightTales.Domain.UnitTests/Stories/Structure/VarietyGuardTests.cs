@@ -150,7 +150,7 @@ public sealed class VarietyGuardTests
 
         decision.Penalty.ShouldBe(0.75m);
         decision.RejectReason.ShouldBeNull();
-        decision.SoftViolations.ShouldBe(["opening:night", "twist:revenge"]);
+        decision.SoftViolations.ShouldBe(["opening:night", "twist_type:revenge"]);
     }
 
     [Fact]
@@ -425,7 +425,7 @@ public sealed class VarietyGuardTests
         clean.SuggestedForbidden.IsEmpty.ShouldBeTrue();
 
         var decision = new VarietyDecision(
-            0.5m, null, ["opening:night", "opening:attic", "opening:night", "twist:other:x"]);
+            0.5m, null, ["opening:night", "opening:attic", "opening:night", "twist_type:other:x"]);
         StructurePlan plan = VarietyGuard.ToPlan(clean, decision);
 
         plan.Required.ShouldBe(clean.SuggestedRequired);

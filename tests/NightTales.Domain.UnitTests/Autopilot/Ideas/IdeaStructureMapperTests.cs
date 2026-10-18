@@ -67,8 +67,9 @@ public sealed class IdeaStructureMapperTests
         var mapping = IdeaStructureMapper.Map(Candidate("other:truyện ma tâm linh", "other:lời nguyền có thật", "người kể là nguyên nhân"), Rules);
 
         mapping.Candidate.Structure.SubGenre.ShouldBe("truyện ma tâm linh", "the term it names is a vocabulary value");
-        mapping.Candidate.Structure.TwistType.ShouldBe("other:lời nguyền có thật", "the term it names is not, so the prefix is re-added once");
-        mapping.Candidate.Structure.TwistType.ShouldNotContain("other:other:");
+        mapping.Candidate.Structure.Opening.ShouldBe("other:lời nguyền có thật", "the term it names is not an opening of the vocabulary, so the prefix is re-added once");
+        mapping.Candidate.Structure.Opening.ShouldNotContain("other:other:");
+        mapping.Candidate.Structure.TwistType.ShouldBe("người kể là nguyên nhân");
     }
 
     /// <summary>

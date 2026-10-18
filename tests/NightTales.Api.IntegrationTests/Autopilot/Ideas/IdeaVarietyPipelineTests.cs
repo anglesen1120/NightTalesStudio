@@ -149,7 +149,9 @@ public sealed class IdeaVarietyPipelineTests(TestDatabase database) : Integratio
         DataObjectSteering(call, "required_tags").ShouldBe(ExpectedRequired, "the rotation's least-used value of each dimension");
         DataObjectSteering(call, "forbidden_tags").ShouldBe(ExpectedForbidden, "every value the tag-share cap is over");
         DataObjectContains(call, IdeaRejectionReason.VarietyTagCap).ShouldBeFalse("the counter is an outcome, never an instruction");
-        IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "Ý tưởng thứ hai"))
+        // The judge value is a similarity: the 0.1 candidate is the fresher one and wins, so the 0.2 candidate
+        // (the one the steering was written for) is the one that lost the ranking.
+        IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "Ý tưởng theo gợi ý"))
             .ShouldStartWith(
                 $"rejected|{IdeaRejectionReason.NotBest}",
                 Case.Sensitive,
