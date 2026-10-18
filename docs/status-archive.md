@@ -4,6 +4,22 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 60 rows (2026-10-18, replaced at the Session 60 close-out)
+
+Replaced text (verbatim):
+
+Resume bullet:
+
+- **Backend (Session 60, PR #239 open):** **02.8.4-T1** variety guard: pure Domain `VarietyGuard` (R1 same sub_genre+setting+opening within 10 episodes rejects `variety_triple_repeat`, R2 tag share cap penalty 0.5/0.75, R3 same beat signature + opening + twist within 5 rejects `variety_template_repeat` and beats R1, R4 deterministic rotation suggestions, R5 cold start), `VarietyOptions` (`Autopilot:Variety:*`, validated, WindowK <= 50), `IdeaPlanner` wiring (assessment before the one paid call, `required_tags`/`forbidden_tags` steering, per-candidate `Evaluate`, penalty replaces the 02.8.1-T2 `VarietyPenalty = 0` seam, counters `variety_rejections_total{rule}` and `variety_penalty_total`), `IdeaStructureMapper` (IDEA-S52-1: model tags through `StructureVocabMapper`, unknown values stored `other:<text>`), `IStructurePlanProvider`/`StructurePlanProvider` (null for user episodes). No migration, no route, `openapi.json` unchanged. CI refused (billing, CI-01, owner treats as pass); full remote gate `GATE_RC=2` on `2bab1051` (Ubuntu arm64, 9591 tests, 1 failed: the known flake `FetcherHostEndToEndTests.EndToEnd_SourceDeletedMidFetch_ResultIs404AndLoopContinues` (Open tasks row), which passes on a filtered rerun with `GATE_RC=0` on the same sha); T2 gates closed (QA agent, code review, perf+security review, one `judge_batch` triage, fixes, delta review). Panel [DECISION]s S60-1 need owner ratification (§Open tasks, deferred owner review). Next (backend): coordinator to assign; 02.8.2-T1 is the consumer of `VerifyWritten`.
+
+Open tasks row 02.8.4-T1:
+
+| 02.8.4-T1 variety guard (structure tags, rotation, template-repeat block) | **PR #239 open** (Session 60, `feature/02.8.4-T1-s60`, from `develop` `56b28841`, merged develop `a176aab1`; no migration, no route, `openapi.json` and `web/openapi.json` untouched; CI refused (billing, CI-01, owner treats as pass); full remote gate `GATE_RC=2` on `2bab1051`; T2 gates: QA agent (14/16 Acceptance on first run, the 2 failures and 4 test-expectation defects were test-only and fixed), code review (5 low), perf+security review (2 low), one `judge_batch` triage, fix group of 3, delta review closed) | Acceptance 1-16 ticked in the task file with evidence. Replaces the 02.8.1-T2 `VarietyPenalty = 0` seam; closes IDEA-S52-1 and IDEA-S52-4. Deviations and panel [DECISION]s are in the task Notes. |
+
+Open tasks row S60-1:
+
+| Variety guard panel decisions (S60-1) | **[OPEN]** owner: owner (ratify), deferred owner review, the merge does not ratify them | Panel [DECISION]s of Session 60, task Notes of 02.8.4-T1: (a) the guard compares stored D3 tag strings ordinally, trimmed, case-sensitive, because `structure-vocab.v1.json` holds language-specific terms and not snake_case ids (a casing change by the model evades R1-R4 silently); (b) `EpisodeStructureRef` moved to Domain `Stories/Structure`; (c) R2 is `(count+1)/(WindowSize+1) > TagShareMax`; (d) R3 beats R1 when both hit; (e) `IStructurePlanProvider` returns `null` for an empty plan too; (f) provider tests are named `StructurePlanProvider_*`. |
+
 ### Superseded Session 56 Next bullet (2026-10-18, replaced by Session 60)
 
 Replaced text (verbatim):
