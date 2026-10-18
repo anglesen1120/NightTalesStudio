@@ -6,7 +6,7 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ### Session 57 note (2026-10-18, 09.6.3-T2 PR opened)
 
-Replaced in place, not moved (kept live, amended): the Session 55 backend bullet in STATUS.md — its poller sentence gained "(lifted by 09.6.3-T2, PR PR-NUM)" and its trailing sentence `Next (backend): 09.6.3-T2 (ingest + `IngestRenderOutputJob`).` was dropped, because the Session 57 bullet now carries the lane's current state. The Session 50 Resume bullet was moved by the Session 61 block below (same text, not repeated here). The 09.6.2-T1 H1 row and the render-ingest-enqueuer row say closed.
+Replaced in place, not moved (kept live, amended): the Session 55 backend bullet in STATUS.md — its poller sentence gained "(lifted by 09.6.3-T2, PR #243)" and its trailing sentence `Next (backend): 09.6.3-T2 (ingest + `IngestRenderOutputJob`).` was dropped, because the Session 57 bullet now carries the lane's current state. The Session 50 Resume bullet was moved by the Session 61 block below (same text, not repeated here). The 09.6.2-T1 H1 row and the render-ingest-enqueuer row say closed.
 
 Resume bullet (Session 53 closed backend, moved out to keep the Resume block at 15 bullets when the Session 57 bullet was added), verbatim:
 
