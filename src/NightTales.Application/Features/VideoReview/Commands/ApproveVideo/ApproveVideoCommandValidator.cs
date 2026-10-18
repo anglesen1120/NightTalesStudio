@@ -8,9 +8,10 @@ namespace NightTales.Application.Features.VideoReview.Commands.ApproveVideo;
 /// handler's ordered checks.
 /// </summary>
 /// <remarks>
-/// The note is not stored, but a NUL (U+0000) in it is refused all the same: it is the character PostgreSQL
-/// cannot carry, so accepting it here would push the refusal to a later writer and turn the coded 400 into a
-/// raw 500. Every other character the owner typed is accepted.
+/// The note is not stored and the audit row only records that one was given, so nothing here can fail on a NUL
+/// today. A NUL (U+0000) is refused all the same, for symmetry with the reject reason, so a later writer of the
+/// note never has to turn it into a raw 500 (PostgreSQL cannot carry the character). Every other character the
+/// owner typed is accepted.
 /// </remarks>
 public sealed class ApproveVideoCommandValidator : AbstractValidator<ApproveVideoCommand>
 {

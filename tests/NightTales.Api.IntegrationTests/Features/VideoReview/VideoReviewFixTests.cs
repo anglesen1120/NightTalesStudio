@@ -198,7 +198,7 @@ public sealed class VideoReviewFixTests(TestDatabase database) : IntegrationTest
             }
         });
 
-    /// <summary>One owner with a series, one episode awaiting review and one live render asset.</summary>
+    /// <summary>One owner with a series, and one episode awaiting review (no asset; each test seeds its own).</summary>
     /// <returns>The seeded ids.</returns>
     private async Task<World> SeedAsync()
     {
