@@ -50,9 +50,11 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// </para>
 /// <para>
 /// The statement-count check of the list runs <see cref="ListChannelsHandler"/> directly over a
-/// <see cref="ReadDbContext"/> carrying <see cref="CountingDbCommandInterceptor"/> — the same seam
-/// <c>RecentMusicQueryTests</c> uses — because the query's own command count is the property under test, and
-/// the HTTP route around it is covered by <see cref="ListChannels_ReturnsCallerOnlyWithoutTokenColumns"/>.
+/// <see cref="ReadDbContext"/> carrying <see cref="CountingDbCommandInterceptor"/>, built from
+/// <see cref="TestDbContextFactory.ReadOptions"/> so it is the production read model (naming convention
+/// included) and not a hand-made one — the seam <c>RecentMusicQueryTests</c> uses — because the query's own
+/// command count is the property under test, and the HTTP route around it is covered by
+/// <see cref="ListChannels_ReturnsCallerOnlyWithoutTokenColumns"/>.
 /// </para>
 /// </remarks>
 /// <param name="database">The class database, a migrated copy of the run's template.</param>
@@ -214,6 +216,19 @@ public sealed class ChannelConnectionStoreTests(TestDatabase database) : Integra
         // identical clock readings.
         harness.Clock.Advance(TimeSpan.FromMinutes(5));
 
+        // The connect route admits only a caller who re-authenticated inside the last five minutes, and the
+        // harness's own re-authentication is exactly that old now: the account proves itself again through the
+        // real route, which is the gate a user gets instead of a seeded column.
+        using (var reauth = await harness.Client.PostAsJsonAsync(
+                   MfaTestFlow.ReauthPath,
+                   new { password = MfaTestFlow.Password },
+                   Ct))
+        {
+            reauth.StatusCode.ShouldBe(
+                HttpStatusCode.OK,
+                "the second connect needs a re-authentication no older than the route's window");
+        }
+
         // The deployment that minted the state had the second client active and the operator has since moved
         // on: the state row is the authority for the exchange (D5/YR11), and the IOptions snapshot the host
         // booted with cannot be rebound mid-test, so the rotation is expressed where the task file says it
@@ -327,7 +342,13 @@ public sealed class ChannelConnectionStoreTests(TestDatabase database) : Integra
             .ShouldBe(1);
         var where = $"id = '{rowId}'";
         ConnectionValue("oauth_client_id", where).ShouldBe("client-b");
-        ConnectionEpoch("token_expires_at", where).ShouldBe(now.AddMinutes(2).ToUnixTimeSeconds());
+
+        // The instant comes from the second write's own token response, which is one hour past the connect
+        // instant that write was handed (writer A's pair expired one minute earlier): the expiry is part of the
+        // same whole row as client-b and access-b, never a value left behind by writer A.
+        ConnectionEpoch("token_expires_at", where).ShouldBe(
+            now.AddMinutes(2).AddHours(1).ToUnixTimeSeconds(),
+            "the expiry belongs to the last writer's token pair");
         var protector = harness.Protector();
         protector.TryUnprotect(rowId.ToString(), ConnectionValue("access_token_enc", where), out var accessB).ShouldBeTrue();
         protector.TryUnprotect(rowId.ToString(), ConnectionValue("refresh_token_enc", where), out var refreshB).ShouldBeTrue();
@@ -542,10 +563,14 @@ public sealed class ChannelConnectionStoreTests(TestDatabase database) : Integra
                 + $"'{row.At:O}'::timestamptz, '{row.At:O}'::timestamptz)");
         }
 
+        // The context is the production read model, naming included: without the snake_case convention the
+        // model is EF's default one and the statement names `Id`, a column PostgreSQL does not have (42703).
         var interceptor = new CountingDbCommandInterceptor();
-        var options = new DbContextOptionsBuilder<ReadDbContext>().UseNpgsql(Database.ConnectionString);
-        options.AddInterceptors(interceptor);
-        await using var readDb = new ReadDbContext(options.Options, new TestCurrentUser { Id = user.Id });
+        var production = TestDbContextFactory.ReadOptions(Database.ConnectionString);
+        var options = new DbContextOptionsBuilder<ReadDbContext>(production)
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var readDb = new ReadDbContext(options, new TestCurrentUser { Id = user.Id });
 
         interceptor.Reset();
         var channels = await new ListChannelsHandler(readDb).Handle(new ListChannelsQuery(), Ct);
@@ -674,6 +699,12 @@ public sealed class ChannelConnectionStoreTests(TestDatabase database) : Integra
     public async Task SendEmailJob_ChannelConnected_RendersAndNullsParams()
     {
         var ct = TestContext.Current.CancellationToken;
+
+        // The batch claims every due outbox row of the class database, and this test never ran the dispatcher
+        // before: a queued `email_requested.v1` left by an earlier test of this class would enqueue its own
+        // SendEmailJob, so the delivered count would describe the schedule instead of this one message.
+        await ResetAsync(ct);
+
         var clock = new FakeClock();
         var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
         await using var harness = await EmailHarness.StartAsync(Database, clock, ct);
