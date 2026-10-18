@@ -10,9 +10,10 @@ namespace NightTales.Application.Rendering;
 /// <para>
 /// The retention window is an interval (a zero one would let the sweep delete an asset in the same instant it was
 /// written) and the directory is where rendered video lands, so both are refused rather than clamped. The
-/// directory is <em>created</em> when it is missing — the job would otherwise fail its first download on a fresh
-/// host — and then probed with a tiny file, because "the directory exists" says nothing about the account the
-/// Worker runs as (a root-owned 700 spool reads as present and is unwritable).
+/// directory must be an absolute path — a relative value would resolve against the Worker's working directory,
+/// which the operator never intends — and it is <em>created</em> when it is missing (the job would otherwise fail
+/// its first download on a fresh host) and then probed with a tiny file, because "the directory exists" says
+/// nothing about the account the Worker runs as (a root-owned 700 spool reads as present and is unwritable).
 /// </para>
 /// <para>
 /// A directory that already existed is held to the same standard as one this check creates: a symbolic link is
@@ -41,8 +42,8 @@ public static class RenderIngestOptionsValidator
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
 
     /// <summary>
-    /// Validates the bound options: a non-blank, creatable, owner-only, writable temp directory and a retention
-    /// window of at least one day and at most ten years.
+    /// Validates the bound options: a non-blank, absolute, creatable, owner-only, writable temp directory and a
+    /// retention window of at least one day and at most ten years.
     /// </summary>
     /// <param name="options">The bound options.</param>
     /// <returns>One message per problem; empty when valid.</returns>
@@ -61,6 +62,14 @@ public static class RenderIngestOptionsValidator
         if (string.IsNullOrWhiteSpace(options.TempDirectory))
         {
             problems.Add($"{nameof(options.TempDirectory)} must name the directory the ingest spools into.");
+        }
+        else if (!Path.IsPathRooted(options.TempDirectory))
+        {
+            // A relative value (e.g. a relative NTS_HOME) would spool relative to the Worker's working directory,
+            // which may be inside the working tree — step 3 forbids that, and the operator never sees it happen.
+            problems.Add(
+                $"{nameof(options.TempDirectory)} must be an absolute path; a relative value would spool "
+                + "relative to the Worker's working directory.");
         }
         else if (Probe(options.TempDirectory) is { } problem)
         {

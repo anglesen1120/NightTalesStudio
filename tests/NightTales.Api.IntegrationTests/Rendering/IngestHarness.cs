@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -6,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ErrorOr;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -25,6 +28,7 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Storage;
 using NightTales.RenderNode.Contract;
 using NightTales.TestKit.Auth;
@@ -991,6 +995,12 @@ internal sealed class RecordingBlobStore(IngestOrder order) : IBlobStore
     /// <inheritdoc />
     public Task<ErrorOr<Success>> DeleteAsync(string bucket, string key, CancellationToken cancellationToken)
     {
+        // N7: a real store refuses a cancelled token, and so must this fake — otherwise a helper that regressed
+        // to a delete token linked to the job's own (already cancelled) token would pass here and throw
+        // `OperationCanceledException` against S3, leaving the objects behind for nobody to collect. The throw is
+        // synchronous on purpose: it reaches the caller exactly as an awaited faulted task would.
+        cancellationToken.ThrowIfCancellationRequested();
+
         order.Add($"blob.delete:{key}");
 
         lock (_gate)
@@ -1158,6 +1168,12 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
     /// <summary>Every refund, in order.</summary>
     public List<(Guid ReservationId, string Reason)> Refunds { get; } = [];
 
+    /// <summary>
+    /// Both lists as one sequence (<c>settle:&lt;id&gt;</c> / <c>refund:&lt;id&gt;</c>), so a test can assert the
+    /// exact order of the two calls a commit failure after the settle produces on one attempt.
+    /// </summary>
+    public List<string> Calls { get; } = [];
+
     /// <summary>The verdict the ledger answers for a settlement.</summary>
     public ErrorOr<Success> Settle { get; set; } = Result.Success;
 
@@ -1196,6 +1212,7 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
     public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct)
     {
         Settles.Add(reservationId);
+        Calls.Add($"settle:{reservationId.Value:D}");
 
         if (SettleThrows is { } failure)
         {
@@ -1209,6 +1226,7 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
     public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
     {
         Refunds.Add((reservationId.Value, reason));
+        Calls.Add($"refund:{reservationId.Value:D}");
 
         if (RefundThrows is { } failure)
         {
@@ -1223,7 +1241,9 @@ internal sealed class IngestMoney : IPriceCatalog, IImageCostEstimator, IBudgetG
 /// <param name="EventId">The id the <c>LoggerMessage</c> declared.</param>
 /// <param name="Level">The level the line was written at.</param>
 /// <param name="Message">The rendered message.</param>
-internal sealed record IngestLogEntry(int EventId, LogLevel Level, string Message);
+/// <param name="Exception">The exception object the <c>LoggerMessage</c> was handed, when it was handed one
+/// (N4's full-stack line) — the sink keeps it so a test can assert the stack survived in the logs.</param>
+internal sealed record IngestLogEntry(int EventId, LogLevel Level, string Message, Exception? Exception = null);
 
 /// <summary>
 /// A log provider that keeps every line of every category: the only way to assert what the ingest never writes
@@ -1233,6 +1253,12 @@ internal sealed class IngestLogSink : ILoggerProvider
 {
     /// <summary>Every line, in order.</summary>
     public List<IngestLogEntry> Entries { get; } = [];
+
+    /// <summary>
+    /// Runs after every line was recorded: a test's hook into a moment of the attempt that no port exposes (the
+    /// window between an ending's commit and its blob cleanup, where a shutdown can land).
+    /// </summary>
+    public Action<IngestLogEntry>? OnLine { get; set; }
 
     /// <inheritdoc />
     public ILogger CreateLogger(string categoryName) => new Sink(this);
@@ -1257,11 +1283,88 @@ internal sealed class IngestLogSink : ILoggerProvider
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
+            var entry = new IngestLogEntry(eventId.Id, logLevel, formatter(state, exception), exception);
+
             lock (owner.Entries)
             {
-                owner.Entries.Add(new IngestLogEntry(eventId.Id, logLevel, formatter(state, exception)));
+                owner.Entries.Add(entry);
             }
+
+            owner.OnLine?.Invoke(entry);
         }
+    }
+}
+
+/// <summary>
+/// Refuses the job's own <c>render_jobs</c> write by answering zero affected rows — what a competing writer on
+/// the row leaves behind — so EF raises <c>DbUpdateConcurrencyException</c> and the unit of work maps it to
+/// <c>concurrency_conflict</c>. That is the one failure left in the ingest's success path after the settlement
+/// has been issued (N1), and it is armed once and disarms itself so the ending that follows can commit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The match is on <c>UPDATE render_jobs</c> alone: the final transaction's first statement is the row lock
+/// (<c>SELECT … FOR NO KEY UPDATE</c>), which is issued through <c>ExecuteSqlInterpolatedAsync</c> — a non-query
+/// command too, and suppressing it would take no lock and hide the very conflict this fake models.
+/// </para>
+/// <para>
+/// <b>Two hooks, because EF may pick either path.</b> The <c>render_jobs</c> table carries an <c>xmin</c>
+/// concurrency token, so the modification batch has result columns to read and EF sends it through
+/// <c>ExecuteReader</c> (<c>ReaderModificationCommandBatch</c>); a batch without result columns goes through
+/// <c>ExecuteNonQuery</c> instead. The zero-affected-rows answer is modelled on the non-query hook, and the
+/// reader hook throws the very exception that answer would produce, so the injection fires whichever path the
+/// provider takes — a hook that never fired would turn an N1 test into a silently committing one.
+/// </para>
+/// </remarks>
+internal sealed class RefusingRenderJobUpdateInterceptor : DbCommandInterceptor
+{
+    /// <summary>Whether the next <c>render_jobs</c> write is refused.</summary>
+    public bool Armed { get; set; }
+
+    /// <summary>How many writes were refused (one: the interceptor disarms itself).</summary>
+    public int Refusals { get; private set; }
+
+    /// <inheritdoc />
+    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        if (Armed && command.CommandText.Contains("UPDATE render_jobs", StringComparison.OrdinalIgnoreCase))
+        {
+            Armed = false;
+            Refusals++;
+
+            return ValueTask.FromResult(InterceptionResult<int>.SuppressWithResult(0));
+        }
+
+        return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        if (Armed && command.CommandText.Contains("UPDATE render_jobs", StringComparison.OrdinalIgnoreCase))
+        {
+            Armed = false;
+            Refusals++;
+
+            // What EF raises by itself when the batch's RETURNING row is missing: the same exception, so the
+            // unit of work's existing mapping to `concurrency_conflict` is what the tests exercise.
+            throw new DbUpdateConcurrencyException(
+                "injected: a competing writer on the render_jobs row left zero rows for this update");
+        }
+
+        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
     }
 }
 
@@ -1546,6 +1649,15 @@ internal sealed class IngestHarness : IAsyncDisposable
     /// <summary>Every line the host wrote.</summary>
     public IngestLogSink Logs { get; } = new();
 
+    /// <summary>
+    /// Every command the ingest's own <see cref="AppDbContext"/> executed, in order: what proves the shutdown
+    /// path no longer reads the row (N2/N3), since a read leaves no other trace.
+    /// </summary>
+    public CountingDbCommandInterceptor Commands { get; } = new();
+
+    /// <summary>The one-shot commit refusal of the N1 tests (a competing writer on the <c>render_jobs</c> row).</summary>
+    public RefusingRenderJobUpdateInterceptor Refuses { get; } = new();
+
     /// <summary>The started worker host.</summary>
     public WorkerHost Host { get; private set; } = null!;
 
@@ -1587,11 +1699,11 @@ internal sealed class IngestHarness : IAsyncDisposable
     public string[] TempFiles() =>
         Directory.Exists(TempDirectory) ? Directory.GetFiles(TempDirectory) : [];
 
-    /// <summary>The lines of the ingest itself (its 6300-6339 and 6359 event-id block), without the host's own
-    /// start-up noise.</summary>
+    /// <summary>The lines of the ingest itself (its 6300-6339, 6359 and 6374 event-id block), without the host's
+    /// own start-up noise.</summary>
     /// <returns>The ingest's lines, in order.</returns>
     public IReadOnlyList<IngestLogEntry> IngestLines() =>
-        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6339 or 6359)];
+        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6339 or 6359 or 6374)];
 
     /// <summary>Runs the ingest of <paramref name="renderJobId"/> the way the scheduler does: in its own scope.</summary>
     /// <param name="renderJobId">The <c>render_jobs</c> row.</param>
@@ -1688,6 +1800,12 @@ internal sealed class IngestHarness : IAsyncDisposable
         services.RemoveAll<IImageCostEstimator>();
         services.AddSingleton<IImageCostEstimator>(Money);
         services.AddLogging(logging => logging.AddProvider(Logs));
+
+        // One more options configuration on the production registration (the episode-detail/GenerateFactSheetJob
+        // precedent): the host keeps its connection string, its naming convention and its own interceptors, and
+        // gains the command recorder and the one-shot commit refusal the N1/N2 tests drive.
+        services.AddDbContext<AppDbContext>(
+            (_, options) => options.AddInterceptors(Commands, Refuses));
 
         // The readiness prober is the Worker's own BackgroundService and writes its 0-byte marker object through
         // whatever IBlobStore the host resolves — which here is the recorder. Left in place, every "the ingest

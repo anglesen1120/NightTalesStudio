@@ -287,8 +287,9 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
         var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
 
         // The ledger's refusal is never swallowed: it is logged, the transaction rolls back and the attempt is
-        // handed back to the scheduler.
-        thrown.ShouldBeOfType<InvalidOperationException>().Message.ShouldContain("Settling the reservation");
+        // handed back to the scheduler. The job's own typed failure is rethrown unchanged (its type derives from
+        // InvalidOperationException; N5 keeps that exemption for this type alone).
+        thrown.ShouldBeAssignableTo<InvalidOperationException>().Message.ShouldContain("Settling the reservation");
         IngestDb.Row(Database, world).ShouldNotBe("succeeded|-|true");
         IngestDb.AssetCount(Database, world).ShouldBe(0, "the whole final transaction rolled back");
         harness.Money.Refunds.ShouldBeEmpty("a retryable attempt refunds nothing");
@@ -530,12 +531,16 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
     }
 
     /// <summary>
-    /// S3: a shutdown cancels the attempt's token mid-download. The attempt's writes are dropped and both objects
-    /// are deleted best-effort with a token of their own — the cancelled one would refuse the deletes — and the
-    /// row is left where it was, because the scheduler re-runs the job when the host comes back.
+    /// S3/N2/N3: a shutdown cancels the attempt's token mid-download. The attempt's writes are dropped and the
+    /// cancellation the host raised travels unchanged, so Hangfire requeues the job — and nothing else happens:
+    /// the shutdown path neither reads the row nor deletes the two objects. A delete decided there could only
+    /// come from an *unlocked* status read, and a duplicate delivery that has already PUT these exact BD7 keys
+    /// but has not committed still reads <c>ingesting</c>, so the delete would leave its imminent success pointing
+    /// at nothing. The keys are content-addressed, so the next attempt overwrites them, and a row that never runs
+    /// again is the failed/cancelled sweep's to collect.
     /// </summary>
     [Fact]
-    public async Task ShutdownMidDownload_ClearsBothKeysWithItsOwnToken()
+    public async Task ShutdownMidDownload_PropagatesTheCancellation_WithoutReadingOrDeleting()
     {
         using var shutdown = new CancellationTokenSource();
         await using var harness = await IngestHarness.StartAsync(Database, Ct);
@@ -545,20 +550,27 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
             IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
         harness.Downloads.OnBeforeWrite = _ =>
         {
+            // Every command recorded from here on belongs to the shutdown path itself.
+            harness.Commands.Reset();
             shutdown.Cancel();
 
             return ValueTask.CompletedTask;
         };
 
+        // The type of what escapes is the assertion: an `OperationCanceledException` is what Hangfire uses to
+        // requeue the job, so a cleanup failure that replaced it — the unbudgeted, unguarded status read of N3 —
+        // would fail this line.
         await Should.ThrowAsync<OperationCanceledException>(
             () => harness.RunAsync(world.RenderJobId, shutdown.Token));
 
         IngestDb.Row(Database, world).ShouldStartWith("ingesting|");
         harness.Money.Refunds.ShouldBeEmpty();
         harness.Money.Settles.ShouldBeEmpty();
-        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe(
-            [world.VideoKey, world.SubtitlesKey],
-            "the shutdown path clears both objects with a token that is not the cancelled one");
+        harness.Blobs.Deletes.ShouldBeEmpty(
+            "the shutdown path deletes nothing: the keys it would clear can belong to a delivery that still commits");
+        harness.Commands.Texts.ShouldNotContain(
+            text => text.Contains("render_jobs", StringComparison.OrdinalIgnoreCase),
+            "the unlocked status read of the old shutdown path is gone (N2/N3)");
         harness.TempFiles().ShouldBeEmpty();
     }
 
@@ -586,6 +598,120 @@ public sealed class IngestQaTests(TestDatabase database) : IntegrationTest(datab
         JobPuts(harness).ShouldBeEmpty();
         JobKeys(harness).ShouldBeEmpty();
         harness.Money.Refunds.ShouldHaveSingleItem();
+        harness.TempFiles().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// S3/N7: a shutdown can land in the one window an ending still has work to do — after its verdict committed,
+    /// before its objects are cleared. The cleanup must still run, and it does because its token is the helper's
+    /// own and not a link to the job's (which is cancelled by then): a linked token would have the store refuse
+    /// both deletes and leave a paid render in the bucket for a row that will never run again. The fake store
+    /// throws on a cancelled token now, so a regression to a linked token fails here rather than only against S3.
+    /// </summary>
+    [Fact]
+    public async Task QualityFailure_WithTheJobTokenCancelledBeforeTheCleanup_StillClearsBothKeys()
+    {
+        using var shutdown = new CancellationTokenSource();
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        var subtitles = harness.Downloads.ServeSubtitles();
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(
+                world,
+                IngestBodies.Output(video, subtitles),
+                IngestBodies.Check(errors: ["ffmpeg: torn frame at 00:01:02"])));
+
+        // 6314 is the line the quality ending writes between its own commit and its two deletes: cancelling the
+        // *job* token there is the shutdown landing in the cleanup window, with everything already durable.
+        harness.Logs.OnLine = entry =>
+        {
+            if (entry.EventId == 6314)
+            {
+                shutdown.Cancel();
+            }
+        };
+
+        await harness.RunAsync(world.RenderJobId, shutdown.Token);
+
+        shutdown.IsCancellationRequested.ShouldBeTrue("the shutdown has to land before the cleanup for this to test it");
+        IngestDb.Row(Database, world).ShouldBe("failed|render_quality_failed|false");
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe(
+            [world.VideoKey, world.SubtitlesKey],
+            "the cleanup's token is its own, not a link to the cancelled job token");
+        JobKeys(harness).ShouldBeEmpty();
+        harness.TempFiles().ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// N1: the settlement is issued immediately before the commit, so a commit that fails after it leaves a
+    /// settled reservation with a rolled-back row. A retried attempt then settles the <em>same</em> reservation a
+    /// second time. That is correct only because 12.1.2-T1's ledger is idempotent per reservation id: the test
+    /// pins the sequence so the double settle is deliberate and visible, not an accident.
+    /// </summary>
+    [Fact]
+    public async Task CommitFailsAfterTheSettle_RetrySettlesTheSameReservationAgain()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        _ = harness.Downloads.ServeVideo(4096);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+
+        // A competing writer on the render_jobs row: EF sees zero affected rows and the unit of work answers
+        // concurrency_conflict — the one failure left in the success path once the settlement is out.
+        harness.Refuses.Armed = true;
+
+        var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
+
+        harness.Refuses.Refusals.ShouldBe(1, "the refusal is one-shot so the ending below can commit");
+        thrown.ShouldBeAssignableTo<InvalidOperationException>().Message.ShouldContain("concurrency_conflict");
+        IngestDb.Row(Database, world).ShouldStartWith(
+            "ingesting|",
+            customMessage: "the row is not committed, and the settlement outside its transaction is not rolled back with it");
+        harness.Money.Calls.ShouldBe(
+            [$"settle:{world.ReservationId:D}"],
+            customMessage: "the failed commit leaves the reservation settled");
+
+        // The retry: everything runs again, including the settlement of the reservation that is already settled.
+        await harness.RunAsync(world.RenderJobId, 2, IngestHarness.MaxAttempts);
+
+        IngestDb.Row(Database, world).ShouldBe("succeeded|-|true");
+        harness.Money.Calls.ShouldBe(
+            [$"settle:{world.ReservationId:D}", $"settle:{world.ReservationId:D}"],
+            customMessage: "the retry settles the same reservation again: 12.1.2-T1's ledger must treat that as one settlement");
+        harness.Money.Refunds.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// N1, the last attempt: the commit fails after the settlement and there is no retry left, so the ending ends
+    /// the row and refunds a reservation this job already settled. Deliberate, and safe only because 12.1.2-T1's
+    /// ledger must answer a refund-after-settle as a typed no-op or a refusal — the sequence is what this test
+    /// pins.
+    /// </summary>
+    [Fact]
+    public async Task CommitFailsAfterTheSettle_LastAttemptRefundsTheSettledReservation()
+    {
+        await using var harness = await IngestHarness.StartAsync(Database, Ct);
+        var world = await IngestWorlds.SeedAsync(Database, Ct);
+        var video = harness.Downloads.ServeVideo(4096);
+        harness.Render.EnqueueStatus(
+            IngestBodies.Succeeded(world, IngestBodies.Output(video, null), IngestBodies.Check()));
+        harness.Refuses.Armed = true;
+
+        await harness.RunLastAttemptAsync(world.RenderJobId);
+
+        harness.Refuses.Refusals.ShouldBe(1);
+        IngestDb.Row(Database, world).ShouldBe("failed|render_output_invalid|-");
+        harness.Money.Calls.ShouldBe(
+            [$"settle:{world.ReservationId:D}", $"refund:{world.ReservationId:D}"],
+            customMessage: "the settlement was already issued when the commit failed, so the ending refunds a settled reservation");
+        harness.Money.Refunds.ShouldHaveSingleItem().ReservationId.ShouldBe(world.ReservationId);
+        harness.Blobs.Deletes.Select(entry => entry.Key).ShouldBe([world.VideoKey, world.SubtitlesKey]);
+        JobKeys(harness).ShouldBeEmpty();
         harness.TempFiles().ShouldBeEmpty();
     }
 }

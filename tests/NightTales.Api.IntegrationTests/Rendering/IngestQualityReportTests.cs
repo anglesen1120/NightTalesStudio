@@ -92,7 +92,19 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
 
         var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
 
-        thrown.Message.ShouldContain("terminal hook refused");
+        // The hook's own exception is not one of this job's typed failures, so it never travels as if it were
+        // (N5): the attempt is handed back with the type name alone — the raw text stays in the log line below
+        // (N4), because Hangfire persists what it catches and the Api's dashboard shows it.
+        thrown.ShouldBeAssignableTo<InvalidOperationException>().Message.ShouldContain("InvalidOperationException");
+        thrown.Message.ShouldNotContain("terminal hook refused");
+        harness.IngestLines().ShouldContain(
+            entry => entry.EventId == 6374
+                && entry.Message.Contains($"renderJobId={world.RenderJobId}", StringComparison.Ordinal)
+                && entry.Message.Contains("stage=done", StringComparison.Ordinal)
+                && entry.Message.Contains("kind=InvalidOperationException", StringComparison.Ordinal)
+                && entry.Exception != null
+                && entry.Exception.Message.Contains("terminal hook refused", StringComparison.Ordinal),
+            "the original failure — object, stack and message — travels to the log before its message is replaced");
         harness.Hooks.Calls.ShouldContain("images");
         harness.Hooks.Calls.ShouldContain("kept", "the failure happened after the report and the assets were staged");
 

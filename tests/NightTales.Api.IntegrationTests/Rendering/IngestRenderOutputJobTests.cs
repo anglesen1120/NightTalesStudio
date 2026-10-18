@@ -399,7 +399,9 @@ public sealed class IngestRenderOutputJobTests(TestDatabase database) : Integrat
 
         var thrown = await harness.ThrowsAsync(world.RenderJobId, 1, IngestHarness.MaxAttempts);
 
-        thrown.ShouldBeOfType<InvalidOperationException>().Message.ShouldContain("render_output_invalid");
+        // The job's own typed failure (a type deriving from InvalidOperationException) is the one exception a
+        // retried attempt rethrows unchanged (N5).
+        thrown.ShouldBeAssignableTo<InvalidOperationException>().Message.ShouldContain("render_output_invalid");
         harness.Money.Refunds.ShouldBeEmpty("the reservation is carried by the row that will be retried");
         harness.Money.Settles.ShouldBeEmpty();
         harness.Blobs.Puts.ShouldBeEmpty();

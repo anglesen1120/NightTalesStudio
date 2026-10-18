@@ -90,6 +90,36 @@ public sealed class RenderIngestOptionsValidatorSpoolTests : IDisposable
     }
 
     [Fact]
+    public void AbsoluteDirectory_IsAccepted()
+    {
+        var directory = NewDirectory("absolute");
+
+        Path.IsPathRooted(directory).ShouldBeTrue();
+
+        RenderIngestOptionsValidator.Validate(new RenderIngestOptions { TempDirectory = directory })
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void RelativeDirectory_IsRefused()
+    {
+        // A relative value (a relative NTS_HOME, or a hand-written key) would resolve against the Worker's
+        // working directory — possibly inside the working tree, which step 3 forbids — so it is refused before
+        // the probe could create it there.
+        var relative = Path.Combine("relative", "render-ingest");
+
+        Path.IsPathRooted(relative).ShouldBeFalse();
+
+        var problems = RenderIngestOptionsValidator.Validate(
+            new RenderIngestOptions { TempDirectory = relative });
+
+        problems.ShouldHaveSingleItem();
+        problems[0].ShouldContain(nameof(RenderIngestOptions.TempDirectory));
+        problems[0].ShouldContain("absolute");
+        Directory.Exists(relative).ShouldBeFalse();
+    }
+
+    [Fact]
     public void MissingDirectory_IsCreatedOwnerOnly()
     {
         var directory = Path.Combine(_root, "fresh", "spool");

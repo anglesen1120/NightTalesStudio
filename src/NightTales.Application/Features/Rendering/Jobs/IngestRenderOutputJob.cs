@@ -149,6 +149,18 @@ public sealed partial class IngestRenderOutputJob(
         string VideoKey,
         string SubtitlesKey);
 
+    /// <summary>
+    /// An attempt's own typed failure: the ones this job raises itself, built from the job id and a catalogue
+    /// code — never from a raw provider or I/O message. It is the <em>only</em> exception a retried attempt
+    /// rethrows unchanged, because it is the only one whose text is safe for Hangfire to persist and show in the
+    /// Api's dashboard (S5). Everything else is logged in full and replaced by a message carrying its type name
+    /// alone (N5): a framework <see cref="InvalidOperationException"/> such as <see cref="ObjectDisposedException"/>,
+    /// a provider failure wrapped by the execution strategy, or the destination's own I/O exception all used to
+    /// travel unchanged and leak their message and inner exceptions.
+    /// </summary>
+    /// <param name="message">The job's own message: ids and codes, never a raw exception's text.</param>
+    private sealed class IngestAttemptException(string message) : InvalidOperationException(message);
+
     /// <summary>Runs the ingest of <paramref name="renderJobId"/>.</summary>
     /// <param name="renderJobId">The <c>render_jobs</c> row to ingest (the only argument, D12).</param>
     /// <param name="cancellationToken">The scheduler's token for this attempt.</param>
@@ -264,7 +276,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Moving job '{job.Id}' to ingesting failed ('{stamped.FirstError.Code}').");
             }
 
@@ -636,7 +648,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Recording the verdict of job '{job.Id}' failed ('{reported.FirstError.Code}').");
             }
 
@@ -654,7 +666,7 @@ public sealed partial class IngestRenderOutputJob(
                 {
                     await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                    throw new InvalidOperationException(
+                    throw new IngestAttemptException(
                         $"Failing job '{job.Id}' as render_quality_failed failed ('{failed.FirstError.Code}').");
                 }
 
@@ -686,7 +698,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Storing the video asset of job '{job.Id}' failed ('{videoAsset.FirstError.Code}').");
             }
 
@@ -709,7 +721,7 @@ public sealed partial class IngestRenderOutputJob(
                 {
                     await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                    throw new InvalidOperationException(
+                    throw new IngestAttemptException(
                         $"Storing the subtitle asset of job '{job.Id}' failed ('{subtitleAsset.FirstError.Code}').");
                 }
             }
@@ -774,7 +786,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Moving episode '{job.EpisodeId}' to video review failed ('{reviewed.FirstError.Code}').");
             }
 
@@ -783,7 +795,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Succeeding job '{job.Id}' failed ('{succeeded.FirstError.Code}').");
             }
 
@@ -794,7 +806,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Raising render_succeeded.v1 for job '{job.Id}' failed ('{raised.FirstError.Code}').");
             }
 
@@ -881,11 +893,20 @@ public sealed partial class IngestRenderOutputJob(
                 // an IO or storage exception can carry the spool path, the blob endpoint or the bucket, and
                 // Hangfire persists the message and the stack in its state table, which the Api's dashboard shows
                 // (S5). Only the type name travels; the job's own typed failures already carry ids and codes, so
-                // they are rethrown unchanged.
-                if (exception is InvalidOperationException)
+                // they — and only they — are rethrown unchanged (N5: a framework InvalidOperationException such as
+                // ObjectDisposedException, or an execution-strategy-wrapped provider failure, is not the job's own
+                // and must not travel as if it were).
+                if (exception is IngestAttemptException)
                 {
                     throw;
                 }
+
+                // Everything else is logged once, in full, before its message is replaced: the wrapper below
+                // carries neither the message nor an inner exception, so without this line a bug such as a
+                // NullReferenceException or a storage fault would show nothing but its type name for every attempt
+                // (N4). Logs are not the Hangfire state table, so the original exception object — its stack
+                // included — is safe here.
+                LogAttemptFailed(job.Id, stage, exception.GetType().Name, exception);
 
                 throw new InvalidOperationException(
                     $"The ingest of job '{job.Id}' failed at stage '{stage}' ({exception.GetType().Name}); "
@@ -937,17 +958,20 @@ public sealed partial class IngestRenderOutputJob(
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)
         {
-            // The host is shutting down: the attempt's writes are dropped and its two objects deleted best-effort
-            // (S3) — with a token of their own, because the job's is already cancelled and would refuse the
-            // deletes. They are kept when the committed row already carries another delivery's success, which owns
-            // these exact keys (C5), and the cancellation then travels so the scheduler re-runs the job.
+            // The host is shutting down: this attempt's staged writes are dropped and the cancellation travels
+            // unchanged so the scheduler re-runs the job. Nothing is deleted and the row is not read (N2/N3).
+            // A delete decision here could only come from an *unlocked* status read, and that read is wrong for
+            // the one case that matters: a duplicate delivery B that has already PUT these exact BD7 keys and is
+            // inside its final transaction (but has not committed) still reads `ingesting`, so deleting the
+            // objects would leave B's committed success verdict pointing at nothing — silently, and for good.
+            // Nothing this attempt wrote was committed (its transaction is gone), the keys are content-addressed
+            // so the next attempt overwrites the same objects, and an ending that never runs again is the
+            // failed/cancelled sweep's job (09.7.3-T1). The status read that used to sit here was also unbudgeted
+            // and unguarded: with a slow or failing database it could replace the `OperationCanceledException`
+            // Hangfire needs to requeue the job, and on the last attempt nothing would then end the row at all
+            // (the WT52 stranding).
             DiscardPendingChanges(db);
             await RollbackQuietlyAsync(unitOfWork, job.Id).ConfigureAwait(false);
-
-            if (!await CommittedSucceededAsync(db, job.Id).ConfigureAwait(false))
-            {
-                await DeleteRunBlobsAsync(job.Id).ConfigureAwait(false);
-            }
 
             throw;
         }
@@ -984,7 +1008,7 @@ public sealed partial class IngestRenderOutputJob(
         var committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
         if (committed.IsError)
         {
-            throw new InvalidOperationException(
+            throw new IngestAttemptException(
                 $"Committing the ingest of job '{renderJobId}' failed ('{committed.FirstError.Code}').");
         }
     }
@@ -1132,7 +1156,7 @@ public sealed partial class IngestRenderOutputJob(
         {
             await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-            throw new InvalidOperationException(
+            throw new IngestAttemptException(
                 $"Ending job '{job.Id}' as '{code}' failed ('{failed.FirstError.Code}').");
         }
 
@@ -1185,7 +1209,7 @@ public sealed partial class IngestRenderOutputJob(
     {
         if (!lastAttempt && job.CancelRequestedAt is null)
         {
-            throw new InvalidOperationException(
+            throw new IngestAttemptException(
                 $"The output of job '{job.Id}' could not be stored ('{code}'); the job's next attempt downloads it again.");
         }
 
@@ -1235,7 +1259,7 @@ public sealed partial class IngestRenderOutputJob(
         {
             if (!lastAttempt)
             {
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"The status call of job '{job.Id}' was '{failure.Kind}'; the next attempt reads it again.");
             }
 
@@ -1306,7 +1330,7 @@ public sealed partial class IngestRenderOutputJob(
             {
                 LogDownloadRetried(job.Id, kind);
 
-                throw new InvalidOperationException(
+                throw new IngestAttemptException(
                     $"Downloading the output of job '{job.Id}' failed as '{failure.Kind}'; the next attempt takes it again.");
             }
 
@@ -1342,21 +1366,27 @@ public sealed partial class IngestRenderOutputJob(
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Settles the reservation of a stored render, once, by reservation id, with the ledger's own budget:
-    /// a failure is never swallowed, because the row this job is about to commit is exactly what a swallow would
-    /// buy (D5).</summary>
+    /// <summary>Settles the reservation of a stored render, once, by reservation id, with a bounded budget of its
+    /// own on top of the caller's token: a failure is never swallowed, because the row this job is about to commit
+    /// is exactly what a swallow would buy (D5).</summary>
     /// <remarks>
     /// <c>SettleAsync</c> is not the refund of a terminal transition: it has no documented idempotence per
     /// reservation and it is not part of this job's unit of work, so its failure travels (AC3): the attempt's
     /// transaction rolls back, the row is not committed <c>succeeded</c>, and the attempt is either retried or
     /// ended on its last one — never a settled-short success. It is called as the last statement before the
     /// commit (C3), so no other step of the success path can fail after a settled reservation — only the commit
-    /// itself, whose rollback then ends the attempt through the failure recorder. The budget is its own, because
-    /// the job's token may already be cancelled by a shutdown.
+    /// itself, whose rollback then ends the attempt through the failure recorder.
+    /// <para>
+    /// The budget is a <em>linked</em> one with <see cref="BestEffortTimeout"/> as its cap: it bounds the call when
+    /// nothing else does, and it is deliberately not independent of the caller (N9) — a job token the host has
+    /// already cancelled cancels the settlement immediately, and the resulting
+    /// <see cref="OperationCanceledException"/> aborts the attempt before the commit, which is the same safe
+    /// outcome as a refusal. Nothing needs the settlement to survive a shutdown: the next attempt settles again.
+    /// </para>
     /// </remarks>
     /// <param name="ledger">The credit ledger.</param>
     /// <param name="job">The row whose reservation is settled.</param>
-    /// <param name="cancellationToken">The job's token; a cancelled one still gets the settlement.</param>
+    /// <param name="cancellationToken">The job's token, linked into the settlement's own budget.</param>
     /// <returns>A task that completes once the ledger answered.</returns>
     /// <exception cref="InvalidOperationException">The ledger refused the settlement; the attempt must not
     /// commit.</exception>
@@ -1373,7 +1403,7 @@ public sealed partial class IngestRenderOutputJob(
         {
             LogSettleFailed(job.Id, settled.FirstError.Code);
 
-            throw new InvalidOperationException(
+            throw new IngestAttemptException(
                 $"Settling the reservation of job '{job.Id}' failed ('{settled.FirstError.Code}'); the ingest is not committed.");
         }
     }
@@ -1424,26 +1454,6 @@ public sealed partial class IngestRenderOutputJob(
         _run is { } run
             ? DeleteBlobsAsync(run.Blobs, run.Bucket, [run.VideoKey, run.SubtitlesKey], renderJobId)
             : Task.CompletedTask;
-
-    /// <summary>
-    /// Whether the committed row already carries a success: the only ending whose output is kept, and the only one
-    /// whose keys belong to another delivery. Read with <see cref="CancellationToken.None"/> on purpose — it is
-    /// called from the cancellation path, where the job's own token is already cancelled (S3).
-    /// </summary>
-    /// <param name="db">The tenant-scoped context.</param>
-    /// <param name="renderJobId">The row to read.</param>
-    /// <returns>A task that completes with that verdict.</returns>
-    private static async Task<bool> CommittedSucceededAsync(IAppDbContext db, Guid renderJobId)
-    {
-        var stored = await db.RenderJobs
-            .AsNoTracking()
-            .Where(candidate => candidate.Id == renderJobId)
-            .Select(candidate => (RenderJobStatus?)candidate.Status)
-            .SingleOrDefaultAsync(CancellationToken.None)
-            .ConfigureAwait(false);
-
-        return stored is RenderJobStatus.Succeeded;
-    }
 
     /// <summary>Asks the adapter to release a task whose output is committed. A failure — including the one retry
     /// of <c>adapter_task_busy</c> — is logged and never fails the ingest and never deletes a blob (step 10).</summary>
@@ -1817,4 +1827,16 @@ public sealed partial class IngestRenderOutputJob(
 
     [LoggerMessage(EventId = 6335, Level = LogLevel.Warning, Message = "render_ingest_rollback_skipped renderJobId={RenderJobId} reason={Reason}")]
     private partial void LogRollbackSkipped(Guid renderJobId, string reason);
+
+    /// <summary>
+    /// A retried attempt's failure, in full, <em>before</em> the wrapper that carries its type name alone is
+    /// thrown (N4). The exception object travels with it, so the original stack survives in the logs; the
+    /// message itself stays ids-only, and the raw text is the log line's business, never the wrapper's (S5).
+    /// </summary>
+    /// <param name="renderJobId">The row of the attempt.</param>
+    /// <param name="stage">The histogram stage the failure happened in.</param>
+    /// <param name="kind">The exception's type name.</param>
+    /// <param name="exception">The failure itself, stack included.</param>
+    [LoggerMessage(EventId = 6374, Level = LogLevel.Warning, Message = "render_ingest_attempt_failed renderJobId={RenderJobId} stage={Stage} kind={Kind}")]
+    private partial void LogAttemptFailed(Guid renderJobId, string stage, string kind, Exception exception);
 }

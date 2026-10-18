@@ -43,10 +43,18 @@ public sealed class RenderIngestOptions
     /// The private directory the ingest streams an output into before it verifies it.
     /// </summary>
     /// <remarks>
-    /// Under <c>$NTS_HOME/tmp/render-ingest</c> when <c>NTS_HOME</c> is set (the layout <c>tools/dev/up.sh</c> and
-    /// <c>SpooledUpload</c> use), and under the platform's own temp directory otherwise. It is never inside the
-    /// repository: the files hold rendered video, and step 3 rules out a working-tree path. The job creates it
-    /// owner-only when it is missing (mode 700 on POSIX), exactly as the blob spool does.
+    /// <para>
+    /// Under <c>$NTS_HOME/tmp/render-ingest</c> when <c>NTS_HOME</c> is set, and under the platform's own temp
+    /// directory — <c>/tmp/nts-render-ingest</c> on Linux — otherwise. On many Linux hosts <c>/tmp</c> is a tmpfs
+    /// (RAM-backed) shared by every local account, so production SHOULD set <c>NTS_HOME</c> or this key to a
+    /// service-owned directory on disk rather than rely on the fallback. It is never inside the repository: the
+    /// files hold rendered video, and step 3 rules out a working-tree path.
+    /// </para>
+    /// <para>
+    /// The value MUST be an absolute path: <see cref="RenderIngestOptionsValidator"/> refuses a relative one,
+    /// which would otherwise spool relative to the Worker's working directory. The job creates the directory
+    /// owner-only when it is missing (mode 0700 on POSIX), exactly as the blob spool does.
+    /// </para>
     /// </remarks>
     public string TempDirectory { get; set; } = DefaultTempDirectory();
 
@@ -59,7 +67,12 @@ public sealed class RenderIngestOptions
     public TimeSpan UnapprovedRetention => TimeSpan.FromDays(UnapprovedRetentionDays);
 
     /// <summary>The temp directory a host without <c>Render:Ingest:TempDirectory</c> uses.</summary>
-    /// <returns>An absolute path outside the repository.</returns>
+    /// <returns>
+    /// <c>$NTS_HOME/tmp/render-ingest</c> when <c>NTS_HOME</c> is set, else
+    /// <c>&lt;platform temp&gt;/nts-render-ingest</c>. Absolute only when <c>NTS_HOME</c> itself is absolute: a
+    /// relative <c>NTS_HOME</c> yields a relative path, which <see cref="RenderIngestOptionsValidator"/> refuses
+    /// at boot.
+    /// </returns>
     public static string DefaultTempDirectory()
     {
         var home = Environment.GetEnvironmentVariable("NTS_HOME");
