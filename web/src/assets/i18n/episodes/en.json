@@ -1,5 +1,22 @@
 {
   "render": {
+    "make": {
+      "action": "Make video",
+      "retry": "Retry making video",
+      "confirm": {
+        "title": "Make the video for this episode?",
+        "body": "The video will be made from the approved script. You can follow its progress here."
+      },
+      "blockedKeywords": "Fix the flagged image keywords in the story before making the video.",
+      "inProgress": "Starting video…"
+    },
+    "cancel": {
+      "action": "Cancel render",
+      "title": "Cancel this render?",
+      "body": "The video will stop rendering once the server confirms cancellation. Your approved script will be kept.",
+      "confirm": "Cancel render",
+      "busy": "Cancelling…"
+    },
     "timeline": {
       "heading": "Making your video",
       "percent": "{{percent}}%",

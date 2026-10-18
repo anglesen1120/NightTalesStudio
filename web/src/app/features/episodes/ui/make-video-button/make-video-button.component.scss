@@ -1,0 +1,8 @@
+:host { display: block; min-width: 0; max-width: 100%; }
+button { min-height: var(--nts-target-min); max-width: 100%; height: auto; padding-block: var(--nts-space-3); border-radius: var(--nts-radius-control); white-space: normal; overflow-wrap: anywhere; transition: filter var(--nts-motion-fast) var(--nts-ease); }
+button:hover:not([aria-disabled='true']) { filter: brightness(1.08); }
+button:active:not([aria-disabled='true']) { filter: brightness(0.94); }
+button:focus-visible { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+button[aria-disabled='true'] { background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); cursor: not-allowed; }
+.reason { max-width: var(--nts-measure); margin: var(--nts-space-2) 0 0; color: var(--nts-color-on-surface-muted); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }

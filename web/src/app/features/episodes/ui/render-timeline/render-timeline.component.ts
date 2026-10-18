@@ -1,12 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, input, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, untracked } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { IconAlert, IconCheck, IconClock } from '@shared/ui';
 import type { RenderTimelineStep, SubStage } from '../../domain/render.model';
 
 @Component({
   selector: 'nts-render-timeline',
-  imports: [TranslocoPipe, IconAlert, IconCheck, IconClock],
-  providers: [provideTranslocoScope('episodes')],
+  imports: [MatButtonModule, TranslocoPipe, IconAlert, IconCheck, IconClock],
+  providers: [provideTranslocoScope('episodes', 'errors')],
   templateUrl: './render-timeline.component.html',
   styleUrl: './render-timeline.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -18,6 +19,10 @@ export class RenderTimelineComponent {
   readonly elapsedSec = input(0);
   readonly waitingForSlot = input(false);
   readonly showEmailNotice = input(false);
+  readonly cancellable = input(false);
+  readonly cancelling = input(false);
+  readonly cancelErrorKey = input<string | null>(null);
+  readonly cancelRequest = output<void>();
 
   protected readonly activeKey = computed(() => this.steps().find((step) => step.state === 'active')?.key ?? null);
   protected readonly activeSubStep = computed(() => this.activeKey() === 'running' ? this.subStepKey() : null);
@@ -29,6 +34,14 @@ export class RenderTimelineComponent {
     this.activeKey();
     return this.formatDuration(untracked(this.elapsedSec));
   });
+
+  protected onCancel(event: Event): void {
+    if (!this.cancellable() || this.cancelling()) {
+      event.preventDefault();
+      return;
+    }
+    this.cancelRequest.emit();
+  }
 
   private formatDuration(value: number): string {
     const seconds = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
