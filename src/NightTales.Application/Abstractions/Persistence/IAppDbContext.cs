@@ -165,6 +165,21 @@ public interface IAppDbContext
     Task LockRenderJobForUpdateAsync(Guid renderJobId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Takes the same row lock as <see cref="LockRenderJobForUpdateAsync(Guid, CancellationToken)"/> with a
+    /// bounded wait (09.6.4-T1; the P4 hand-over of 09.6.3-T1). <c>lock_timeout</c> is set for this transaction
+    /// before the <c>SELECT … FOR NO KEY UPDATE</c>, so the caller is refused instead of queueing behind the
+    /// submit that holds this row across its adapter call (WT55) — the cancel path must answer the client. The
+    /// provider's refusal (<c>55P03</c>, <c>lock_not_available</c>) reaches the caller as a
+    /// <see cref="System.Data.Common.DbException"/>, and the caller maps it to the existing 409
+    /// <c>concurrency_conflict</c>. The bound applies to the surrounding transaction only, so the unbounded locks
+    /// the jobs take are unchanged.
+    /// </summary>
+    /// <param name="renderJobId">The render job to lock; nothing is locked for another user's id or an unknown one.</param>
+    /// <param name="lockTimeout">How long the lock waits before the provider refuses it; must be positive.</param>
+    /// <param name="cancellationToken">Cancels the statements.</param>
+    Task LockRenderJobForUpdateAsync(Guid renderJobId, TimeSpan lockTimeout, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
     /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
     /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -236,6 +237,30 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
                 $"SELECT id FROM render_jobs WHERE id = {renderJobId} AND user_id = {userId} FOR NO KEY UPDATE",
                 cancellationToken)
             : Task.CompletedTask;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <c>SET LOCAL lock_timeout</c> is utility syntax and takes no parameter, so the bound is applied through the
+    /// parameterised <c>set_config('lock_timeout', …, is_local =&gt; true)</c> form. Both statements run in the
+    /// caller's transaction, so the bound reverts with it and the unbounded lock above is untouched.
+    /// </remarks>
+    public async Task LockRenderJobForUpdateAsync(
+        Guid renderJobId,
+        TimeSpan lockTimeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockTimeout, TimeSpan.Zero);
+
+        var milliseconds = ((long)lockTimeout.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+
+        await Database
+            .ExecuteSqlInterpolatedAsync(
+                $"SELECT set_config('lock_timeout', {milliseconds}, true)",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await LockRenderJobForUpdateAsync(renderJobId, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>

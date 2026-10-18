@@ -363,6 +363,9 @@ try
 
     // 09.6.1-T1 (09 README BD5): POST /api/v1/episodes/{id}/render queues one render job for one approved
     // story. The route requires If-Match and Idempotency-Key and carries the paid policy.
+    // 09.6.4-T1 (09 README BD8): DELETE /api/v1/render-jobs/{id} cancels one of them — a queued job at once, a
+    // submitted/running one by asking the adapter through the Worker's outbox handler. No If-Match, no
+    // Idempotency-Key, no rate policy: the route frees money and is idempotent by the row's own status.
     app.MapRenderingEndpoints();
 
     // 06.3.1-T1 (06 README D9): GET /api/v1/publishing/youtube/eta reports the platform's remaining daily

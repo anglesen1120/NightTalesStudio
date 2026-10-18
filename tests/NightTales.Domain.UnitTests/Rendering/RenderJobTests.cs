@@ -192,6 +192,45 @@ public sealed class RenderJobTests
     }
 
     [Fact]
+    public void RequestCancel_RaisesRenderCancelRequested_Once_WithIdsOnly()
+    {
+        // 09.6.4-T1: the request path of a submitted/running attempt stamps the row and raises one event — the
+        // Worker's outbox hand-off that asks the node to cancel (BD8/D11). The payload is ids and the instant.
+        var job = Submitted();
+
+        var requested = job.RequestCancel(FixedNow);
+
+        requested.IsError.ShouldBeFalse();
+        var raised = job.DomainEvents.OfType<RenderCancelRequested>().ShouldHaveSingleItem();
+        raised.RenderJobId.ShouldBe(job.Id);
+        raised.EpisodeId.ShouldBe(EpisodeId);
+        raised.UserId.ShouldBe(UserId);
+        raised.OccurredAt.ShouldBe(FixedNow, "the event carries the command's clock reading, not a second one");
+
+        // The name is the catalogue's and every member is an id or an instant: nothing can carry story content.
+        typeof(RenderCancelRequested).GetCustomAttributes(typeof(OutboxEventAttribute), inherit: false)
+            .Cast<OutboxEventAttribute>().Single().Name.ShouldBe("render_cancel_requested.v1");
+        typeof(RenderCancelRequested).GetProperties().Select(property => property.PropertyType)
+            .ShouldAllBe(type => type == typeof(Guid) || type == typeof(DateTimeOffset));
+
+        // The repeat (a second DELETE) is idempotent: it neither re-stamps nor raises a second event.
+        job.RequestCancel(FixedNow + TimeSpan.FromMinutes(5)).IsError.ShouldBeFalse();
+        job.CancelRequestedAt.ShouldBe(FixedNow);
+        job.DomainEvents.OfType<RenderCancelRequested>().Count().ShouldBe(1);
+
+        // A refusal (a queued row, or an ingesting one) is a 409 that stamps nothing and raises nothing.
+        var queued = Create();
+        queued.RequestCancel(FixedNow).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+        queued.CancelRequestedAt.ShouldBeNull();
+        queued.DomainEvents.OfType<RenderCancelRequested>().ShouldBeEmpty();
+
+        var ingesting = Submitted();
+        ingesting.MarkIngesting(FixedNow).IsError.ShouldBeFalse();
+        ingesting.RequestCancel(FixedNow).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+        ingesting.DomainEvents.OfType<RenderCancelRequested>().ShouldBeEmpty();
+    }
+
+    [Fact]
     public void Fail_UnknownCode_Rejected()
     {
         var job = Submitted();
