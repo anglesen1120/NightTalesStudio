@@ -19,8 +19,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// covers a render in flight (02.2.2-T2, 03 D8). Up is expand-only — one <c>AddColumn</c>, <c>numeric(12,6)</c>
 /// <c>NOT NULL DEFAULT 0</c>, no other schema change — and the default is what backfills the rows that predate the
 /// column: render was not live in the release that added it, so an existing row is an attempt nobody was billed for
-/// (an unconsumed bound is 0, never negative). <c>Down</c> drops the column and nothing else, and the class owns the
-/// last-migration check for the new tip.
+/// (an unconsumed bound is 0, never negative). <c>Down</c> drops the column and nothing else.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -37,6 +36,13 @@ public sealed class AddRenderJobWorstCaseUsdMigrationTests(TestDatabase database
     private const string BoundLiteral = "1.234567";
 
     /// <summary>
+    /// The tables a migration <em>after</em> this one creates. The migrator is linear, so reverting to the
+    /// migration before this one also reverts every later one and takes their tables with it; the
+    /// <c>_06_OAuthStates</c> migration of 06.1.2-T1 appended <c>oauth_states</c> after this one.
+    /// </summary>
+    private static readonly string[] LaterMigrationTables = ["oauth_states"];
+
+    /// <summary>
     /// The <c>render_jobs</c> row of <see cref="SeedPrevious"/> (09.6.1-T1's dataset entry, the queued job of the
     /// seed story version): the row the migration is exercised against, and the one whose backfilled bound this
     /// class asserts.
@@ -46,11 +52,13 @@ public sealed class AddRenderJobWorstCaseUsdMigrationTests(TestDatabase database
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 06.1.2-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
@@ -177,7 +185,13 @@ public sealed class AddRenderJobWorstCaseUsdMigrationTests(TestDatabase database
             (await ColumnShapeAsync()).ShouldBeEmpty();
             var tablesAfter = await Database.QueryStringsAsync(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
-            tablesAfter.ShouldBe(tablesBefore, "Down drops one column and no table");
+
+            // The migrator is linear: reverting to the migration before this one also reverts every later
+            // one, so a table a later migration creates is gone with it. Every table that existed before
+            // this migration — and this migration's own — must survive its Down.
+            tablesAfter.ShouldBe(
+                tablesBefore.Where(table => !LaterMigrationTables.Contains(table)).ToList(),
+                "Down drops one column and no table");
 
             var job = InsertJob(parents, "queued");
             (await Database.QueryStringsAsync(
