@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next (Session 42 closed) line (2026-10-18, moved out when the Session 59 PR opened)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 42 closed):** **02.6.3-T2** proposal job on `StoryApproved` + `POST /api/v1/series/{id}/bible/proposal/accept|dismiss` + autopilot auto-accept merged as #213 (`cd68697c`, branch tip `621277cf`; no migration; CI refused: CI-01, owner treats as pass; final full remote gate `GATE_RC=0` on `cb8bed25` (Ubuntu arm64), later commits add docs only; T3 gates and delta review closed; rulings R1–R5 in the task Notes). Open items: BIBLE-6…BIBLE-11 and BIBLE-4 (a) (`first_episode_id` is not stamped by any T2 writer). `web/openapi.json` is NOT re-pinned in this PR (correct for S42): the web half was re-pinned in **10.5.7-T1** (Session 48, PR #217) from `develop` `be4d36f5`; **02.8.3-T1** still reads the `series.bible_proposal_accepted` audit rows. QA A8 real-stack smoke was not run.
+
+Outcome: 02.6.3-T2 is merged (#213, `cd68697c`); the line moved here only to keep the Resume block short.
+
 ### Superseded web Next (Session 48 PR-open) line (2026-10-17, replaced when #217 merged as cc505ba5)
 
 Replaced text (verbatim):
