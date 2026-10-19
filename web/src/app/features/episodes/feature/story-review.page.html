@@ -216,7 +216,7 @@
     }
   }
   <div class="story-review-page__announcement" role="status" aria-live="polite" aria-atomic="true">
-    @if (approvalAnnouncement(); as announcement) {
+    @if (pageAnnouncement(); as announcement) {
       @for (message of [announcement]; track message.sequence) { <span>{{ message.text }}</span> }
     }
   </div>

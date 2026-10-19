@@ -50,6 +50,9 @@ function videoJob(overrides: Partial<RenderJob> = {}): RenderJob {
 class FakeDetailStore {
   readonly episodeState = signal<EpisodeDetail | null>(null);
   readonly episode = this.episodeState.asReadonly();
+  /** The read's own mapped failure, `null` while nothing failed — `refetch()` answers `null` either way (C5). */
+  readonly errorState = signal<AppError | null>(null);
+  readonly error = this.errorState.asReadonly();
   readonly loadCalls: string[] = [];
   readonly refetchCalls: Array<{ userAction?: boolean } | undefined> = [];
   private readonly pendingRefetch: Array<(value: EpisodeDetail | null) => void> = [];
@@ -373,6 +376,96 @@ describe('VideoReviewStore - the signed URL', () => {
     expect(state.store.playerError()).toBe(false);
     expect(state.store.urlFailed()).toBe(false);
     expect(state.store.refreshCount()).toBe(1);
+
+    // The player's own refresh does not re-arm the one it just spent (SP-1/C1): a link that still does not play has to
+    // reach the retry state, never another GET.
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(2);
+    expect(state.store.urlFailed()).toBe(true);
+  });
+
+  it('playerError_OnAPersistentlyUnplayableLinkBuysOneExtraReadAndThenGivesUp', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    // The link is signed correctly but cannot be played (a CSP `media-src` miss, a corrupt asset): the element fires
+    // `error` again for every new `src` the swap hands it, and the endpoint must not be read for each one.
+    state.repo.willAnswerUrl({ url: SWAPPED_URL, expiresAt: FAR_FUTURE });
+
+    state.store.onPlayerError();
+    await settle();
+    state.store.onPlayerError();
+    await settle();
+    state.store.onPlayerError();
+    await settle();
+
+    expect(state.repo.urlCalls).toHaveLength(2);
+    expect(state.store.url()?.url).toBe(SWAPPED_URL);
+    expect(state.store.urlFailed()).toBe(true);
+  });
+
+  it('playerError_WhileAReadIsAlreadyInFlightSpendsNothingAndFailsOverWithIt', async () => {
+    const state = setup();
+    state.repo.expiresAt = dueAtTheNextTick(59_000);
+    await state.store.loadUrl();
+    state.repo.deferUrl();
+
+    state.store.startUrlRefresh();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(state.repo.urlCalls).toHaveLength(2);
+
+    // The error arrives while the due check is on its way: that read is not the player's refresh, so nothing is spent.
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(2);
+    expect(state.store.playerError()).toBe(true);
+    expect(state.store.urlFailed()).toBe(false);
+
+    // That read fails: the player must not be left holding a URL it cannot play (C6).
+    state.repo.rejectUrl(appError('service_unavailable', 503, 'server'));
+    await settle();
+    expect(state.store.urlFailed()).toBe(true);
+    expect(state.store.urlErrorKey()).toBe('errors.service_unavailable');
+
+    // The one refresh is still owed: the next error buys exactly one read and clears the failed state with it.
+    state.repo.willAnswerUrl({ url: SWAPPED_URL, expiresAt: FAR_FUTURE });
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(3);
+    expect(state.repo.urlCalls[2]?.userAction).toBe(false);
+    expect(state.store.url()?.url).toBe(SWAPPED_URL);
+    expect(state.store.urlFailed()).toBe(false);
+  });
+
+  it('retryUrl_ReArmsTheOneRefreshAPlayerErrorIsAllowed', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.repo.willAnswerUrl({ url: SWAPPED_URL, expiresAt: FAR_FUTURE });
+
+    // The player's own refresh is spent, and a link that still does not play reaches the retry state.
+    state.store.onPlayerError();
+    await settle();
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(2);
+    expect(state.store.urlFailed()).toBe(true);
+
+    // The owner's own retry is a read the player did not ask for: it re-arms the one refresh.
+    await state.store.retryUrl();
+    expect(state.repo.urlCalls[2]?.userAction).toBe(true);
+    expect(state.store.urlFailed()).toBe(false);
+
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(4);
+    expect(state.repo.urlCalls[3]?.userAction).toBe(false);
+    expect(state.store.urlFailed()).toBe(false);
+
+    // …and that one is spent in its turn: a broken asset never buys more than one read per non-player success.
+    state.store.onPlayerError();
+    await settle();
+    expect(state.repo.urlCalls).toHaveLength(4);
+    expect(state.store.urlFailed()).toBe(true);
   });
 
   it('playerError_WhenTheRefreshFailsReplacesThePlayerAndNeverHammersTheEndpoint', async () => {
@@ -628,6 +721,111 @@ describe('VideoReviewStore - approve', () => {
 
     expect(state.store.dialog()).toBeNull();
   });
+
+  it('a412WhoseRefetchFailedKeepsTheConfirmHeld', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openApprove();
+    state.repo.willFailApprove(appError('episode_conflict', 412, 'precondition'));
+    state.detail.deferRefetch();
+
+    const sending = state.store.approve();
+    await settle();
+    expect(state.store.needsRefresh()).toBe(true);
+
+    // The read itself failed: `refetch()` answers `null` and the hold stays, so the retry cannot go out on the same
+    // stale ETag (C5).
+    state.detail.errorState.set(appError('service_unavailable', 503, 'server'));
+    state.detail.resolveRefetch(null);
+    await sending;
+
+    expect(state.store.needsRefresh()).toBe(true);
+    expect(state.store.errorKey()).toBe('errors.episode_conflict');
+    expect(state.store.deciding()).toBe(false);
+  });
+
+  it('aFailedRefetchAfterAnAppliedApproveKeepsTheDialogOnTheReadsOwnError', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openApprove();
+    state.detail.deferRefetch();
+    state.detail.errorState.set(appError('network_error', 0, 'network'));
+
+    const sending = state.store.approve();
+    await settle();
+    expect(state.repo.approveCalls).toHaveLength(1);
+    // The dialog is closed on the answer, before the read lands — the page pins that.
+    expect(state.store.dialog()).toBeNull();
+
+    state.detail.resolveRefetch(null);
+    await sending;
+
+    // The decision was applied but the fresh state never landed: the read's own mapped error is shown in the dialog
+    // again, so the owner is not left with a stale snapshot, a stale ETag and live buttons and no message (C5).
+    expect(state.store.dialog()).toBe('approve');
+    expect(state.store.errorKey()).toBe('errors.network_error');
+    expect(state.store.deciding()).toBe(false);
+    expect(state.store.error()).toEqual(appError('network_error', 0, 'network'));
+
+    // The confirm of an applied decision repeats the read, never the command: the server already approved it.
+    state.repo.willAcceptApprove();
+    state.detail.errorState.set(null);
+    const repeating = state.store.approve();
+    await settle();
+    expect(state.store.deciding()).toBe(true);
+    state.detail.resolveRefetch(state.detail.episodeState());
+    await repeating;
+
+    expect(state.repo.approveCalls).toHaveLength(1);
+    expect(state.detail.refetchCalls).toHaveLength(2);
+    expect(state.store.dialog()).toBeNull();
+    expect(state.store.errorKey()).toBeNull();
+    expect(state.store.deciding()).toBe(false);
+  });
+
+  it('aRepeatReadThatFailsAgainKeepsTheDialogAndSendsNoSecondApprove', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openApprove();
+    state.detail.deferRefetch();
+    state.detail.errorState.set(appError('network_error', 0, 'network'));
+
+    const sending = state.store.approve();
+    await settle();
+    state.detail.resolveRefetch(null);
+    await sending;
+    expect(state.store.dialog()).toBe('approve');
+
+    // The repeated read fails too: the dialog and its error stay, and the command is still never re-sent.
+    const repeating = state.store.approve();
+    await settle();
+    expect(state.store.deciding()).toBe(true);
+    state.detail.resolveRefetch(null);
+    await repeating;
+
+    expect(state.store.dialog()).toBe('approve');
+    expect(state.store.errorKey()).toBe('errors.network_error');
+    expect(state.repo.approveCalls).toHaveLength(1);
+    expect(state.detail.refetchCalls).toHaveLength(2);
+    expect(state.store.deciding()).toBe(false);
+  });
+
+  it('aRefetchSupersededByANewerReadReopensNothing', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openApprove();
+    state.detail.deferRefetch();
+
+    const sending = state.store.approve();
+    await settle();
+    // A `null` with no error on the detail store is a read a newer one superseded, not a failure: that read owns the
+    // state, so no dialog comes back on an error nobody recorded.
+    state.detail.resolveRefetch(null);
+    await sending;
+
+    expect(state.store.dialog()).toBeNull();
+    expect(state.store.errorKey()).toBeNull();
+  });
 });
 
 describe('VideoReviewStore - reject', () => {
@@ -684,6 +882,72 @@ describe('VideoReviewStore - reject', () => {
     expect(state.repo.rejectCalls[3]?.intent.key).not.toBe(first?.key);
   });
 
+  it('mintsAFreshKeyWhenTheReasonChangesAfterAnUnknownOutcome', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openReject('story');
+    state.store.reason.setValue('The last line is wrong');
+    state.repo.willFailReject(appError('network_error', 0, 'network'));
+
+    await state.store.reject();
+    const first = state.repo.rejectCalls[0]?.intent;
+    expect(first?.isSettled).toBe(false);
+    expect(state.store.dialog()).toBe('reject');
+
+    // C2/SP-5: a changed reason is a new decision — replaying the held key with a different body is what the server
+    // refuses as 422 `idempotency_key_reused`, so the old intent is settled and a fresh key minted.
+    state.store.reason.setValue('The middle line is wrong');
+    await state.store.reject();
+
+    expect(state.repo.rejectCalls).toHaveLength(2);
+    expect(state.repo.rejectCalls[1]?.intent).not.toBe(first);
+    expect(state.repo.rejectCalls[1]?.intent.key).not.toBe(first?.key);
+    expect(first?.isSettled).toBe(true);
+    expect(state.repo.rejectCalls[1]?.reason).toBe('The middle line is wrong');
+  });
+
+  it('mintsAFreshKeyWhenTheTargetChangesAfterAnUnknownOutcome', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openReject('story');
+    state.store.reason.setValue('Wrong tone');
+    state.repo.willFailReject(appError('network_error', 0, 'network'));
+
+    await state.store.reject();
+    const first = state.repo.rejectCalls[0]?.intent;
+    expect(first?.isSettled).toBe(false);
+
+    // The other half of the payload binding: flipping story ↔ re_render is a different command, so it gets its own key.
+    state.store.setTarget('re_render');
+    await state.store.reject();
+
+    expect(state.repo.rejectCalls).toHaveLength(2);
+    expect(state.repo.rejectCalls[1]?.intent.key).not.toBe(first?.key);
+    expect(state.repo.rejectCalls[1]?.target).toBe('re_render');
+    expect(first?.isSettled).toBe(true);
+  });
+
+  it('reopensTheDialogWithAFreshFieldSoThePreviousAttemptLeavesNoMark', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openReject('story');
+    state.store.reason.setValue('   ');
+    state.store.reason.markAsDirty();
+
+    await state.store.reject();
+    expect(state.store.reason.touched).toBe(true);
+    expect(state.store.reason.dirty).toBe(true);
+
+    // C7: a reopened dialog is a fresh attempt — the field starts empty, untouched and pristine again.
+    state.store.closeDialog();
+    state.store.openReject('story');
+
+    expect(state.store.dialog()).toBe('reject');
+    expect(state.store.reason.value).toBe('');
+    expect(state.store.reason.touched).toBe(false);
+    expect(state.store.reason.dirty).toBe(false);
+  });
+
   it('aRefusalSettlesTheIntentSoTheNextClickUsesAFreshKey', async () => {
     const state = setup();
     await state.store.loadUrl();
@@ -737,6 +1001,42 @@ describe('VideoReviewStore - reject', () => {
     state.detail.resolveRefetch(state.detail.episodeState());
     await sending;
     expect(state.store.deciding()).toBe(false);
+  });
+
+  it('aFailedRefetchAfterAnAppliedRejectKeepsTheDialogOnTheReadsOwnError', async () => {
+    const state = setup();
+    await state.store.loadUrl();
+    state.store.openReject('story');
+    state.store.reason.setValue('Wrong tone');
+    state.repo.willAcceptReject({ status: 'story_review', etag: '"ep-2"', accepted: false });
+    state.detail.deferRefetch();
+    state.detail.errorState.set(appError('service_unavailable', 503, 'server'));
+
+    const sending = state.store.reject();
+    await settle();
+    expect(state.repo.rejectCalls).toHaveLength(1);
+
+    state.detail.resolveRefetch(null);
+    await sending;
+
+    // The reject was applied and the read that would have moved the page failed: the dialog returns on the read's own
+    // error instead of leaving the stale `video_review` snapshot on screen with nothing said (C5).
+    expect(state.store.dialog()).toBe('reject');
+    expect(state.store.errorKey()).toBe('errors.service_unavailable');
+    expect(state.store.deciding()).toBe(false);
+
+    // The confirm repeats the read, never the reject: the key was settled with the applied command, so a second POST
+    // would mint a fresh key for a decision the server already took.
+    state.repo.willAcceptReject({ status: 'story_review', etag: '"ep-2"', accepted: false });
+    state.detail.errorState.set(null);
+    const repeating = state.store.reject();
+    await settle();
+    state.detail.resolveRefetch(state.detail.episodeState());
+    await repeating;
+
+    expect(state.repo.rejectCalls).toHaveLength(1);
+    expect(state.detail.refetchCalls).toHaveLength(2);
+    expect(state.store.dialog()).toBeNull();
   });
 
   it('a400BindsTheReasonFieldAndKeepsTheDialog', async () => {

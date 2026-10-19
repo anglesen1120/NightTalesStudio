@@ -44,9 +44,16 @@ export class VideoReviewComponent {
   readonly downloadClick = output<void>();
   private readonly countdown = viewChild(RetryCountdown);
   protected readonly retryPending = computed(() => this.urlRetryAfterSec() !== null && (this.countdown()?.remaining() ?? this.urlRetryAfterSec() ?? 0) > 0);
+  /**
+   * The retry's own busy state (`loadingUrl` for a first read, the countdown for a storage wait). It is reported with
+   * `aria-disabled`/`aria-busy` rather than the native attribute: the click is what makes the button busy, so a
+   * focused button that natively disables itself loses the user's focus mid-interaction — and `retry()` is the guard.
+   */
+  protected readonly retryBusy = computed(() => this.loadingUrl() || this.retryPending());
   protected readonly storageDegraded = computed(() => this.urlErrorKey() === 'errors.service_unavailable');
 
   protected retry(): void {
-    if (!this.loadingUrl() && !this.retryPending()) this.retryUrl.emit();
+    if (this.retryBusy()) return;
+    this.retryUrl.emit();
   }
 }

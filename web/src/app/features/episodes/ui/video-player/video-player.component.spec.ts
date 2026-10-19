@@ -1,4 +1,4 @@
-import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { onEmit } from '@shared/ui/testing/on-emit';
@@ -7,37 +7,27 @@ import episodesEn from '../../../../../assets/i18n/episodes/en.json';
 import coreEn from '../../../../../assets/i18n/core/en.json';
 import { VideoPlayerComponent } from './video-player.component';
 
-async function setup(render = true) {
+async function setup() {
   const loadSpy = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   await TestBed.configureTestingModule({
     imports: [VideoPlayerComponent, TranslocoTestingModule.forRoot({ langs: { en: { ...coreEn, episodes: episodesEn } }, translocoConfig: { availableLangs: ['en'], defaultLang: 'en' }, preloadLangs: true })],
     providers: ZONELESS_TEST_PROVIDERS,
-    deferBlockBehavior: DeferBlockBehavior.Manual,
   }).compileComponents();
   const fixture = TestBed.createComponent(VideoPlayerComponent);
   fixture.componentRef.setInput('label', episodesEn.render.review.heading);
   fixture.componentRef.setInput('url', 'https://media.example/video.mp4?signature=private-first');
   await fixture.whenStable();
-  if (render) {
-    const [block] = await fixture.getDeferBlocks();
-    await block!.render(DeferBlockState.Complete);
-    await fixture.whenStable();
-  }
   return { fixture, root: fixture.nativeElement as HTMLElement, loadSpy };
 }
 
 afterEach(() => { TestBed.resetTestingModule(); vi.restoreAllMocks(); });
 
 describe('VideoPlayerComponent', () => {
-  it('renders LoadingState before the viewport defer trigger, without a media element', async () => {
-    const { fixture, root } = await setup(false);
-    expect(root.querySelector('nts-loading-state')).not.toBeNull();
-    expect(root.querySelector('video')).toBeNull();
-    const [block] = await fixture.getDeferBlocks();
-    await block!.render(DeferBlockState.Complete);
-    await fixture.whenStable();
-    expect(root.querySelector('nts-loading-state')).toBeNull();
+  it('renders its media element with the component, with no defer of its own (C9)', async () => {
+    const { fixture, root } = await setup();
+    expect(await fixture.getDeferBlocks()).toHaveLength(0);
     expect(root.querySelector('video')).not.toBeNull();
+    expect(root.querySelector('nts-loading-state')).toBeNull();
   });
 
   it('uses labelled native metadata-only controls, never autoplay, poster or false captions', async () => {

@@ -58,9 +58,8 @@ describe('VideoReviewComponent', () => {
     const [block] = await fixture.getDeferBlocks();
     await block!.render(DeferBlockState.Complete);
     await fixture.whenStable();
-    const [mediaBlock] = await block!.getDeferBlocks();
-    await mediaBlock!.render(DeferBlockState.Complete);
-    await fixture.whenStable();
+    // C9: one defer for the pair — the container's — and the media element comes with the player, not one viewport later.
+    expect(await block!.getDeferBlocks()).toHaveLength(0);
     expect(root.querySelector('video')).not.toBeNull();
     expect(root.textContent).not.toContain('signature=');
   });
@@ -98,11 +97,43 @@ describe('VideoReviewComponent', () => {
     expect(root.querySelector('a[data-testid="download-mp4"]')).toBeNull();
     expect(root.querySelector('.download-disabled')?.textContent).toContain(errorsEn.service_unavailable);
     const retry = root.querySelector<HTMLButtonElement>('.url-error button')!;
-    expect(retry.disabled).toBe(true);
+    let retries = 0;
+    onEmit(fixture.componentInstance.retryUrl, () => retries++);
+    // C10: the wait is reported without the native attribute, so the button the user just clicked keeps their focus.
+    expect(retry.disabled).toBe(false);
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    retry.click();
+    expect(retries).toBe(0);
     const countdown = fixture.debugElement.query(By.directive(RetryCountdown)).componentInstance as RetryCountdown;
     countdown.remaining.set(0);
     await fixture.whenStable();
+    expect(retry.getAttribute('aria-disabled')).toBeNull();
+    expect(retry.getAttribute('aria-busy')).toBeNull();
+    retry.click();
+    expect(retries).toBe(1);
+  });
+
+  it('marks the retry busy without the native attribute while a read is in flight, and ignores that click', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('url', null);
+    fixture.componentRef.setInput('urlFailed', false);
+    fixture.componentRef.setInput('urlErrorKey', 'errors.not_found');
+    fixture.componentRef.setInput('loadingUrl', true);
+    await fixture.whenStable();
+    const retry = root.querySelector<HTMLButtonElement>('.url-error button')!;
+    let retries = 0;
+    onEmit(fixture.componentInstance.retryUrl, () => retries++);
     expect(retry.disabled).toBe(false);
+    expect(retry.getAttribute('aria-disabled')).toBe('true');
+    expect(retry.getAttribute('aria-busy')).toBe('true');
+    retry.click();
+    expect(retries).toBe(0);
+    fixture.componentRef.setInput('loadingUrl', false);
+    await fixture.whenStable();
+    expect(retry.getAttribute('aria-disabled')).toBeNull();
+    retry.click();
+    expect(retries).toBe(1);
   });
 
   it('renders ready as metadata and download only, with no player, hints, scenes or decisions', async () => {

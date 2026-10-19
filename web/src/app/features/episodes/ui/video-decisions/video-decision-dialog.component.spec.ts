@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { FormControl, Validators } from '@angular/forms';
+import { FormControl, FormGroup, Validators } from '@angular/forms';
+import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it } from 'vitest';
+import { bindFieldErrors } from '@core/errors';
 import { onEmit } from '@shared/ui/testing/on-emit';
 import { RetryCountdown } from '@shared/ui/retry-countdown/retry-countdown.component';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
@@ -14,10 +16,24 @@ import errorsEn from '../../../../../assets/i18n/errors/en.json';
 import errorsVi from '../../../../../assets/i18n/errors/vi.json';
 import { VideoDecisionDialogComponent } from './video-decision-dialog.component';
 
+/**
+ * A mirror of the store's own `reason` validator (the product's single source of truth, pinned by
+ * `video-review.store.spec.ts`): the ui layer may not import `application/` (eslint D2), so the fixture rebuilds the
+ * same verdict — trimmed 1–500 and no NUL — for the control the dialog binds.
+ */
+function rejectReasonValidator(control: AbstractControl<string>): ValidationErrors | null {
+  const value = control.value;
+  if (value.includes('\u0000')) return { nulCharacter: true };
+  const trimmedLength = value.trim().length;
+  if (trimmedLength === 0) return { required: true };
+  if (trimmedLength > 500) return { maxlength: { requiredLength: 500, actualLength: trimmedLength } };
+  return null;
+}
+
 async function setup(mode: 'approve' | 'reject' = 'approve', lang: 'vi' | 'en' = 'en') {
   await TestBed.configureTestingModule({ imports: [VideoDecisionDialogComponent, TranslocoTestingModule.forRoot({ langs: { en: { ...coreEn, episodes: episodesEn, errors: errorsEn }, vi: { ...coreVi, episodes: episodesVi, errors: errorsVi }, 'errors/en': errorsEn, 'errors/vi': errorsVi }, translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang }, preloadLangs: true })], providers: ZONELESS_TEST_PROVIDERS }).compileComponents();
   const note = new FormControl('', { nonNullable: true, validators: [Validators.maxLength(500)] });
-  const reason = new FormControl('', { nonNullable: true, validators: [(control) => Validators.required(control), Validators.maxLength(500)] });
+  const reason = new FormControl('', { nonNullable: true, validators: [rejectReasonValidator] });
   const fixture = TestBed.createComponent(VideoDecisionDialogComponent);
   fixture.componentRef.setInput('mode', mode);
   fixture.componentRef.setInput('noteControl', note);
@@ -37,6 +53,7 @@ describe('VideoDecisionDialogComponent', () => {
     expect(root.querySelector('textarea')?.required).toBe(false);
     expect(confirmButton(root).disabled).toBe(false);
     note.setValue('x'.repeat(501));
+    note.markAsTouched();
     await fixture.whenStable();
     expect(confirmButton(root).disabled).toBe(true);
     expect(root.querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
@@ -45,15 +62,63 @@ describe('VideoDecisionDialogComponent', () => {
     expect(root.textContent).not.toMatch(/\b(credits?|cost|price|balance)\b|tín dụng|chi phí|số dư/i);
   });
 
+  it('keeps a pristine empty reason unmarked on open and marks it once touched or modified', async () => {
+    const { fixture, root, reason } = await setup('reject');
+    const textarea = root.querySelector<HTMLTextAreaElement>('[data-testid="reject-reason"]')!;
+    // C7: nothing has been typed or submitted, so no red message and no `aria-invalid` — but the confirm stays held
+    // back by the invalid reason (the disabled-confirm mechanism is unchanged).
+    expect(reason.touched).toBe(false);
+    expect(reason.dirty).toBe(false);
+    expect(textarea.getAttribute('aria-invalid')).toBeNull();
+    expect(textarea.getAttribute('aria-describedby')).not.toContain('-error');
+    expect(root.querySelector('.field-error')).toBeNull();
+    expect(confirmButton(root).disabled).toBe(true);
+
+    // Typing marks the control dirty, so the message appears without waiting for a blur.
+    reason.markAsDirty();
+    await fixture.whenStable();
+    expect(textarea.getAttribute('aria-invalid')).toBe('true');
+    expect(root.querySelector('.field-error')).not.toBeNull();
+
+    // Back to pristine: hidden again — the gate is the interaction, not the invalid value.
+    reason.markAsPristine();
+    await fixture.whenStable();
+    expect(root.querySelector('.field-error')).toBeNull();
+
+    // The store marks the control touched on a failed submit (the native accessor on blur): the message shows again.
+    reason.markAsTouched();
+    await fixture.whenStable();
+    expect(textarea.getAttribute('aria-invalid')).toBe('true');
+    expect(textarea.getAttribute('aria-describedby')).toContain(root.querySelector('.field-error')!.id);
+  });
+
   it.each(['', ' ', 'x'.repeat(501)])('refuses an invalid rejection reason %j and links its field error', async (value) => {
     const { fixture, root, reason } = await setup('reject');
     reason.setValue(value);
+    reason.markAsTouched();
     await fixture.whenStable();
     const textarea = root.querySelector<HTMLTextAreaElement>('[data-testid="reject-reason"]')!;
     expect(textarea.required).toBe(true);
     expect(textarea.getAttribute('aria-invalid')).toBe('true');
     expect(textarea.getAttribute('aria-describedby')).toContain(root.querySelector('.field-error')!.id);
     expect(confirmButton(root).disabled).toBe(true);
+  });
+
+  it('accepts 500 characters plus a trailing newline, judged after trimming like the server', async () => {
+    const { fixture, root, reason } = await setup('reject');
+    reason.setValue('x'.repeat(500) + '\n');
+    reason.markAsTouched();
+    await fixture.whenStable();
+    // C8/D2: the wire trims before counting, so the client must not block what the server accepts, and the dialog
+    // follows the control's own verdict instead of recomputing a raw length. The counter measures the same trimmed
+    // value, so a valid 500 is not painted as over-limit.
+    expect(reason.invalid).toBe(false);
+    expect(root.querySelector('.field-error')).toBeNull();
+    expect(root.querySelector<HTMLTextAreaElement>('[data-testid="reject-reason"]')!.getAttribute('aria-invalid')).toBeNull();
+    expect(confirmButton(root).disabled).toBe(false);
+    const counter = root.querySelector('nts-char-counter')!;
+    expect(counter.textContent).toContain('500/500');
+    expect(counter.classList.contains('char-counter--over')).toBe(false);
   });
 
   it('keeps exactly two target radios, emits a target intent and uses re-make copy for re_render', async () => {
@@ -76,14 +141,25 @@ describe('VideoDecisionDialogComponent', () => {
     expect(count).toBe(1);
   });
 
-  it('maps server field invalidity to aria-describedby without rendering server prose', async () => {
-    const { fixture, root, reason } = await setup('reject');
+  it('renders the catalogue key for a server field error bound by the real binder, never the wire prose', async () => {
+    const { fixture, root, reason, note } = await setup('reject');
     reason.setValue('A valid reason');
-    reason.setErrors({ server: ['SERVER-DETAIL-PRIVATE'] });
+    // C12: seed the control through the real `bindFieldErrors` so the fixture's `server` error has production's shape
+    // (`{ messageKeys: [...] }`, not a bare array), which is what the dialog's `fieldInvalid` must react to.
+    const form = new FormGroup({ note, reason });
+    bindFieldErrors(
+      form,
+      { code: 'validation_failed', status: 400, kind: 'validation', fieldErrors: { reason: ['SERVER-DETAIL-PRIVATE'] } },
+      { markTouched: true },
+    );
     fixture.componentRef.setInput('errorKey', 'errors.validation_failed');
     await fixture.whenStable();
-    expect(root.querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
-    expect(root.querySelector('[role="alert"]')?.getAttribute('aria-live')).toBe('polite');
+    const textarea = root.querySelector<HTMLTextAreaElement>('[data-testid="reject-reason"]')!;
+    expect(textarea.getAttribute('aria-invalid')).toBe('true');
+    // The field's own message is the generic catalogue key, verbatim; the binder's `messageKeys` are never rendered.
+    expect(root.querySelector('.field-error')?.textContent).toBe(episodesEn.render.review.fieldInvalid);
+    // The dialog-level message is the catalogue key of the code it was handed, not the wire's `detail`.
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(errorsEn.validation_failed);
     expect(root.textContent).not.toContain('SERVER-DETAIL-PRIVATE');
     expect(confirmButton(root).disabled).toBe(true);
   });

@@ -141,8 +141,9 @@ export class StoryReviewPage {
   protected readonly reopenOpen = signal(false);
   protected readonly approvalSaveHint = computed(() => this.store.dirty() || this.store.saving());
   private readonly pendingApprovalAnnouncement = signal<'approved' | 'reopened' | null>(null);
-  protected readonly approvalAnnouncement = signal<StoryEditorAnnouncement | null>(null);
-  private approvalAnnouncementSequence = 0;
+  /** The page's one polite live region: an approval outcome, and a decision a moved-on episode refused (F5/C3). */
+  protected readonly pageAnnouncement = signal<StoryEditorAnnouncement | null>(null);
+  private announcementSequence = 0;
   private readonly restoreVersionsFocus = signal(false);
   private readonly restoreSaveFocus = signal(false);
   protected readonly conflictDialogOpen = signal(false);
@@ -470,7 +471,7 @@ export class StoryReviewPage {
           this.approvalTrigger = null;
           this.restoreApprovalFocus.set(false);
           this.pendingApprovalAnnouncement.set(null);
-          this.approvalAnnouncement.set(null);
+          this.pageAnnouncement.set(null);
           this.approval.reset();
           void this.store.load(id);
           // One component-owned gate load; a return to this editor gets a fresh instance and fresh metadata.
@@ -510,16 +511,27 @@ export class StoryReviewPage {
      * signed URL once and arms `visiblePoll`; leaving them releases both. The release is what keeps a `re_render` that
      * ends in another `video_review` for the same id honest — the page instance is reused, so a kept URL would serve
      * the previous render's link and no-op the opening read — and it stops every `video-url` request behind the
-     * timeline branch. The comparison is the episode id, not a flag, so a `:id` change re-reads; the effect depends on
-     * that id and the two statuses alone (a keystroke or a poll never re-runs it), and both store calls are idempotent.
+     * timeline branch. `ready` uses the link for its download action alone, so it reads one only while the server
+     * offers `download` (SP-8): without it that branch shows metadata and nothing else, and a link read there would be
+     * an audited request plus a poll for a copy nothing can open. The comparison is the episode id, not a flag, so a
+     * `:id` change re-reads; the effect depends on that id, the branch and the server's own `download` permission alone
+     * (a keystroke or a poll never re-runs it), and both store calls are idempotent.
      */
     effect(() => {
       const episodeId = this.episode()?.id ?? null;
-      const open = episodeId !== null && (this.reviewView() || this.readyView());
+      const open = episodeId !== null && (this.reviewView() || (this.readyView() && this.reviewStore.canDownload()));
       untracked(() => {
         const served = open ? episodeId : null;
         if (served === this.reviewingEpisodeId) return;
-        if (this.reviewingEpisodeId !== null) this.reviewStore.release();
+        if (this.reviewingEpisodeId !== null) {
+          // F5/C3: a decision the server refused is often the very reason this branch is being left (the 409 of a
+          // second tab), and the dialog carrying that key is torn down with the branch — so the one message the
+          // refusal owes the user moves to the page's own announcement before `release()` clears it. Only the
+          // episode being left: a `:id` change takes the user elsewhere, and that page is no place for this message.
+          const refusalKey = this.reviewingEpisodeId === episodeId ? this.reviewStore.errorKey() : null;
+          this.reviewStore.release();
+          if (refusalKey !== null) this.announceKey(refusalKey);
+        }
         this.reviewingEpisodeId = served;
         if (served === null) return;
         void this.reviewStore.loadUrl();
@@ -572,8 +584,7 @@ export class StoryReviewPage {
       const text = this.resolveEpisodesKey(outcome === 'approved' ? 'approve.done' : 'reopen.done');
       if (text === null) return;
       untracked(() => {
-        this.approvalAnnouncement.set({ text, sequence: ++this.approvalAnnouncementSequence });
-        this.snack.open(text, undefined, { duration: 5000, politeness: 'off' });
+        this.announce(text);
         this.pendingApprovalAnnouncement.set(null);
       });
     });
@@ -862,6 +873,24 @@ export class StoryReviewPage {
   private resolveEpisodesKey(key: string, params: Record<string, unknown> = {}): string | null {
     const text = this.transloco.translate(key, params, 'episodes');
     return text === key || text === `episodes.${key}` ? null : text;
+  }
+
+  /**
+   * One transient message on the page's own channel: the polite live region (a new sequence re-creates the announced
+   * node, so a screen reader reads a change rather than a region that appeared with its text) and the snackbar.
+   */
+  private announce(text: string): void {
+    this.pageAnnouncement.set({ text, sequence: ++this.announcementSequence });
+    this.snack.open(text, undefined, { duration: 5000, politeness: 'off' });
+  }
+
+  /**
+   * One `errors.<code>` leaf on that channel. The page's scope provider loads the global `errors` scope, so a key that
+   * still resolves to itself is a leaf the active language lacks — and a raw key never reaches the user (D9).
+   */
+  private announceKey(key: string): void {
+    const text = this.transloco.translate(key);
+    if (text !== key) this.announce(text);
   }
 
   /** The diff and the changed-elsewhere notice name segments exactly like the editor does; an empty diff still says so. */

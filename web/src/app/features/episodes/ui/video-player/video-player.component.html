@@ -1,8 +1,4 @@
-@defer (on viewport) {
-  <video #video controls preload="metadata" data-testid="video-player" [attr.aria-label]="label()" (loadedmetadata)="restorePosition()" (error)="mediaError.emit()"></video>
-} @placeholder {
-  <div class="player-placeholder"><nts-loading-state /></div>
-}
+<video #video controls preload="metadata" data-testid="video-player" [attr.aria-label]="label()" (loadedmetadata)="restorePosition()" (error)="mediaError.emit()"></video>
 <p>{{ 'episodes.render.review.noCaptions' | transloco }}</p>
 @if (refreshCount() > 0) {
   <span hidden aria-hidden="true" data-testid="video-url-refreshed">{{ refreshCount() }}</span>

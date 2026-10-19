@@ -5,7 +5,7 @@
     <div class="url-error" aria-live="polite">
       <nts-error-state titleKey="episodes.render.review.urlFailed" [bodyKey]="urlErrorKey() ?? 'episodes.render.review.urlFailed'" />
       @if (urlRetryAfterSec(); as seconds) { <nts-retry-countdown [seconds]="seconds" /> }
-      <button type="button" [disabled]="loadingUrl() || retryPending()" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
+      <button type="button" [attr.aria-disabled]="retryBusy() ? 'true' : null" [attr.aria-busy]="retryBusy() ? 'true' : null" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
     </div>
   } @else if (!url() && loadingUrl()) {
     <nts-loading-state />
@@ -20,7 +20,7 @@
     <div class="url-error" aria-live="polite">
       <nts-error-state [bodyKey]="urlErrorKey()!" />
       @if (urlRetryAfterSec(); as seconds) { <nts-retry-countdown [seconds]="seconds" /> }
-      <button type="button" [disabled]="loadingUrl() || retryPending()" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
+      <button type="button" [attr.aria-disabled]="retryBusy() ? 'true' : null" [attr.aria-busy]="retryBusy() ? 'true' : null" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
     </div>
   }
   @if (!ready()) {

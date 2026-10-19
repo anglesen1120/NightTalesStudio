@@ -1048,7 +1048,7 @@ async function narrowAndMotionFlow(page: Page, lang: E2eLang): Promise<void> {
   const motion = await openReviewPage(page, lang, { detail: reviewDetail() });
   // GUARD, not proof of a behavioural change: nothing on this surface declares a transition or an animation without
   // the preference either — the player only gains `animation: none; transition: none` under `reduce`
-  // (video-player.component.scss:6), and its un-preferred values are `none`/`0s` as well (grep: no `transition:` or
+  // (video-player.component.scss:4), and its un-preferred values are `none`/`0s` as well (grep: no `transition:` or
   // `animation:` in the review/decisions/notes/banner/meta/confirm-dialog styles). The shell's one motion rule is
   // itself a `no-preference` query (side-nav.component.scss:104, the mobile "over" nav, unreachable at desktop width),
   // so there is no element on this page whose value the preference flips. This asserts the served page keeps the video

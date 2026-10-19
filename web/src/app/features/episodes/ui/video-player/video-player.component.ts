@@ -1,10 +1,9 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterRenderEffect, inject, input, output, signal, viewChild } from '@angular/core';
 import { TranslocoPipe } from '@jsverse/transloco';
-import { LoadingState } from '@shared/ui/loading-state/loading-state';
 
 @Component({
   selector: 'nts-video-player',
-  imports: [LoadingState, TranslocoPipe],
+  imports: [TranslocoPipe],
   templateUrl: './video-player.component.html',
   styleUrl: './video-player.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

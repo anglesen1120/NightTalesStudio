@@ -2192,17 +2192,23 @@ function reviewDetail(nextActions: readonly string[] = ['approve_video', 'reject
  * proves the served branch and the two counts the view promises against the fakes' own call records — one
  * `GET …/video-url` per review view open, one `GET /episodes/{id}` for the whole page. `answers` queues the reads
  * after the first one (the `EpisodeDetailStore.refetch()` a decision awaits; holding one open proves that the
- * *refetch*, not the answer, moves the branch), `urlFailure` fails the opening URL read.
+ * *refetch*, not the answer, moves the branch), `urlFailure` fails the opening URL read, and `messageKey` is the leaf
+ * the mapper answers a refusal with (the default ignores the code, so a spec that asserts copy names its own).
  */
 async function createReviewPage(
   detail: EpisodeDetail,
-  options: { readonly answers?: readonly (EpisodeDetail | Promise<EpisodeDetail>)[]; readonly urlFailure?: unknown } = {},
+  options: {
+    readonly answers?: readonly (EpisodeDetail | Promise<EpisodeDetail>)[];
+    readonly urlFailure?: unknown;
+    readonly messageKey?: (error: AppError) => string;
+  } = {},
 ) {
   const episodes = new FakeEpisodesRepository().scriptGet(() => Promise.resolve(detail));
   for (const answer of options.answers ?? []) episodes.scriptGet(() => Promise.resolve(answer));
   const reviewRepo = new FakeVideoReviewRepository();
   if (options.urlFailure !== undefined) reviewRepo.willFailUrl(options.urlFailure);
   const renderRepo = new FakeRenderRepository();
+  const snack = fakeSnackBar();
   const realtime = new PageRealtime();
   // The real `ApprovalStore` derives its status from the episode the page owns; this fake mirrors that derivation, so a
   // refetched `story_approved` reaches the branch the template gates on `approval.status()`.
@@ -2217,7 +2223,7 @@ async function createReviewPage(
     providers: [
       ...ZONELESS_TEST_PROVIDERS, provideRouter([]),
       { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: of(query), snapshot: { paramMap: params.value, queryParamMap: query } } },
-      { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.service_unavailable', traceFooter: () => null } },
+      { provide: AppErrorMapper, useValue: { messageKey: options.messageKey ?? (() => 'errors.service_unavailable'), traceFooter: () => null } },
       { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: new FakeStoryRepository() },
       { provide: RenderRepository, useValue: renderRepo },
       { provide: VideoReviewRepository, useValue: reviewRepo },
@@ -2225,7 +2231,7 @@ async function createReviewPage(
       { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: ConflictDialog, useValue: fakeConflictDialogs() },
       { provide: ConfirmDialog, useValue: { confirm } },
-      { provide: MatSnackBar, useValue: { open: vi.fn(() => ({ onAction: () => of(undefined), dismiss: vi.fn() })) } },
+      { provide: MatSnackBar, useValue: { open: snack.open } },
     ],
   }).overrideComponent(StoryReviewPage, {
     remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
@@ -2250,7 +2256,8 @@ async function createReviewPage(
   for (let turn = 0; turn < 3; turn++) await Promise.resolve();
   fixture.detectChanges(); await fixture.whenStable();
   return {
-    fixture, root: fixture.nativeElement as HTMLElement, episodes, reviewRepo, renderRepo, realtime, confirm,
+    fixture, root: fixture.nativeElement as HTMLElement, episodes, reviewRepo, renderRepo, realtime, confirm, snack,
+    detailStore, params,
     store: fixture.componentRef.injector.get(VideoReviewStore),
     reviewDialog: (): VideoDecisionDialogComponent | undefined => fixture.debugElement
       .query(By.directive(VideoDecisionDialogComponent))?.componentInstance as VideoDecisionDialogComponent | undefined,
@@ -2259,7 +2266,8 @@ async function createReviewPage(
 
 /**
  * Renders every manual `@defer` block of the page (the page spec configures `DeferBlockBehavior.Manual`): the review
- * container defers the player to its viewport, and the player defers the media element to its own.
+ * container defers the player to its viewport, and C9 keeps that the only defer — the element inside the player is
+ * rendered with it.
  */
 async function renderDeferBlocks(fixture: ComponentFixture<StoryReviewPage>): Promise<void> {
   for (let pass = 0; pass < 3; pass++) {
@@ -2479,5 +2487,88 @@ describe('StoryReviewPage video review (10.6.2-T1)', () => {
     expect(root.querySelector('.url-error')).toBeNull();
     await renderDeferBlocks(fixture);
     expect(root.querySelector('nts-video-player')).not.toBeNull();
+  });
+
+  it('never reads a signed link for a ready episode with no download action, and reads one when the action appears', async () => {
+    const { root, fixture, reviewRepo, detailStore, episodes } = await createReviewPage(
+      reviewDetail([], { status: 'ready' }),
+      { answers: [reviewDetail(['download'], { status: 'ready' })] },
+    );
+    // AC 11 / SP-8: `ready` without `download` shows the asset metadata and nothing that could use a link, so the
+    // view reads none — no audited `GET …/video-url`, and nothing for the due check to poll.
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('nts-final-video-meta')).not.toBeNull();
+    expect(reviewRepo.urlCalls).toHaveLength(0);
+    // The server starts offering the download (the read the owner's reload shows): the branch reads the link then, once.
+    await detailStore.refetch();
+    fixture.detectChanges(); await fixture.whenStable();
+    for (let turn = 0; turn < 3; turn++) await Promise.resolve();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewRepo.urlCalls).toEqual([{ method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: false }]);
+    expect(episodes.getCalls).toHaveLength(2);
+    expect(root.querySelector<HTMLAnchorElement>('[data-testid="download-mp4"]')?.getAttribute('href')).toBe(reviewRepo.url);
+  });
+
+  it('announces a decision the moved-on episode refused, exactly once, as the branch it belonged to is left', async () => {
+    const { root, fixture, reviewRepo, snack, reviewDialog } = await createReviewPage(
+      reviewDetail(),
+      { answers: [reviewDetail(['edit_story'], { status: 'story_review' })], messageKey: (error) => `errors.${error.code}` },
+    );
+    // The other tab decided first: this tab's approve is refused with the 409 the dialog would show…
+    reviewRepo.willFailApprove({ code: 'episode_invalid_state', status: 409, kind: 'conflict', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    // …and the refetched status takes the branch, and the dialog carrying that key, away (F5).
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(reviewDialog()).toBeUndefined();
+    const text = errorsVi.episode_invalid_state;
+    expect(snack.open).toHaveBeenCalledTimes(1);
+    expect(snack.open).toHaveBeenCalledWith(text, undefined, { duration: 5000, politeness: 'off' });
+    expect(root.querySelector('.story-review-page__announcement')?.textContent).toContain(text);
+    // Exactly once: the one region carries it once, and the refusal is retired with the branch.
+    expect(root.textContent?.split(text)).toHaveLength(2);
+  });
+
+  it('does not surface a refusal that belongs to the episode the user navigated away from', async () => {
+    let land!: (detail: EpisodeDetail) => void;
+    const held = new Promise<EpisodeDetail>((resolve) => { land = resolve; });
+    const second = episodeDetail({ id: SECOND_EPISODE_ID, status: 'story_review', hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'] });
+    const { root, fixture, reviewRepo, snack, reviewDialog, params } = await createReviewPage(
+      reviewDetail(),
+      { answers: [held, second], messageKey: (error) => `errors.${error.code}` },
+    );
+    reviewRepo.willFailApprove({ code: 'episode_invalid_state', status: 409, kind: 'conflict', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable();
+    // The refused decision's read is still in flight (a `Promise` the spec holds) when the user opens another episode:
+    // the branch being left is not the one the refusal belongs to, so its message is not carried onto the new page.
+    params.next(convertToParamMap({ id: SECOND_EPISODE_ID }));
+    fixture.detectChanges(); await fixture.whenStable();
+    fixture.detectChanges(); await fixture.whenStable();
+    land(reviewDetail());
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(snack.open).not.toHaveBeenCalled();
+    expect(root.querySelector('.story-review-page__announcement')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('nts-video-review')).toBeNull();
+  });
+
+  it('leaves the branch silently when the decision succeeded — a release without a refusal announces nothing', async () => {
+    const { root, fixture, reviewRepo, snack, store, reviewDialog } = await createReviewPage(
+      reviewDetail(), { answers: [reviewDetail(['edit_story'], { status: 'story_review' })] },
+    );
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-testid="reject-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    store.reason.setValue('the last shot is unreadable');
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewRepo.rejectCalls).toHaveLength(1);
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(snack.open).not.toHaveBeenCalled();
+    expect(root.querySelector('.story-review-page__announcement')?.textContent?.trim()).toBe('');
   });
 });
