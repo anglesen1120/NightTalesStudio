@@ -901,25 +901,12 @@ async function approveConflictFlow(page: Page, lang: E2eLang): Promise<void> {
   await expectNoNewReads(page, api, settled + 1);
   expect(await page.locator('body').innerText()).not.toContain(SERVER_DETAIL);
 
-  // OBSERVED BEHAVIOUR, flagged as an open item and deliberately NOT asserted as intended. The store sets
-  // `needsRefresh` on a 412 (video-review.store.ts:440) and clears it only in `resetDecisionMessage` (:488), which the
-  // refetch never calls, while the page binds it straight to the dialog's `confirmDisabled`
-  // (story-review.page.html). So the confirm stays natively disabled after the fresh read has landed and the user can
-  // retry only by dismissing and reopening — whereas 10.6.1-T2's own 412 flow re-enables the action as soon as the
-  // refetch resolves (render-timeline.spec.ts:1135, "the retry is offered on the fresh ETag") and the store's own
-  // comment here reads the same way ("the retry has to be offered on the fresh one, so the read is awaited"). Fix
-  // belongs in the store (clear `needsRefresh` once `await this.detail.refetch()` resolves); this spec asserts only
-  // what the shipped build does.
-  await expect(dialogButton(page, copy.approve), 'OBSERVED: the confirm is still held after the fresh read landed').toBeDisabled();
+  // The confirm is held while the refetch is in flight and released once the fresh read lands (the store awaits
+  // `detail.refetch()` before clearing `needsRefresh`), so the retry is offered on the fresh ETag without a reopen,
+  // as in 10.6.1-T2's own 412 flow.
   await expect(dialog(page), 'the dialog stays open on the command the server refused').toBeVisible();
-  await dialogButton(page, dialogCancelLabel(lang)).click();
-  await expect(dialog(page)).toBeHidden();
-
-  // Reopened (the only route the shipped build leaves): the confirm is live again and the retry carries the refreshed
-  // ETag, not the refused one — the half of the contract that does hold.
-  await approveButton(page).click();
-  await expect(dialog(page)).toBeVisible();
-  await expect(dialogButton(page, copy.approve), 'the reopened dialog is ready to retry').toBeEnabled();
+  await expect(dialogButton(page, copy.approve), 'the confirm is live again once the fresh read has landed').toBeEnabled();
+  // The retry carries the refreshed ETag, not the refused one.
   api.serve(readyDetail());
   await dialogButton(page, copy.approve).click();
   await expect.poll(() => api.approves.length).toBe(2);
@@ -1116,7 +1103,7 @@ for (const { lang, locale } of LANGS) {
       await reMakeFlow(page, lang);
     });
 
-    test('Approve412_RefetchesOnceWithTheMappedCopyAndNoServerDetail_ConfirmStaysHeldUntilReopened_OpenItem', async ({ page }) => {
+    test('Approve412_RefetchesOnceWithTheMappedCopyAndNoServerDetail_ConfirmReleasedOnceTheFreshReadLands_RetryCarriesTheFreshEtag', async ({ page }) => {
       test.setTimeout(90_000);
       await approveConflictFlow(page, lang);
     });
