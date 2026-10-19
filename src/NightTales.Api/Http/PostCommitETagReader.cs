@@ -3,6 +3,7 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Series;
 
 namespace NightTales.Api.Http;
@@ -41,6 +42,14 @@ public sealed class PostCommitETagReader(IReadDb readDb)
     public async Task<string?> EpisodeAsync(Guid id, CancellationToken cancellationToken)
         => await VersionAsync<Episode>(id, cancellationToken).ConfigureAwait(false) is { } xmin
             ? ETags.Episode(xmin)
+            : null;
+
+    /// <summary>The publication ETag (<c>"pu-&lt;xmin&gt;"</c>), or <see langword="null"/> when the row is not visible.</summary>
+    /// <param name="id">The publication that was just created.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    public async Task<string?> PublicationAsync(Guid id, CancellationToken cancellationToken)
+        => await VersionAsync<Publication>(id, cancellationToken).ConfigureAwait(false) is { } xmin
+            ? ETags.Publication(xmin)
             : null;
 
     private async Task<uint?> VersionAsync<TEntity>(Guid id, CancellationToken cancellationToken)

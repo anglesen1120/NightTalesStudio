@@ -190,10 +190,10 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
     }
 
     [Theory]
-    [InlineData(false, false, 3)]
-    [InlineData(true, false, 3)]
-    [InlineData(false, true, 4)]
-    [InlineData(true, true, 4)]
+    [InlineData(false, false, 4)]
+    [InlineData(true, false, 4)]
+    [InlineData(false, true, 5)]
+    [InlineData(true, true, 5)]
     public async Task EpisodeDetail_WithStory_UsesExactSequentialQueryBudget(bool withRun, bool withVideo, int expectedCommands)
     {
         var world = await SeedAsync();
@@ -225,9 +225,12 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         // 02.3.3-T1: the episode read joins `series` for its topic and language, so the attestation
         // member costs no extra command for a fiction episode; the table names below are unchanged and
         // the join is asserted with the episode command.
+        // 06.2.1-T1 (C7/F14): the grouped publications summary is the third read of the detail route and
+        // runs sequentially on the same read context (WT46) whether or not the episode has a publication
+        // row, so it is one more command than BD16's episode + story (+ asset) reads and never a fourth.
         string[] expectedTables = withVideo
-            ? ["episodes", "assets", "story_versions", "generation_runs"]
-            : ["episodes", "story_versions", "generation_runs"];
+            ? ["episodes", "assets", "story_versions", "generation_runs", "publications"]
+            : ["episodes", "story_versions", "generation_runs", "publications"];
         for (var index = 0; index < expectedTables.Length; index++)
         {
             interceptor.Commands[index].Text.ShouldContain(expectedTables[index], Case.Insensitive);
