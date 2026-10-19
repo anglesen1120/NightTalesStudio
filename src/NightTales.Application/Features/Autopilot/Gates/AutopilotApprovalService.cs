@@ -57,6 +57,10 @@ public static class ApprovalFailureCodes
     /// episode ETag now sent with the approve) become <see cref="EtagConflict"/>; every other code becomes
     /// <see cref="ApproveFailed"/>. Both halves map through here, so the story and video paths cannot drift.
     /// </summary>
+    /// <remarks>
+    /// A lost audit row is not a refusal and never arrives here: the gates surface
+    /// <see cref="GateErrors.ApprovalAuditFailedCode"/> unchanged instead of recording a failure code (02.8.2-T1 R2).
+    /// </remarks>
     /// <param name="error">The error the approve command returned.</param>
     /// <returns>The code the run's verdict is amended with.</returns>
     public static string Of(Error error) =>
@@ -213,15 +217,10 @@ public sealed partial class AutopilotApprovalService(
 
         if (approved.IsError)
         {
-            // The episode was approved for its own current version while this evaluation was in flight: the state
-            // refusal means "already done", never "refused", so the run counts as approved.
-            if (current.ApprovedStoryVersionId == current.CurrentStoryVersionId
-                && approved.Errors.All(error => error.Code == ErrorCodes.EpisodeInvalidState))
-            {
-                return await ReplayAsync(scope.ServiceProvider, ownerId, runId, current.Id, result, evidence, ct)
-                    .ConfigureAwait(false);
-            }
-
+            // A refusal here is the command's own guard, and only that: the replay of this verdict's own version
+            // was answered before the command was sent, so an episode that was approved for a *different* version
+            // (or any other state the command refuses) never counts as "already done" — answering it as a pass
+            // would report an approval for a version nobody approved.
             return Refused(runId, GateResultWriter.StoryGate, approved.Errors);
         }
 

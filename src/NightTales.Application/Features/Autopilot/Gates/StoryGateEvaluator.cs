@@ -46,7 +46,15 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// together inside <see cref="GateOutcomeRecorder"/>; the approval is the command's own unit of work, so a crash
 /// between the two leaves a recorded verdict and an unapproved story, never an approval nobody recorded. The replay
 /// of an already-approved version is a success: an episode already approved for this same version is not approved
-/// again and writes no second audit row.
+/// again and writes no second audit row — the only write a replay may make is the backfill of an
+/// <c>autopilot.story_auto_approved</c> row the first attempt lost, and an approval the owner made is never
+/// backfilled (plan §4 UC4, 02.8.2-T1 R2).
+/// </para>
+/// <para>
+/// <b>A lost audit row is not a refusal.</b> When the approval commits but its own audit row cannot
+/// (<see cref="GateErrors.ApprovalAuditFailed"/>), the verdict stays recorded as a pass and nobody is asked to
+/// approve what is already approved: the error travels back to the tick, and the retry's replay is what backfills
+/// the row (<see cref="GateErrors.ApprovalAuditFailedCode"/>).
 /// </para>
 /// <para>
 /// <b>The caller pins the tenant scope.</b> The run's owner owns every row read here, and 09 README D10 makes the
@@ -117,7 +125,8 @@ public sealed partial class StoryGateEvaluator(
     /// <see cref="EpisodeStateErrorCode"/> or <see cref="CorpusUnavailableErrorCode"/>, the error of an unresolvable
     /// D4 band, or the error of the write/approval that failed (a refused approval travels through
     /// <see cref="GateOutcomeRecorder.RecordApprovalFailureAsync"/> instead and is answered with
-    /// <see cref="GateStopReason.OwnerApprovalRequired"/>).
+    /// <see cref="GateStopReason.OwnerApprovalRequired"/>, while a committed approval whose audit row could not be
+    /// written travels back unchanged as <see cref="GateErrors.ApprovalAuditFailedCode"/> so the retry backfills it).
     /// </returns>
     public async ValueTask<ErrorOr<StoryGateOutcome>> EvaluateAsync(Guid runId, int attempt, CancellationToken ct)
     {
@@ -358,22 +367,25 @@ public sealed partial class StoryGateEvaluator(
                 result.Failures);
         }
 
-        if (replay)
-        {
-            LogReplay(runId, episodeId, version.Id);
-
-            return WithMetric(
-                new StoryGateOutcome(result, true, null),
-                startedAt,
-                AutopilotGateMetrics.PassResult,
-                result.Failures);
-        }
-
+        // A verdict of an already-approved version is not answered here: the approval service's own replay is what
+        // tells an approval the autopilot made from one the owner made, and the only write a replay may produce is
+        // the backfill of an auto-approval row a lost first attempt left missing (02.8.2-T1 R2). Reading the replay
+        // as a pass here would never repair that record.
         var approved = await approvals
             .ApproveStoryAsync(runId, result, evidence, mode, ct)
             .ConfigureAwait(false);
         if (approved.IsError)
         {
+            if (approved.FirstError.Code == GateErrors.ApprovalAuditFailedCode)
+            {
+                // The approval is committed and only its audit row is missing: not a refusal, so nothing is
+                // appended and nobody is asked to approve what is already approved. The error travels back to the
+                // tick, whose retry is the replay that backfills the row.
+                LogAuditPending(runId, episodeId, version.Id);
+
+                return WithMetric(approved.Errors, startedAt, AutopilotGateMetrics.ErrorResult, result.Failures);
+            }
+
             var failureCode = ApprovalFailureCodes.Of(approved.FirstError);
 
             LogApprovalFailed(runId, episodeId, version.Id, approved.FirstError.Code, failureCode);
@@ -408,8 +420,9 @@ public sealed partial class StoryGateEvaluator(
 
         if (approved.Value == ApprovalOutcome.AlreadyApproved)
         {
-            // The command's own replay: the approval — and its audit row — belong to the first call, so this one
-            // adds neither (plan §4 UC4).
+            // A replay of an approval already on record: no command was sent again, and the only write it may
+            // have made is the backfill of an auto-approval row a lost first attempt left missing — never a row
+            // for the owner's own approval (plan §4 UC4).
             LogReplay(runId, episodeId, version.Id);
 
             return WithMetric(
@@ -703,4 +716,10 @@ public sealed partial class StoryGateEvaluator(
         Level = LogLevel.Warning,
         Message = "The story gate of autopilot run {RunId} passed story version {StoryVersionId} of episode {EpisodeId} but nothing was approved.")]
     private partial void LogNotApproved(Guid runId, Guid episodeId, Guid storyVersionId);
+
+    [LoggerMessage(
+        EventId = 6438,
+        Level = LogLevel.Warning,
+        Message = "Autopilot run {RunId} approved story version {StoryVersionId} of episode {EpisodeId}, but its audit row could not be written; the retry backfills it.")]
+    private partial void LogAuditPending(Guid runId, Guid episodeId, Guid storyVersionId);
 }

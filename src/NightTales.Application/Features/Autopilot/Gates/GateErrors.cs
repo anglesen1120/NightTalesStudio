@@ -64,19 +64,27 @@ public static class GateErrors
             ErrorCodes.NotFound,
             $"The episode of autopilot run {runId} does not exist.");
 
+    /// <summary>The code of an approval whose audit row could not be committed (<see cref="ApprovalAuditFailed"/>).</summary>
+    /// <remarks>
+    /// The gates read it to tell this error apart from a refusal (02.8.2-T1 R2): the episode <em>is</em> approved,
+    /// so it is never recorded as a failure and never queues the owner's notice.
+    /// </remarks>
+    public const string ApprovalAuditFailedCode = "approval_audit_failed";
+
     /// <summary>
     /// The approval was applied but its audit row could not be committed. The table is append-only and the row
     /// is the only record of who approved, so a lost one is answered as an error the caller retries — never
-    /// logged away. The story half's retry is the replay path, which backfills the missing row; the video half has
-    /// no such reconstruction (its command's own row records no approval source), so there the error is the record
-    /// the operator acts on.
+    /// logged away, and never a refusal: the gates surface it unchanged (<see cref="ApprovalAuditFailedCode"/>) so
+    /// the retry can repair the record. The story half's retry reaches the replay path, which backfills the missing
+    /// row when the approval really was the autopilot's; the video half has no such reconstruction (its command's
+    /// own row records no approval source), so there the error is the record the operator acts on.
     /// </summary>
     /// <param name="episodeId">The episode whose approval could not be recorded.</param>
     /// <param name="action">The audit action that failed; a fixed code, never a stored string.</param>
     /// <returns>The error the approval service answers.</returns>
     public static Error ApprovalAuditFailed(Guid episodeId, string action) =>
         Error.Failure(
-            "approval_audit_failed",
+            ApprovalAuditFailedCode,
             $"The approval of episode {episodeId} was applied, but its audit row ({action}) could not be committed.");
 
     /// <summary>

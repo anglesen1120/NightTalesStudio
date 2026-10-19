@@ -55,9 +55,10 @@ namespace NightTales.Api.IntegrationTests.Autopilot;
 /// <b>The reviewed approval paths.</b> The two seams of <see cref="AutoApproveSeam"/> cover what the first three
 /// rows cannot arrange: the episode moving past the evaluated version between the verdict and the approval
 /// (SEC-1, recorded as <c>etag_conflict</c>), the owner approving the very version first (F2, answered
-/// <see cref="ApprovalOutcome.AlreadyApproved"/> and never backfilled), and an approval whose own audit row
-/// cannot be committed (F3, answered as <see cref="GateErrors.ApprovalAuditFailed"/> and backfilled exactly once
-/// by the replay).
+/// <see cref="ApprovalOutcome.AlreadyApproved"/> and never backfilled), the owner approving a different version
+/// (R1: a refusal the gate records instead of reading it as an approval nobody made), and an approval whose own
+/// audit row cannot be committed (F3/R2, answered as <see cref="GateErrors.ApprovalAuditFailed"/>, surfaced by
+/// the gate without a refusal or a notice, and backfilled exactly once by the replay).
 /// </para>
 /// </remarks>
 /// <param name="database">The class's own migrated database, from <see cref="IntegrationTest"/>.</param>
@@ -296,6 +297,97 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
         third.IsError.ShouldBeFalse(Describe(third));
         third.Value.ShouldBe(ApprovalOutcome.AlreadyApproved);
         AutoApproveAuditRows(world).ShouldBe(1, "the backfilled row is written exactly once");
+    }
+
+    /// <summary>
+    /// F3/R2: the approval commits and its own audit row cannot be written. Through the gate that is not a
+    /// refusal — the approval <em>is</em> applied — so the evaluator surfaces
+    /// <see cref="GateErrors.ApprovalAuditFailed"/> unchanged, appends no failure code to the stored verdict and
+    /// queues no owner notice; the retry's replay backfills the row exactly once.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveStory_AuditWriteFailsThroughTheGate_IsSurfacedAndBackfilledOnRetry()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var seam = new AutoApproveSeam();
+        seam.FailNextAutoApprovalWrite();
+        using var factory = Factory(seam: seam);
+
+        var first = await EvaluateAsync(factory, world);
+
+        first.IsError.ShouldBeTrue(Describe(first));
+        first.FirstError.Code.ShouldBe(GateErrors.ApprovalAuditFailedCode);
+
+        // The approval itself is committed: the lost row is a lost record, never a lost approval.
+        EpisodeStatus(world.EpisodeId).ShouldBe("story_approved");
+        ApprovedVersion(world.EpisodeId).ShouldBe(world.VersionId);
+        AutoApproveAuditRows(world).ShouldBe(0);
+
+        // The audit failure is not a refusal: the verdict keeps its pass, gains no failure code, and the owner is
+        // not asked to approve what is already approved.
+        StoryFlag(world.RunId, "pass").ShouldBeTrue();
+        StoryFailures(world.RunId).ShouldNotContain(ApprovalFailureCodes.ApproveFailed);
+        StoryFailures(world.RunId).ShouldNotContain(ApprovalFailureCodes.EtagConflict);
+        NoticeRows(world).ShouldBe(0);
+
+        var second = await EvaluateAsync(factory, world);
+
+        second.IsError.ShouldBeFalse(Describe(second));
+        second.Value.AutoApproved.ShouldBeTrue();
+        AutoApproveAuditRows(world).ShouldBe(1);
+        AutoApproveAuditRun(world).ShouldBe(world.RunId.ToString());
+
+        var third = await EvaluateAsync(factory, world);
+
+        third.IsError.ShouldBeFalse(Describe(third));
+        third.Value.AutoApproved.ShouldBeTrue();
+        AutoApproveAuditRows(world).ShouldBe(1, "the backfilled row is written exactly once");
+        NoticeRows(world).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// R1: the owner approved a <em>different</em> version than the one the verdict names, so the approve command
+    /// refuses its state. That is a refusal, never "already approved": the gate does not report a pass for a
+    /// version nobody approved, it records the refusal and asks the owner.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveStory_OwnerApprovedAnotherVersion_IsNotAlreadyApproved()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var seam = new AutoApproveSeam();
+        using var factory = Factory(seam: seam);
+
+        // v2 becomes the current version and the owner approves it while the gate's own evaluation of v1 is in
+        // flight: the episode is approved, but for a version the verdict does not name.
+        seam.RunBeforeApproval(async () =>
+        {
+            await Database.ExecuteAsync(
+                $"UPDATE episodes SET current_story_version_id = '{world.SecondVersionId}' WHERE id = '{world.EpisodeId}'",
+                Ct);
+
+            await using var ownerScope = factory.Services.CreateAsyncScope();
+            using var pinned = ownerScope.ServiceProvider.GetRequiredService<ISystemContext>().For(world.UserId);
+            var owner = await ownerScope.ServiceProvider.GetRequiredService<IMediator>()
+                .Send(new ApproveStoryCommand(world.EpisodeId, $"\"sv-{world.SecondVersionId}\"", null, ApprovalSource.User), Ct);
+
+            owner.IsError.ShouldBeFalse(Describe(owner));
+        });
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        // The checks passed, but the episode was approved for another version: not a pass, and never the replay the
+        // service answers an idempotent approval with.
+        evaluated.IsError.ShouldBeFalse(Describe(evaluated));
+        evaluated.Value.Result.Pass.ShouldBeTrue("the checks passed; the approval afterwards did not");
+        evaluated.Value.AutoApproved.ShouldBeFalse("the owner approved v2, and the verdict names v1");
+        evaluated.Value.Reason.ShouldBe(GateStopReason.OwnerApprovalRequired);
+
+        ApprovedVersion(world.EpisodeId).ShouldBe(world.SecondVersionId);
+        CommandApprovalRows(world, "user").ShouldBe(1);
+        AutoApproveAuditRows(world).ShouldBe(0);
+        StoryFailures(world.RunId).ShouldContain(ApprovalFailureCodes.ApproveFailed);
+        NoticeRows(world).ShouldBe(1);
+        NoticePayloads(world).ShouldContain(OwnerActionReasons.OwnerApprovalRequired);
     }
 
     private static string Describe(ErrorOr<StoryGateOutcome> evaluated) =>

@@ -117,7 +117,8 @@ public sealed partial class VideoGateEvaluator(
     /// <see cref="EpisodeMissingErrorCode"/>, <see cref="SeriesMissingErrorCode"/>,
     /// <see cref="RenderMissingErrorCode"/> or <see cref="EpisodeStateErrorCode"/> when the gate has nothing to
     /// evaluate, or the error of the write/approval that failed (a recorded failure code travels through
-    /// <see cref="GateOutcomeRecorder.RecordApprovalFailureAsync"/> instead).
+    /// <see cref="GateOutcomeRecorder.RecordApprovalFailureAsync"/> instead, while a committed acceptance whose
+    /// audit row could not be written travels back unchanged as <see cref="GateErrors.ApprovalAuditFailedCode"/>).
     /// </returns>
     public async ValueTask<ErrorOr<VideoGateOutcome>> EvaluateAsync(Guid runId, CancellationToken ct)
     {
@@ -310,6 +311,17 @@ public sealed partial class VideoGateEvaluator(
             .ConfigureAwait(false);
         if (approved.IsError)
         {
+            if (approved.FirstError.Code == GateErrors.ApprovalAuditFailedCode)
+            {
+                // The cut was accepted and only its audit row is missing. This half has no backfill (the approve
+                // command's own row records neither the source nor the asset), so the error travels back to the
+                // tick unchanged and the operator acts on it — never a refusal, and never a notice asking the
+                // owner to approve what is already approved (02.8.2-T1 R2).
+                LogAuditPending(runId, renderJob.Id);
+
+                return WithMetric(approved.Errors, startedAt, MetricError, result.Failures);
+            }
+
             var failureCode = ApprovalFailureCodes.Of(approved.FirstError);
 
             LogApprovalFailed(runId, renderJob.Id, approved.FirstError.Code, failureCode);
@@ -345,7 +357,8 @@ public sealed partial class VideoGateEvaluator(
         if (approved.Value == ApprovalOutcome.AlreadyApproved)
         {
             // The command's own replay: the approval — and its audit row — belong to the first call, so this one
-            // adds neither (plan §4 UC4).
+            // adds neither (plan §4 UC4). This half backfills nothing: its command's own row cannot tell an
+            // autopilot acceptance from the owner's.
             LogReplay(runId, episodeId, renderJob.Id);
 
             return WithMetric(
@@ -481,4 +494,10 @@ public sealed partial class VideoGateEvaluator(
         Level = LogLevel.Warning,
         Message = "Autopilot run {RunId} names unknown gate profile {ProfileRef}; the gate resolves {ProfileName} instead.")]
     private partial void LogProfileUnknown(Guid runId, string profileRef, string profileName);
+
+    [LoggerMessage(
+        EventId = 6439,
+        Level = LogLevel.Warning,
+        Message = "Autopilot run {RunId} accepted render job {RenderJobId}, but its audit row could not be written; this half has no backfill.")]
+    private partial void LogAuditPending(Guid runId, Guid renderJobId);
 }
