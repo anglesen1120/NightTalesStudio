@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Domain.Common;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Email;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Persistence;
@@ -15,6 +16,8 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Gates;
 using NightTales.Domain.Stories;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Audit;
+using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
@@ -47,6 +50,14 @@ namespace NightTales.Api.IntegrationTests.Autopilot;
 /// (ApproveStoryCommand.cs:33). What refuses today is <c>StoryApprovalGate</c>'s fact-sheet requirement
 /// (StoryApprovalGate.cs:70,213). The test therefore asserts the one code the pipeline really produces and names
 /// the missing guard here and as an [OPEN] gap in this agent's report.
+/// </para>
+/// <para>
+/// <b>The reviewed approval paths.</b> The two seams of <see cref="AutoApproveSeam"/> cover what the first three
+/// rows cannot arrange: the episode moving past the evaluated version between the verdict and the approval
+/// (SEC-1, recorded as <c>etag_conflict</c>), the owner approving the very version first (F2, answered
+/// <see cref="ApprovalOutcome.AlreadyApproved"/> and never backfilled), and an approval whose own audit row
+/// cannot be committed (F3, answered as <see cref="GateErrors.ApprovalAuditFailed"/> and backfilled exactly once
+/// by the replay).
 /// </para>
 /// </remarks>
 /// <param name="database">The class's own migrated database, from <see cref="IntegrationTest"/>.</param>
@@ -164,11 +175,177 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
         AutoApproveAuditRows(world).ShouldBe(0);
     }
 
+    /// <summary>
+    /// SEC-1, the version-bound approval: the episode's current story version is bumped after the verdict was
+    /// stored and before the approval service runs, so the approve command's own ETag guard refuses
+    /// (<c>story_version_conflict</c>, recorded as <c>etag_conflict</c>): the episode stays in
+    /// <c>story_review</c>, the stored verdict keeps <c>pass: true</c> beside the failure it gained, the owner is
+    /// told to approve by hand, and nothing is approved or recorded as an autopilot approval.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveStory_VersionBumpedBeforeApproval_RefusesAndAsksTheOwner()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var seam = new AutoApproveSeam();
+        using var factory = Factory(seam: seam);
+
+        // The verdict is evaluated for v1; the episode carries v2 by the time the approval service reads it.
+        seam.RunBeforeApproval(() => Database.ExecuteAsync(
+            $"UPDATE episodes SET current_story_version_id = '{world.SecondVersionId}' WHERE id = '{world.EpisodeId}'",
+            Ct));
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeFalse(Describe(evaluated));
+        evaluated.Value.Result.Pass.ShouldBeTrue("the checks passed; the approval afterwards did not");
+        evaluated.Value.AutoApproved.ShouldBeFalse();
+        evaluated.Value.Reason.ShouldBe(GateStopReason.OwnerApprovalRequired);
+
+        CurrentVersion(world.EpisodeId).ShouldBe(world.SecondVersionId, "the seam moved the episode past the verdict's version");
+        VerdictSchema(world.RunId).ShouldBe("gates.v1");
+        StoryVersionInVerdict(world.RunId).ShouldBe(world.VersionId, "the stored verdict names the version it evaluated");
+        StoryFlag(world.RunId, "pass").ShouldBeTrue();
+        StoryFailures(world.RunId).ShouldContain(ApprovalFailureCodes.EtagConflict);
+
+        EpisodeStatus(world.EpisodeId).ShouldBe("story_review");
+        ApprovedVersion(world.EpisodeId).ShouldBeNull();
+        AutoApproveAuditRows(world).ShouldBe(0);
+        VersionRows(world.EpisodeId).ShouldBe(2, "a refused approval appends no story version");
+
+        NoticeRows(world).ShouldBe(1);
+        NoticePayloads(world).ShouldContain(OwnerActionReasons.OwnerApprovalRequired);
+    }
+
+    /// <summary>
+    /// F2: the owner approved the very version the verdict names, with the real <c>ApproveStoryCommand</c> under
+    /// <see cref="ApprovalSource.User"/>, just before the approval service ran. The service answers the replay
+    /// with <see cref="ApprovalOutcome.AlreadyApproved"/> and never writes an
+    /// <c>autopilot.story_auto_approved</c> row for the owner's own approval — not on the gate's call, and not on
+    /// a later replay of the same verdict.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveStory_OwnerApprovedTheSameVersionFirst_IsAlreadyApprovedWithoutBackfill()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var seam = new AutoApproveSeam();
+        using var factory = Factory(seam: seam);
+
+        seam.RunBeforeApproval(async () =>
+        {
+            await using var ownerScope = factory.Services.CreateAsyncScope();
+            using var pinned = ownerScope.ServiceProvider.GetRequiredService<ISystemContext>().For(world.UserId);
+            var owner = await ownerScope.ServiceProvider.GetRequiredService<IMediator>()
+                .Send(new ApproveStoryCommand(world.EpisodeId, $"\"sv-{world.VersionId}\"", null, ApprovalSource.User), Ct);
+
+            owner.IsError.ShouldBeFalse(Describe(owner));
+        });
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeFalse(Describe(evaluated));
+        evaluated.Value.AutoApproved.ShouldBeTrue();
+        EpisodeStatus(world.EpisodeId).ShouldBe("story_approved");
+        ApprovedVersion(world.EpisodeId).ShouldBe(world.VersionId);
+        CommandApprovalRows(world, "user").ShouldBe(1, "the owner's own approval is the one on record");
+        AutoApproveAuditRows(world).ShouldBe(0, "an owner approval is never backfilled as an autopilot one");
+        NoticeRows(world).ShouldBe(0);
+
+        // The same verdict through the service directly: the replay of the owner's approval, and still no row.
+        var replay = await ApproveStoryDirectAsync(factory, world, evaluated.Value.Result);
+
+        replay.IsError.ShouldBeFalse(Describe(replay));
+        replay.Value.ShouldBe(ApprovalOutcome.AlreadyApproved);
+        AutoApproveAuditRows(world).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// F3: the approval commits and its own audit row cannot be written, so the service answers
+    /// <see cref="GateErrors.ApprovalAuditFailed"/> rather than swallowing the loss. The retry is the replay
+    /// path: it backfills the missing row exactly once, and a third call adds no second one.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveStory_AuditWriteFails_AnswersTheErrorAndBackfillsOnRetry()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var seam = new AutoApproveSeam();
+        seam.FailNextAutoApprovalWrite();
+        using var factory = Factory(seam: seam);
+
+        var verdict = PassingVerdict(world);
+        var failed = await ApproveStoryDirectAsync(factory, world, verdict);
+
+        var expected = GateErrors.ApprovalAuditFailed(world.EpisodeId, AutopilotApprovalService.StoryApprovedAction);
+        failed.IsError.ShouldBeTrue(Describe(failed));
+        failed.FirstError.Code.ShouldBe(expected.Code);
+        failed.FirstError.Description.ShouldBe(expected.Description);
+
+        // The approval itself is committed: the lost row is a lost record, never a lost approval.
+        EpisodeStatus(world.EpisodeId).ShouldBe("story_approved");
+        ApprovedVersion(world.EpisodeId).ShouldBe(world.VersionId);
+        AutoApproveAuditRows(world).ShouldBe(0);
+
+        var second = await ApproveStoryDirectAsync(factory, world, verdict);
+
+        second.IsError.ShouldBeFalse(Describe(second));
+        second.Value.ShouldBe(ApprovalOutcome.AlreadyApproved);
+        AutoApproveAuditRows(world).ShouldBe(1);
+        AutoApproveAuditRun(world).ShouldBe(world.RunId.ToString());
+
+        var third = await ApproveStoryDirectAsync(factory, world, verdict);
+
+        third.IsError.ShouldBeFalse(Describe(third));
+        third.Value.ShouldBe(ApprovalOutcome.AlreadyApproved);
+        AutoApproveAuditRows(world).ShouldBe(1, "the backfilled row is written exactly once");
+    }
+
     private static string Describe(ErrorOr<StoryGateOutcome> evaluated) =>
         evaluated.IsError ? string.Join("; ", evaluated.Errors.Select(error => $"{error.Code}: {error.Description}")) : "ok";
 
     private static string Describe(ErrorOr<ApprovedStoryDto> refused) =>
         refused.IsError ? string.Join("; ", refused.Errors.Select(error => $"{error.Code}: {error.Description}")) : "ok";
+
+    private static string Describe(ErrorOr<ApprovalOutcome> outcome) =>
+        outcome.IsError ? string.Join("; ", outcome.Errors.Select(error => $"{error.Code}: {error.Description}")) : "ok";
+
+    /// <summary>
+    /// The approval service's own answer, called the way the gate calls it (its scope, its owner pin) with a
+    /// verdict the seed itself produced.
+    /// </summary>
+    private static async Task<ErrorOr<ApprovalOutcome>> ApproveStoryDirectAsync(
+        ApiFactory factory,
+        GateRunSeed.GateWorld world,
+        StoryGateResult result)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(world.UserId);
+
+        return await scope.ServiceProvider.GetRequiredService<AutopilotApprovalService>()
+            .ApproveStoryAsync(world.RunId, result, Evidence(), GateMode.Live, Ct);
+    }
+
+    /// <summary>A passing story verdict for the seeded version, for the tests that call the service directly.</summary>
+    private static StoryGateResult PassingVerdict(GateRunSeed.GateWorld world) =>
+        new(
+            Pass: true,
+            Hold: false,
+            Attempt: 1,
+            StoryVersionId: world.VersionId,
+            Checks: [],
+            Failures: []);
+
+    /// <summary>The report's context lines; nothing the tests below assert on reads them.</summary>
+    private static GateStoryEvidence Evidence() =>
+        new(
+            SourceSimilarity: 0.01m,
+            PastEpisodeSimilarity: null,
+            CorpusMax: 0,
+            RealWorldHit: false,
+            RealWorldKinds: [],
+            ModerationFlagged: false,
+            ModerationCategories: [],
+            ModerationUnavailableDetail: null,
+            ModerationCheckedAt: null,
+            EpisodeStatusAtEvaluation: "story_review");
 
     private static async Task<ErrorOr<StoryGateOutcome>> EvaluateAsync(
         ApiFactory factory,
@@ -193,7 +370,7 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
             Ct);
     }
 
-    private ApiFactory Factory(bool dryRun = false) =>
+    private ApiFactory Factory(bool dryRun = false, AutoApproveSeam? seam = null) =>
         new ApiFactory(Database, new FakeClock(GateRunSeed.Start))
             .WithSetting("Autopilot:Gates:DryRun", dryRun ? "true" : "false")
             .WithSetting("Similarity:Corpus:MaxPastEpisodes", "50")
@@ -207,6 +384,24 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
 
                 services.RemoveAll<IContentModerator>();
                 services.AddSingleton<IContentModerator>(new FakeContentModerator());
+
+                if (seam is null)
+                {
+                    return;
+                }
+
+                // The two armed faults of AutoApproveFaultSeams: the hook runs at the approval service's owner
+                // lookup, and the audit writer fails exactly one auto-approval write. Both wrap the production
+                // implementations, so everything else the run does stays real.
+                services.RemoveAll<ISystemWorkQuery>();
+                services.AddScoped<SystemWorkQuery>();
+                services.AddScoped<ISystemWorkQuery>(provider =>
+                    new AutoApproveSeamSystemWork(provider.GetRequiredService<SystemWorkQuery>(), seam));
+
+                services.RemoveAll<IAuditWriter>();
+                services.AddScoped<EfAuditWriter>();
+                services.AddScoped<IAuditWriter>(provider =>
+                    new AutoApproveSeamAuditWriter(provider.GetRequiredService<EfAuditWriter>(), seam));
             });
 
     /// <summary>
@@ -243,6 +438,27 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
 
     private long VersionRows(Guid episodeId) =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM story_versions WHERE episode_id = '{episodeId}'");
+
+    private Guid? CurrentVersion(Guid episodeId)
+    {
+        var pointer = SqlProbe.ScalarText(
+            Database,
+            $"SELECT coalesce(current_story_version_id::text, '') FROM episodes WHERE id = '{episodeId}'");
+
+        return string.IsNullOrEmpty(pointer) ? null : Guid.Parse(pointer);
+    }
+
+    /// <summary>The stored document's own schema version: <c>gates.v1</c> is the contract the run log carries.</summary>
+    private string VerdictSchema(Guid runId) =>
+        SqlProbe.ScalarText(Database, $"SELECT gate_results->>'schema_version' FROM autopilot_runs WHERE id = '{runId}'");
+
+    /// <summary>The story version the stored verdict evaluated, as it is written on the <c>story</c> block.</summary>
+    private Guid StoryVersionInVerdict(Guid runId) => Guid.Parse(
+        SqlProbe.ScalarText(Database, $"SELECT gate_results->'story'->>'story_version_id' FROM autopilot_runs WHERE id = '{runId}'"));
+
+    /// <summary>The <c>failures[]</c> of the stored story verdict, as its JSON text.</summary>
+    private string StoryFailures(Guid runId) =>
+        SqlProbe.ScalarText(Database, $"SELECT gate_results->'story'->'failures' FROM autopilot_runs WHERE id = '{runId}'");
 
     private int CheckCount(Guid runId) =>
         int.Parse(
@@ -283,6 +499,21 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
             Database,
             $"SELECT count(*) FROM audit_logs WHERE action = '{AutopilotApprovalService.StoryApprovedAction}' "
             + $"AND subject_user_id = '{world.UserId}'");
+
+    /// <summary>The backfilled row's own projection: the run it names (<c>data.runId</c>).</summary>
+    private string AutoApproveAuditRun(GateRunSeed.GateWorld world) =>
+        SqlProbe.ScalarText(
+            Database,
+            $"SELECT data->>'runId' FROM audit_logs WHERE action = '{AutopilotApprovalService.StoryApprovedAction}' "
+            + $"AND subject_user_id = '{world.UserId}'");
+
+    /// <summary>The approve command's own rows for this episode, split by the source they approved under.</summary>
+    private long CommandApprovalRows(GateRunSeed.GateWorld world, string approvalSource) =>
+        SqlProbe.Count(
+            Database,
+            "SELECT count(*) FROM audit_logs WHERE action = 'episode.story_approved' "
+            + $"AND subject_user_id = '{world.UserId}' AND entity_id = '{world.EpisodeId}' "
+            + $"AND data->>'approval_source' = '{approvalSource}'");
 
     /// <summary>The approval audit row's own attribution: the episode, as the <c>system</c> actor.</summary>
     private string AutoApproveAuditSubject(GateRunSeed.GateWorld world) =>
