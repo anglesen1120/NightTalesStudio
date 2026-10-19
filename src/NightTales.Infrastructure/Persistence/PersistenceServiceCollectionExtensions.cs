@@ -207,6 +207,11 @@ public static class PersistenceServiceCollectionExtensions
         // render_jobs.params.
         services.AddScoped<IRecentMusicQuery, RecentMusicQuery>();
 
+        // 02.8.2-T1: the derived gate-failure streak and the series' latest run, read by 02.8.3-T4's pause rule
+        // (plan §3.5). It joins the caller's AppDbContext — hence the caller's tenant scope and transaction — so it
+        // belongs with the stores, and 02.8.3-T1's tick is what resolves it in the Worker.
+        services.AddScoped<IGateFailureStreakReader, GateFailureStreakReader>();
+
         // 06.3.1-T1: the YouTube upload quota ledger. It joins the caller's AppDbContext, so it belongs with the
         // stores, and the Api (publish path and ETA) and the Worker (publisher) both need it.
         services.AddYouTubePublishing();

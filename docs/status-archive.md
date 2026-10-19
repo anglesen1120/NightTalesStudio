@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 67 rows (2026-10-19, replaced when the Session 67 02.8.2-T1 PR opened)
+
+Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 61 closed, merged #241 → `develop` `e8984e5b`):** **06.1.2-T2** channel connection: `ChannelConnection` aggregate (seven mutation methods; `MarkRefreshed`, `RefreshFromApi` and `PurgeYouTubeData` declared here for 06.4.x) + `channel_connections` table + migration `20261018134758_06_ChannelConnections` (`AddChannelConnectionsMigrationTests` owns `migrations[^1]`), `ConnectChannelConnectionHandler` (the production `IConnectChannelConnection` writer, returns `ConnectChannelOutcome` per 06 CR-22 — confirmed by owner 2026-10-18), `ChannelConnectionLocker` (owner-agnostic, allow-listed `FOR UPDATE` read; posture confirmed by owner 2026-10-18), `ITokenService`/`TokenService` (single-flight refresh under the row lock), `GET /api/v1/channels`, the `channel_connected` e-mail (vi/en, catalog row, never inline) and the `channel_connection_changed.v1` outbox row (no consumer yet). T3 gates closed (QA agent 16/16 Acceptance and 32/32 tests, code review, perf review, security review, one `judge_batch` triage, fixes, delta). Local gate local full gate `GATE_RC=0` on `d603bc00` (local, macOS, 9667 tests; the tip adds STATUS.md only); CI: CI refused (billing, CI-01, `build-test` job `117717754748`, 0 steps, billing annotation; owner treats as pass). `youtube_publish` may be turned on only if every Acceptance check passes and stays OFF until the owner decides after the merge. Next (backend): to be assigned by the coordinator (06.2.x).
+
+Replaced text (verbatim), two §Open tasks rows closed by 02.8.2-T1 (Session 67):
+
+| 09.7.1-T1 hand-over to 02.8.2-T1 (autopilot) | **[OPEN]** owner: 02.8.2-T1 | Call `new ApproveVideoCommand(episodeId, "autopilot")` under `ISystemContext.For(userId)`; `IfMatch == null` skips only the ETag compare, never the state check. `Assets:RetentionDays` must be bound in the host that sends it (Api and Worker both bind it). (Session 64) |
+
+| 02.8.2 gate reads `revision.review_after` | **[OPEN]** owner: 02.8.2-T1 | A revised current version keeps `model_review` = review #1; the gate must read blocking objective issues from `audit_report.revision.review_after` when `revision.applied` (as `StoryReadProjection.Review` now does). Note added to the 02.8.2-T1 task §Notes. (from 02.6.2-T1 #180) |
+
 ### Superseded Resume bullet (2026-10-19, replaced by the Session 68 PR)
 
 Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):

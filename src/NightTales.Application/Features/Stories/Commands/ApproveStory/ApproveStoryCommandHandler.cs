@@ -17,6 +17,7 @@ using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Quality;
@@ -122,6 +123,14 @@ public sealed partial class ApproveStoryCommandHandler(
         // carries a fact sheet stays true-crime for the gate even after a topic patch to fiction, so the
         // attestation is forwarded under the same predicate the gate and the audit row below use.
         var trueCrime = series.Topic == Topic.TrueCrime || version.FactSheetId is not null;
+
+        // 02.8.2 plan §8, the second guard behind gate check 15: an autopilot approval of a true-crime story is
+        // refused here, so a gate bug can never approve it. The attestation is a human act and is never supplied.
+        if (trueCrime && command.Source == ApprovalSource.Autopilot)
+        {
+            return InvalidState();
+        }
+
         var gated = await gate.ValidateAsync(episode, series, version,
             trueCrime ? command.Attestation : null, cancellationToken).ConfigureAwait(false);
         if (gated.IsError)
