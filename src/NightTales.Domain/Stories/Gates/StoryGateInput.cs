@@ -38,8 +38,9 @@ public sealed record StoryGateInput(
 /// <param name="Keywords">The version's keywords; only their count is read (check 12).</param>
 /// <param name="ContentWarnings">The <c>content_warnings</c> of the stored content document (check 13).</param>
 /// <param name="KeywordViolationCount">
-/// How many keywords break <c>KeywordRules</c> (check 12). Read from the stored audit's local issues, so the
-/// gate never re-runs the checker.
+/// How many keywords break <c>KeywordRules</c> (check 12), read from the stored audit's local issues so the gate
+/// never re-runs the checker; <see langword="null"/> when that block could not be read, which fails the check with
+/// <see cref="GateDetailCodes.FieldAbsent"/> (F4).
 /// </param>
 /// <param name="KeywordLimit">
 /// The keyword cap <c>ceil(D × K)</c> of the episode's tier, K = 6 images per minute (P5/F09), computed by the
@@ -55,7 +56,7 @@ public sealed record StoryVersionFacts(
     int WordCount,
     IReadOnlyList<string> Keywords,
     IReadOnlyList<string> ContentWarnings,
-    int KeywordViolationCount,
+    int? KeywordViolationCount,
     int KeywordLimit,
     Guid? FactSheetId,
     Guid? ApprovedFactSheetId);
@@ -79,7 +80,8 @@ public sealed record StoryVersionFacts(
 /// </param>
 /// <param name="Issues">
 /// <c>local.issues</c> ∪ the selected review's issues, as (severity, kind) pairs, or <see langword="null"/> when
-/// the issues could not be read (check 4 fails closed).
+/// either side could not be read — an absent <c>local</c> block, an absent or non-array <c>issues</c> member, or an
+/// applied revision whose <c>review_after</c> is not a complete block (F4/F14). Check 4 then fails closed.
 /// </param>
 /// <param name="ModerationFlagged">
 /// <c>audit_report.moderation.flagged</c>, or <see langword="null"/> when the block is absent (check 6).
@@ -100,10 +102,14 @@ public sealed record AuditFacts(
 /// of the model review carries the kind the server derives from its type (<c>ReviewIssueTypes.KindOf</c>); a
 /// local one carries the kind the checker wrote.
 /// </summary>
-/// <param name="Severity"><c>blocking</c> or <c>advisory</c>.</param>
+/// <param name="Severity">
+/// <c>blocking</c> or <c>advisory</c>. Only <see cref="StoryGateRules.IsBlockingObjective"/> reads it, and any
+/// other value — absent, malformed or differently cased — counts as blocking, so an issue whose severity the gate
+/// cannot read can never open the gate (F5).
+/// </param>
 /// <param name="Kind">
-/// <c>objective</c> or <c>taste</c>. A value outside those two is counted as objective when the severity is
-/// blocking, so a malformed entry cannot open the gate.
+/// <c>objective</c> or <c>taste</c>. Only <c>taste</c> exempts a <c>blocking</c> issue; a value outside those two
+/// is counted as objective.
 /// </param>
 public sealed record GateIssueFacts(string Severity, string Kind);
 

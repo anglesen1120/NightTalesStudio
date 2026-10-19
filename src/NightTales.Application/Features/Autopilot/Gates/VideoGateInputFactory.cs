@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Features.Stories.Generation;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
@@ -43,6 +44,9 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <param name="logger">The ids-only log of a document this class could not read.</param>
 public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory> logger)
 {
+    /// <summary>The most characters of a stored string a log property carries (SEC-6).</summary>
+    private const int MaxLoggedChars = 40;
+
     /// <summary>The <c>schema</c> member of <c>render-quality.v1</c> (<see cref="RenderQualityReportV1.Schema"/>, D10).</summary>
     private const string SchemaMember = "schema";
 
@@ -81,13 +85,6 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
 
     /// <summary>The <c>images.moderated_count</c> scalar check 7 adds to the skipped count (03 CR-3).</summary>
     private const string ImagesModeratedCountMember = "moderated_count";
-
-    /// <summary>
-    /// The <c>gate_thresholds_ref</c> key of <c>series.autopilot_settings</c> (02.8.2 plan §3.3): the profile name
-    /// the gate thresholds resolve through, <c>default</c> when absent. The document's other keys belong to
-    /// 02.8.3-T1, so only this one is read and a document without it is a series with no profile.
-    /// </summary>
-    private const string GateThresholdsRefMember = "gate_thresholds_ref";
 
     /// <summary>
     /// Maps one finished render, its stored report, its asset row and the series aspect into
@@ -158,7 +155,10 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
         var schema = StringOf(document[SchemaMember]);
         if (!string.Equals(schema, RenderQualityReportV1.SchemaName, StringComparison.Ordinal))
         {
-            LogReportSchemaForeign(schema);
+            // SEC-6: the stored schema is unbounded input, so the log property carries a cleaned, bounded copy of
+            // it (never the raw value), computed once outside the logging call.
+            var loggedSchema = Bounded(schema);
+            LogReportSchemaForeign(loggedSchema);
 
             return null;
         }
@@ -220,6 +220,10 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
     /// The <c>gate_thresholds_ref</c> of a series' <c>autopilot_settings</c> document (plan §3.3): the profile name
     /// the thresholds resolve through.
     /// </summary>
+    /// <remarks>
+    /// F11: this is a thin wrapper over <see cref="StoryGateInputFactory"/>'s read, so the two factories cannot
+    /// drift; it only adds the log line a static read cannot write, and reads the document once.
+    /// </remarks>
     /// <param name="autopilotSettings">The stored <c>series.autopilot_settings</c> text, or null when there is none.</param>
     /// <returns>
     /// The profile name, or <see langword="null"/> when the series has no settings, the document is unreadable or not
@@ -228,33 +232,41 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
     /// </returns>
     public string? ReadGateThresholdsRef(string? autopilotSettings)
     {
-        if (string.IsNullOrWhiteSpace(autopilotSettings))
-        {
-            return null;
-        }
+        var reference = StoryGateInputFactory.ReadGateThresholdsRef(autopilotSettings, out var fault);
 
-        JsonNode? parsed;
-        try
-        {
-            parsed = JsonNode.Parse(autopilotSettings);
-        }
-        catch (JsonException)
+        if (fault == StoryGateInputFactory.SettingsFault.Unreadable && autopilotSettings is not null)
         {
             LogSettingsUnreadable(autopilotSettings.Length);
-
-            return null;
         }
-
-        if (parsed is not JsonObject settings)
+        else if (fault == StoryGateInputFactory.SettingsFault.NotAnObject)
         {
             LogSettingsNotAnObject();
-
-            return null;
         }
 
-        var reference = StringOf(settings[GateThresholdsRefMember]);
+        return reference;
+    }
 
-        return string.IsNullOrWhiteSpace(reference) ? null : reference;
+    // SEC-6: a stored string is unbounded input, so a log property carries a cleaned, at-most-MaxLoggedChars copy
+    // of it — never the raw value, whose control characters and length are an injection and size vector. Every
+    // control character becomes a space, tab, line feed and carriage return included, so a multi-line excerpt
+    // cannot forge log entries, and the cut never splits a surrogate pair into a lone half.
+    private static string Bounded(string? value)
+    {
+        var clean = TextSafety.Clean(value);
+        var length = Math.Min(clean.Length, MaxLoggedChars);
+        var bounded = new char[length];
+        for (var index = 0; index < length; index++)
+        {
+            var character = clean[index];
+            bounded[index] = char.IsControl(character) ? ' ' : character;
+        }
+
+        if (length > 0 && char.IsHighSurrogate(bounded[length - 1]))
+        {
+            length--;
+        }
+
+        return new string(bounded, 0, length);
     }
 
     /// <summary>The strings of a JSON array; anything else (an absent member, another type, non-string entries) is dropped.</summary>
@@ -304,7 +316,7 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
     [LoggerMessage(
         EventId = 6492,
         Level = LogLevel.Warning,
-        Message = "A stored quality report carries schema {Schema} instead of render-quality.v1; the video gate reads it as absent.")]
+        Message = "A stored quality report carries a foreign schema {Schema} (a cleaned excerpt of at most 40 characters) instead of render-quality.v1; the video gate reads it as absent.")]
     private partial void LogReportSchemaForeign(string? schema);
 
     [LoggerMessage(
@@ -314,7 +326,7 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
     private partial void LogImagesBlockAbsent();
 
     [LoggerMessage(
-        EventId = 6496,
+        EventId = 6502,
         Level = LogLevel.Warning,
         Message = "A stored quality report carries an images block without both counts; the video gate fails its failed-scenes check closed.")]
     private partial void LogImagesBlockIncomplete();

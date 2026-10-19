@@ -204,6 +204,37 @@ public sealed class AutopilotNotificationTests(TestDatabase database) : Integrat
     }
 
     /// <summary>
+    /// A message that cannot be stored is refused with a fixed code instead of an exception at the caller's
+    /// commit (02.8.2-T1 SEC-8): the caller's own failing-check codes are the one substitution value that does not
+    /// come from a PostgreSQL <c>text</c> column, and nothing of the notice reaches the unit of work either way.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotNotification_NonStorableParam_IsRefusedWithTheFixedCode()
+    {
+        var world = await SeedWorldAsync();
+        using var context = Database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId });
+        var state = new FakeEmailSenderState();
+        var service = Service(context, state);
+
+        await using var transaction = await context.Database.BeginTransactionAsync(CancellationToken.None);
+
+        var notified = await service.NotifyOwnerActionRequiredAsync(
+            world.RunId,
+            OwnerActionReasons.FailedChecks,
+            ["self_review\u0000mean_score"],
+            CancellationToken.None);
+
+        notified.IsError.ShouldBeTrue();
+        notified.FirstError.Code.ShouldBe(AutopilotNotificationService.ParamsNotPersistableErrorCode);
+        state.Calls.ShouldBeEmpty("nothing may be queued for a notice that cannot be stored");
+        (await OutboxTypesAsync(world.RunId)).ShouldBeEmpty();
+        (await AuditActionsAsync(world.RunId)).ShouldBeEmpty();
+        (await EmailTemplatesAsync(world.UserId)).ShouldBeEmpty();
+
+        await transaction.RollbackAsync(CancellationToken.None);
+    }
+
+    /// <summary>
     /// The delivery that remains is realtime only (02.8.2 plan §5, UC6): it publishes one ids-only
     /// <c>EpisodeUpdated</c> for the run's episode and nothing else — the notice's write half moved into the
     /// verdict's transaction, so an at-least-once redelivery cannot queue a second message.

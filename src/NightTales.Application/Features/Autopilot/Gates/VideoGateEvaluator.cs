@@ -27,10 +27,10 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <para>
 /// <b>Fail closed, never a pass on unknown data.</b> A missing run, a run without an episode, an episode without a
 /// series, an episode without a <c>succeeded</c> render and an episode that is neither <c>video_review</c> nor
-/// <c>ready</c> are answered with an <see cref="ErrorOr{T}"/> error and no verdict at all: the run step is retried
-/// by the tick, and the video is never approved from a state the gate could not read. Every member the gate *could*
-/// not measure is a null in the input, which fails its own check with <c>field_absent</c> and leaves the episode in
-/// <c>video_review</c> for the owner (plan §"Failure handling").
+/// <c>ready</c> for this very render's asset are answered with an <see cref="ErrorOr{T}"/> error and no verdict at
+/// all: the run step is retried by the tick, and the video is never approved from a state the gate could not read.
+/// Every member the gate *could* not measure is a null in the input, which fails its own check with
+/// <c>field_absent</c> and leaves the episode in <c>video_review</c> for the owner (plan §"Failure handling").
 /// </para>
 /// <para>
 /// <b>One transaction per verdict.</b> The <c>gate_results</c> write, its audit row and the owner notice commit
@@ -89,7 +89,10 @@ public sealed partial class VideoGateEvaluator(
     /// <summary>The error code of an episode with no <c>succeeded</c> render: there is no video to gate.</summary>
     public const string RenderMissingErrorCode = "autopilot_gate_render_missing";
 
-    /// <summary>The error code of a live pass whose episode is not in <c>video_review</c> and not already <c>ready</c>.</summary>
+    /// <summary>
+    /// The error code of an episode whose state cannot carry this verdict: it is neither in <c>video_review</c> nor
+    /// already <c>ready</c> for the render the gate judged, so no verdict is recorded and nobody is notified.
+    /// </summary>
     public const string EpisodeStateErrorCode = "autopilot_gate_episode_state";
 
     /// <summary>The metric result of a verdict that passed and was approved (or replayed).</summary>
@@ -226,26 +229,36 @@ public sealed partial class VideoGateEvaluator(
         if (thresholdRef is not null && !string.Equals(profileName, thresholdRef, StringComparison.Ordinal))
         {
             // An unknown ref never disables the gate: it resolves to `default` and the run log shows why
-            // (plan §10 decision 6).
-            LogProfileUnknown(runId, thresholdRef, profileName);
+            // (plan §10 decision 6). Both values are stored configuration, so the log carries a bounded,
+            // control-character-free rendering of them (02.8.2-T1 SEC-6).
+            LogProfileUnknown(
+                runId,
+                GateResultWriter.LogSafe(thresholdRef),
+                GateResultWriter.LogSafe(profileName));
         }
 
         var profile = options.Resolve(thresholdRef);
         var input = factory.Build(renderJob, asset, series.Aspect, imageModerationEvents);
         var result = VideoGateRules.Evaluate(input, profile);
 
-        // The approve path needs the state the command itself requires: only `video_review` accepts it. An episode
-        // that already reached `ready` is this render's own approval replayed, and every other state means the run
-        // and the episode disagree — the gate records no verdict there, because a stored pass would claim an
-        // approval that cannot happen.
-        if (result.Pass && mode == GateMode.Live && episode.Status is not (EpisodeStatus.VideoReview or EpisodeStatus.Ready))
+        // The episode's own state decides whether this verdict can be stored at all (02.8.2-T1 F7/F13). The gate
+        // evaluates a video under review, and the replay of one already `ready` for this very render: `ready` with
+        // another asset in `final_video_asset_id` is a stale verdict — the render job judged here is not the cut
+        // the episode holds — and every other state means the run and the episode disagree. A failing verdict and a
+        // dry run are refused exactly like a live pass: a verdict stored from a state the episode is not in would
+        // claim something that cannot happen, and the owner notice it queues would ask for an action the episode no
+        // longer needs.
+        var alreadyApproved = episode.Status == EpisodeStatus.Ready
+            && episode.FinalVideoAssetId == result.AssetId;
+
+        if (episode.Status != EpisodeStatus.VideoReview && !alreadyApproved)
         {
             LogStateNotApprovable(runId, episodeId, episode.Status, renderJob.Id);
 
             return Faulted(
                 startedAt,
                 EpisodeStateErrorCode,
-                $"Episode {episodeId} is {episode.Status} and only a video under review can be approved.");
+                $"Episode {episodeId} is {episode.Status}; only a video under review — or the episode already ready for render job {renderJob.Id} — can be gated.");
         }
 
         var notifyReason = StopReasonFor(result, mode);
@@ -281,7 +294,7 @@ public sealed partial class VideoGateEvaluator(
                 result.Failures);
         }
 
-        if (episode.Status == EpisodeStatus.Ready)
+        if (alreadyApproved)
         {
             LogReplay(runId, episodeId, renderJob.Id);
 

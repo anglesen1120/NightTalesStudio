@@ -150,6 +150,48 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
             .ShouldBeEmpty("a gate log line names ids and codes, never the render's content hash");
     }
 
+    /// <summary>
+    /// The profile reference a series stores reaches the log bounded and control-character-free (02.8.2-T1 SEC-6):
+    /// a long reference carrying a tab and a control character must not land in the line as it is, while the gate
+    /// still falls back to <c>default</c> and this capture is proven live.
+    /// </summary>
+    [Fact]
+    public async Task GateEngine_UnknownProfileRef_IsLoggedBoundedAndStripped()
+    {
+        var profileRef = "no-such-profile\t" + new string('x', 300) + "\u0001tail";
+        var settings = JsonSerializer.Serialize(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["gate_thresholds_ref"] = profileRef,
+        });
+        var world = await SeedAsync(autopilotSettings: settings);
+        var logs = new CapturingLoggerProvider();
+        using var factory = new ApiFactory(Database, new FakeClock(Start))
+            .WithLoggerProvider(logs)
+            .WithSetting("Autopilot:Gates:DryRun", "false");
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            using var pin = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(world.UserId);
+
+            var evaluated = await scope.ServiceProvider.GetRequiredService<IAutoApprovalGate>()
+                .EvaluateVideoAsync(world.RunId, Ct);
+            evaluated.IsError.ShouldBeFalse(string.Join(", ", evaluated.Errors.Select(error => error.Code)));
+        }
+
+        var line = logs.LinesOf(typeof(VideoGateEvaluator).FullName!)
+            .Where(entry => entry.Message.Contains("unknown gate profile", StringComparison.Ordinal))
+            .ShouldHaveSingleItem("an unknown ref resolves to `default` and the log shows why (plan §10 decision 6)")
+            .Message;
+
+        var start = line.IndexOf("unknown gate profile ", StringComparison.Ordinal) + "unknown gate profile ".Length;
+        var logged = line[start..line.IndexOf(';', start)];
+
+        logged.Length.ShouldBeLessThanOrEqualTo(GateResultWriter.LogSafeMaxLength);
+        logged.ShouldStartWith("no-such-profile?" + new string('x', GateResultWriter.LogSafeMaxLength - 16));
+        logged.ShouldNotContain("\t");
+        logged.ShouldNotContain("\u0001");
+    }
+
     /// <summary>Asserts one host's composed graph the way 02.8.3-T1 will consume it.</summary>
     /// <param name="provider">A scope's service provider of the started host.</param>
     private static void AssertComposed(IServiceProvider provider)
@@ -178,8 +220,9 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
     /// One owner whose episode carries a finished render: the world one live video-gate evaluation needs, seeded
     /// with the builders and raw SQL (<c>PollRenderJobTests.SeedJobAsync</c>, <c>AutopilotNotificationTests</c>).
     /// </summary>
+    /// <param name="autopilotSettings">The series' <c>autopilot_settings</c> document, when a test wants one.</param>
     /// <returns>The seeded ids.</returns>
-    private async Task<World> SeedAsync()
+    private async Task<World> SeedAsync(string? autopilotSettings = null)
     {
         var actor = new TestCurrentUser();
         var clock = new FakeClock(Start);
@@ -189,6 +232,7 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
         var series = await new SeriesBuilder(Database, actor, clock).CreateAsync(
             user.Id,
             aspect: Aspect.Landscape,
+            autopilotSettings: autopilotSettings,
             ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor, clock).CreateAsync(
             user.Id,

@@ -66,7 +66,7 @@ internal static class GateTestData
     /// <param name="wordCount">The D4 token count.</param>
     /// <param name="keywords">The version's keywords.</param>
     /// <param name="contentWarnings">The declared content warnings.</param>
-    /// <param name="keywordViolationCount">How many keywords break the keyword rules.</param>
+    /// <param name="keywordViolationCount">How many keywords break the keyword rules, or null when the stored local block is unreadable.</param>
     /// <param name="keywordLimit">The <c>ceil(D × K)</c> cap of the episode's tier.</param>
     /// <param name="factSheetId">The sheet the version was written from.</param>
     /// <param name="approvedFactSheetId">The series' current approved sheet id.</param>
@@ -75,7 +75,7 @@ internal static class GateTestData
         int wordCount = 1700,
         IReadOnlyList<string>? keywords = null,
         IReadOnlyList<string>? contentWarnings = null,
-        int keywordViolationCount = 0,
+        int? keywordViolationCount = 0,
         int keywordLimit = 6,
         Guid? factSheetId = null,
         Guid? approvedFactSheetId = null) => new(

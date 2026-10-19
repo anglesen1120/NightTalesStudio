@@ -12,9 +12,10 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <para>
 /// <b>A failure is not a verdict.</b> A story that did not pass its checks is a successful call whose
 /// <see cref="StoryGateOutcome.AutoApproved"/> is <see langword="false"/>; these errors mean the gate could not
-/// be evaluated or the approval could not be recorded, and the caller retries. That is why only three of them
-/// exist: the run the caller names is gone, the episode it approved is gone, or the caller asked to approve a
-/// verdict that did not pass.
+/// be evaluated or the approval could not be recorded, and the caller retries. They cover exactly that: the run
+/// the caller names is gone, the episode it approved is gone, the caller asked to approve a verdict that did not
+/// pass, or the approval's own audit row could not be committed
+/// (<see cref="ApprovalAuditFailed(Guid, string)"/>).
 /// </para>
 /// <para>
 /// <b>None of these reaches HTTP.</b> The gates are internal application services (plan §4: "not HTTP
@@ -64,11 +65,26 @@ public static class GateErrors
             $"The episode of autopilot run {runId} does not exist.");
 
     /// <summary>
+    /// The approval was applied but its audit row could not be committed. The table is append-only and the row
+    /// is the only record of who approved, so a lost one is answered as an error the caller retries — never
+    /// logged away. The story half's retry is the replay path, which backfills the missing row; the video half has
+    /// no such reconstruction (its command's own row records no approval source), so there the error is the record
+    /// the operator acts on.
+    /// </summary>
+    /// <param name="episodeId">The episode whose approval could not be recorded.</param>
+    /// <param name="action">The audit action that failed; a fixed code, never a stored string.</param>
+    /// <returns>The error the approval service answers.</returns>
+    public static Error ApprovalAuditFailed(Guid episodeId, string action) =>
+        Error.Failure(
+            "approval_audit_failed",
+            $"The approval of episode {episodeId} was applied, but its audit row ({action}) could not be committed.");
+
+    /// <summary>
     /// The verdict's asset is no longer the episode's final video, so the render it judged was replaced (a
-    /// re-render was ingested after the gate read it). <c>ApproveVideoCommand</c> carries no ETag for an
-    /// in-process caller, so this identity check is the only stale-verdict guard on the video half: without it a
-    /// re-render would be approved on the old render's verdict, which is exactly the wrong pass the gate exists to
-    /// prevent.
+    /// re-render was ingested after the gate read it). It is the guard that distinguishes a replay on a current
+    /// asset from a verdict whose render the episode has moved past, even when the episode is already
+    /// <c>ready</c>: without it a re-render would be approved on the old render's verdict, which is exactly the
+    /// wrong pass the gate exists to prevent.
     /// </summary>
     /// <param name="episodeId">The episode whose final asset moved.</param>
     /// <returns>The error the approval service answers.</returns>

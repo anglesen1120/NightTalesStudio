@@ -24,6 +24,13 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <c>autopilot.owner_action_required</c> row, e-mail or audit row is written.
 /// </para>
 /// <para>
+/// <b>One stop, one notice.</b> The writer answers whether the run already held exactly this verdict
+/// (<see cref="GateWriteResult"/>, 02.8.2-T1 F8/SEC-9). A re-evaluation of the same stop — the tick retrying after
+/// the verdict committed, or a later read of the same attempt — records the verdict and notifies nobody, so the
+/// owner gets one e-mail, one audit row and one outbox row per stop. A changed verdict (another reason, another
+/// attempt, another mode) is a new stop and does notify.
+/// </para>
+/// <para>
 /// <b>The reason is a code, never a sentence.</b> The notice carries one of <see cref="OwnerActionReasons"/> and
 /// the failing check ids; the e-mail template owns the words (plan §6).
 /// </para>
@@ -79,12 +86,17 @@ public sealed partial class GateOutcomeRecorder(
             return await RollbackAsync(written.Errors, ct).ConfigureAwait(false);
         }
 
-        var notified = await NotifyAsync(runId, StoppedReason(notifyReason, result), result.Failures, ct)
-            .ConfigureAwait(false);
-
-        if (notified.IsError)
+        // The run already held this verdict: the notice for this stop is the one it already carries, and a second
+        // one would be a duplicate (02.8.2-T1 F8).
+        if (written.Value == GateWriteResult.Written)
         {
-            return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            var notified = await NotifyAsync(runId, StoppedReason(notifyReason, result), result.Failures, ct)
+                .ConfigureAwait(false);
+
+            if (notified.IsError)
+            {
+                return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            }
         }
 
         var committed = await unitOfWork.CommitAsync(ct).ConfigureAwait(false);
@@ -96,7 +108,13 @@ public sealed partial class GateOutcomeRecorder(
 
         // The wire name is read once: the log call stays cheap even when its level is off (CA1873).
         var wireMode = mode.ToWire();
-        LogStoryRecorded(runId, result.Attempt, wireMode, notifyReason is not null, result.Failures.Count);
+        LogStoryRecorded(
+            runId,
+            result.Attempt,
+            wireMode,
+            written.Value,
+            written.Value == GateWriteResult.Written && notifyReason is not null,
+            result.Failures.Count);
 
         return Result.Success;
     }
@@ -136,12 +154,16 @@ public sealed partial class GateOutcomeRecorder(
             return await RollbackAsync(written.Errors, ct).ConfigureAwait(false);
         }
 
-        var notified = await NotifyAsync(runId, StoppedReason(notifyReason, null), result.Failures, ct)
-            .ConfigureAwait(false);
-
-        if (notified.IsError)
+        // The run already held this verdict: the notice for this stop is the one it already carries (02.8.2-T1 F8).
+        if (written.Value == GateWriteResult.Written)
         {
-            return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            var notified = await NotifyAsync(runId, StoppedReason(notifyReason, null), result.Failures, ct)
+                .ConfigureAwait(false);
+
+            if (notified.IsError)
+            {
+                return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            }
         }
 
         var committed = await unitOfWork.CommitAsync(ct).ConfigureAwait(false);
@@ -153,7 +175,12 @@ public sealed partial class GateOutcomeRecorder(
 
         // The wire name is read once: the log call stays cheap even when its level is off (CA1873).
         var wireMode = mode.ToWire();
-        LogVideoRecorded(runId, wireMode, notifyReason is not null, result.Failures.Count);
+        LogVideoRecorded(
+            runId,
+            wireMode,
+            written.Value,
+            written.Value == GateWriteResult.Written && notifyReason is not null,
+            result.Failures.Count);
 
         return Result.Success;
     }
@@ -189,16 +216,20 @@ public sealed partial class GateOutcomeRecorder(
             return await RollbackAsync(appended.Errors, ct).ConfigureAwait(false);
         }
 
-        var notified = await NotifyAsync(
-                runId,
-                OwnerActionReasons.OwnerApprovalRequired,
-                [failureCode],
-                ct)
-            .ConfigureAwait(false);
-
-        if (notified.IsError)
+        // The run already carried this refusal: it is the one the owner was told about (02.8.2-T1 F8).
+        if (appended.Value == GateWriteResult.Written)
         {
-            return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            var notified = await NotifyAsync(
+                    runId,
+                    OwnerActionReasons.OwnerApprovalRequired,
+                    [failureCode],
+                    ct)
+                .ConfigureAwait(false);
+
+            if (notified.IsError)
+            {
+                return await RollbackAsync(notified.Errors, ct).ConfigureAwait(false);
+            }
         }
 
         var committed = await unitOfWork.CommitAsync(ct).ConfigureAwait(false);
@@ -208,7 +239,7 @@ public sealed partial class GateOutcomeRecorder(
             return committed.Errors;
         }
 
-        LogApprovalFailureRecorded(runId, gate, failureCode);
+        LogApprovalFailureRecorded(runId, gate, failureCode, appended.Value);
 
         return Result.Success;
     }
@@ -291,14 +322,14 @@ public sealed partial class GateOutcomeRecorder(
     [LoggerMessage(
         EventId = 6440,
         Level = LogLevel.Information,
-        Message = "gate_story_recorded runId={RunId} attempt={Attempt} mode={Mode} stopped={Stopped} failures={FailureCount}")]
-    private partial void LogStoryRecorded(Guid runId, int attempt, string mode, bool stopped, int failureCount);
+        Message = "gate_story_recorded runId={RunId} attempt={Attempt} mode={Mode} write={Write} notified={Notified} failures={FailureCount}")]
+    private partial void LogStoryRecorded(Guid runId, int attempt, string mode, GateWriteResult write, bool notified, int failureCount);
 
     [LoggerMessage(
         EventId = 6441,
         Level = LogLevel.Information,
-        Message = "gate_video_recorded runId={RunId} mode={Mode} stopped={Stopped} failures={FailureCount}")]
-    private partial void LogVideoRecorded(Guid runId, string mode, bool stopped, int failureCount);
+        Message = "gate_video_recorded runId={RunId} mode={Mode} write={Write} notified={Notified} failures={FailureCount}")]
+    private partial void LogVideoRecorded(Guid runId, string mode, GateWriteResult write, bool notified, int failureCount);
 
     [LoggerMessage(
         EventId = 6442,
@@ -309,6 +340,6 @@ public sealed partial class GateOutcomeRecorder(
     [LoggerMessage(
         EventId = 6443,
         Level = LogLevel.Warning,
-        Message = "gate_approval_failure_recorded runId={RunId} gate={Gate} failureCode={FailureCode}")]
-    private partial void LogApprovalFailureRecorded(Guid runId, string gate, string failureCode);
+        Message = "gate_approval_failure_recorded runId={RunId} gate={Gate} failureCode={FailureCode} write={Write}")]
+    private partial void LogApprovalFailureRecorded(Guid runId, string gate, string failureCode, GateWriteResult write);
 }

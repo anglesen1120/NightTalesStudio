@@ -72,12 +72,16 @@ internal static class GateRunSeed
         Guid PastEpisodeId,
         Guid PastVersionId);
 
-    /// <summary>The six D16 dimensions of one review, all scoring the same value.</summary>
+    /// <summary>
+    /// The six D16 dimensions of one review, all scoring the same value, plus the <c>real_world_claims</c>
+    /// member every report carries: its absence is unknown evidence (check 8 fails closed), not "no hit".
+    /// </summary>
     /// <param name="value">The score every dimension carries (1–5).</param>
     internal static string ReviewJson(int value) =>
         "{\"stale\":false,\"scores\":{\"hook\":" + Number(value) + ",\"pacing\":" + Number(value)
         + ",\"atmosphere\":" + Number(value) + ",\"natural_language\":" + Number(value)
-        + ",\"originality\":" + Number(value) + ",\"length_fit\":" + Number(value) + "},\"issues\":[]}";
+        + ",\"originality\":" + Number(value) + ",\"length_fit\":" + Number(value)
+        + "},\"issues\":[],\"real_world_claims\":[]}";
 
     /// <summary>A complete <c>audit.v1</c> document around one review, its moderation block and its revision.</summary>
     /// <param name="modelReview">The <c>model_review</c> object, from <see cref="ReviewJson"/>.</param>

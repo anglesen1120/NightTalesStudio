@@ -117,6 +117,10 @@ public sealed class AutopilotApprovalServiceTests
     {
         ApprovalFailureCodes.Of(Error.Conflict(ErrorCodes.StoryVersionConflict, "moved"))
             .ShouldBe(ApprovalFailureCodes.EtagConflict);
+        ApprovalFailureCodes.Of(Error.Conflict(ErrorCodes.EpisodeConflict, "the video moved"))
+            .ShouldBe(
+                ApprovalFailureCodes.EtagConflict,
+                "the video approval now sends the episode ETag it read, so its stale tag is the same refusal");
         ApprovalFailureCodes.Of(Error.Conflict(ErrorCodes.EpisodeInvalidState, "state"))
             .ShouldBe(ApprovalFailureCodes.ApproveFailed);
         ApprovalFailureCodes.Of(Error.Failure("anything_else", "other"))

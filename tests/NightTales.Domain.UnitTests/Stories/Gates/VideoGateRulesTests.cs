@@ -196,6 +196,71 @@ public sealed class VideoGateRulesTests
     }
 
     [Fact]
+    public void VideoGate_DurationDrift_ComparesTheExactValueNotTheRoundedOne()
+    {
+        // QA D1: 630.024 s of container against 600 s of narration is 0.05004 — just past the 5 % tolerance, so
+        // the verdict fails even though the stored, rounded drift is 0.05.
+        var beyond = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(durationSec: 630.024)),
+            AutopilotGateProfile.Defaults);
+        var drift = GateTestData.Find(beyond.Checks, VideoGateCheckIds.Duration);
+        drift.Pass.ShouldBeFalse();
+        drift.Value.ShouldBe((decimal?)0.05m, "the stored value is rounded to four places");
+        drift.Threshold.ShouldBe((decimal?)0.05m);
+        beyond.Failures.ShouldBe([VideoGateCheckIds.Duration]);
+
+        // 630.0 s against the same narration is exactly 5 %, the inclusive boundary, and passes.
+        var exact = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(durationSec: 630.0)),
+            AutopilotGateProfile.Defaults);
+        var boundary = GateTestData.Find(exact.Checks, VideoGateCheckIds.Duration);
+        boundary.Pass.ShouldBeTrue();
+        boundary.Value.ShouldBe((decimal?)0.05m);
+        exact.Pass.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void VideoGate_PoisonedNumbers_FailClosedInsteadOfThrowing()
+    {
+        var profile = AutopilotGateProfile.Defaults;
+
+        // SEC-3: a stored JSON number like 1e300 parses as a double and (decimal) of it overflows. Such a value is
+        // read as unmeasured, so one poisoned report cannot throw on every tick of a retrying run.
+        var hugeDuration = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(durationSec: 1e300)),
+            profile);
+        var duration = GateTestData.Find(hugeDuration.Checks, VideoGateCheckIds.Duration);
+        duration.Pass.ShouldBeFalse();
+        duration.Value.ShouldBeNull();
+        duration.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+
+        var hugeLufs = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(integratedLufs: 1e300)),
+            profile);
+        var loudness = GateTestData.Find(hugeLufs.Checks, VideoGateCheckIds.Loudness);
+        loudness.Pass.ShouldBeFalse();
+        loudness.Value.ShouldBeNull();
+        loudness.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+
+        // A denormal narration duration makes the quotient infinite: the same answer, no exception.
+        var denormal = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(ttsDurationSec: 5e-324)),
+            profile);
+        var drift = GateTestData.Find(denormal.Checks, VideoGateCheckIds.Duration);
+        drift.Pass.ShouldBeFalse();
+        drift.Value.ShouldBeNull();
+        drift.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+
+        // Non-finite values cannot come from JSON, but the rule still answers rather than throwing.
+        var infinite = VideoGateRules.Evaluate(
+            GateTestData.VideoInput(report: GateTestData.Report(durationSec: double.PositiveInfinity)),
+            profile);
+        var infiniteCheck = GateTestData.Find(infinite.Checks, VideoGateCheckIds.Duration);
+        infiniteCheck.Pass.ShouldBeFalse();
+        infiniteCheck.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+    }
+
+    [Fact]
     public void VideoGate_ResolutionAspect_MustMatchTheSeries()
     {
         var profile = AutopilotGateProfile.Defaults;

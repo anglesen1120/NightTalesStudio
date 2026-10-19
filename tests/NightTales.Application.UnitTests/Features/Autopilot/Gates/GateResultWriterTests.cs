@@ -145,8 +145,16 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
         var writer = new GateResultWriter(db, clock);
 
         await writer.WriteStoryAsync(world.RunId, Story(attempt: 1, pass: true), Evidence(), GateMode.Live, "default", Ct);
-        (await writer.AppendFailureAsync(world.RunId, GateResultWriter.StoryGate, "etag_conflict", Ct)).IsError.ShouldBeFalse();
-        (await writer.AppendFailureAsync(world.RunId, GateResultWriter.StoryGate, "etag_conflict", Ct)).IsError.ShouldBeFalse();
+
+        var first = await writer.AppendFailureAsync(world.RunId, GateResultWriter.StoryGate, "etag_conflict", Ct);
+        first.IsError.ShouldBeFalse();
+        first.Value.ShouldBe(GateWriteResult.Written, "the first refusal is one the owner still has to be told about");
+
+        // F8/SEC-9: the same code on the same block is the refusal the run already holds, so the caller must not
+        // queue the owner's notice for it a second time.
+        var second = await writer.AppendFailureAsync(world.RunId, GateResultWriter.StoryGate, "etag_conflict", Ct);
+        second.IsError.ShouldBeFalse();
+        second.Value.ShouldBe(GateWriteResult.Unchanged);
 
         await db.SaveChangesAsync(Ct);
 
@@ -155,6 +163,123 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
         story["failures"]![0]!.GetValue<string>().ShouldBe("etag_conflict");
         story["pass"]!.GetValue<bool>().ShouldBeTrue("appending a refusal never rewrites the verdict");
         story["checks"]!.AsArray().Count.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// F8 at the write itself: the same verdict of the same run and mode is <see cref="GateWriteResult.Unchanged"/>
+    /// — that is what stops the second owner notice — while another mode or another attempt is a new verdict the
+    /// caller has to notify about.
+    /// </summary>
+    [Fact]
+    public async Task GateResultWriter_ReevaluatedVerdict_ReportsWhetherAnythingChanged()
+    {
+        var world = await SeedAsync();
+        await using var db = Open(world, out var clock);
+        var writer = new GateResultWriter(db, clock);
+
+        var first = await writer.WriteStoryAsync(world.RunId, Story(attempt: 1, pass: false), Evidence(), GateMode.Live, "default", Ct);
+        first.Value.ShouldBe(GateWriteResult.Written);
+
+        var again = await writer.WriteStoryAsync(world.RunId, Story(attempt: 1, pass: false), Evidence(), GateMode.Live, "default", Ct);
+        again.Value.ShouldBe(GateWriteResult.Unchanged, "the tick's retry re-evaluates a stop the run already holds");
+
+        var dryRun = await writer.WriteStoryAsync(world.RunId, Story(attempt: 1, pass: false), Evidence(), GateMode.DryRun, "default", Ct);
+        dryRun.Value.ShouldBe(GateWriteResult.Written, "the mode is what turns a verdict into a stop, so it is part of the comparison");
+
+        var nextAttempt = await writer.WriteStoryAsync(world.RunId, Story(attempt: 2, pass: false), Evidence(), GateMode.DryRun, "default", Ct);
+        nextAttempt.Value.ShouldBe(GateWriteResult.Written, "a later attempt is a new verdict");
+
+        var lateAttempt = await writer.WriteStoryAsync(world.RunId, Story(attempt: 1, pass: false), Evidence(), GateMode.DryRun, "default", Ct);
+        lateAttempt.Value.ShouldBe(GateWriteResult.Superseded, "the stored attempt 2 is never overwritten by a late attempt 1");
+
+        var video = await writer.WriteVideoAsync(world.RunId, Video(), GateMode.Live, "default", Ct);
+        video.Value.ShouldBe(GateWriteResult.Written);
+
+        var videoAgain = await writer.WriteVideoAsync(world.RunId, Video(), GateMode.Live, "default", Ct);
+        videoAgain.Value.ShouldBe(GateWriteResult.Unchanged);
+
+        await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>
+    /// SEC-8: a moderation category PostgreSQL refuses (a NUL, a lone surrogate) is dropped at copy time, so one
+    /// unreadable vendor string cannot make the whole verdict — and with it the owner's notice — unstoreable.
+    /// </summary>
+    [Fact]
+    public async Task GateResultWriter_NonStorableModerationCategory_IsDroppedAtCopyTime()
+    {
+        var world = await SeedAsync();
+        await using var db = Open(world, out var clock);
+        var writer = new GateResultWriter(db, clock);
+
+        var written = await writer.WriteStoryAsync(
+            world.RunId,
+            Story(attempt: 1, pass: true),
+            Evidence(categories: ["harassment", "self\u0000harm", "unpaired\ud800surrogate"]),
+            GateMode.Live,
+            "default",
+            Ct);
+
+        written.IsError.ShouldBeFalse(written.Errors.Count == 0 ? null : written.FirstError.Description);
+        written.Value.ShouldBe(GateWriteResult.Written);
+
+        await db.SaveChangesAsync(Ct);
+
+        (await StoredAsync(world.RunId))["moderation"]!["categories"]!.AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ShouldBe(["harassment"], "the storable categories survive in order; the unreadable ones are dropped");
+    }
+
+    /// <summary>
+    /// SEC-8: when a value the gate has no copy-time filter for (here the moderator's own unavailable detail)
+    /// carries what <c>jsonb</c> refuses, the write answers the fixed code and stores nothing instead of letting
+    /// the exception at commit fail the verdict's transaction on every retry.
+    /// </summary>
+    [Fact]
+    public async Task GateResultWriter_NonStorableVerdictValue_IsRefusedWithTheFixedCode()
+    {
+        var world = await SeedAsync();
+        await using var db = Open(world, out var clock);
+        var writer = new GateResultWriter(db, clock);
+
+        var written = await writer.WriteStoryAsync(
+            world.RunId,
+            Story(attempt: 1, pass: false),
+            Evidence(unavailableDetail: "provider returned\u0000an unreadable body"),
+            GateMode.Live,
+            "default",
+            Ct);
+
+        written.IsError.ShouldBeTrue();
+        written.FirstError.Code.ShouldBe(GateResultWriter.NotPersistableErrorCode);
+
+        await db.SaveChangesAsync(Ct);
+
+        var nulls = await Database.QueryStringsAsync(
+            $"SELECT count(*)::text FROM autopilot_runs WHERE id = '{world.RunId}' AND gate_results IS NULL",
+            Ct);
+
+        nulls.Single().ShouldBe("1", "a refused document writes nothing at all");
+    }
+
+    /// <summary>SEC-6: the stored value a gate log line carries is bounded and free of control characters.</summary>
+    [Fact]
+    public void GateResultWriter_LogSafe_BoundsAndStripsAStoredValue()
+    {
+        GateResultWriter.LogSafe(null).ShouldBeEmpty();
+        GateResultWriter.LogSafe("default").ShouldBe("default");
+
+        var hostile = "no-such-profile\t" + new string('x', 300) + "\u0001tail";
+        var safe = GateResultWriter.LogSafe(hostile);
+
+        safe.Length.ShouldBe(GateResultWriter.LogSafeMaxLength);
+        safe.ShouldStartWith("no-such-profile?" + new string('x', GateResultWriter.LogSafeMaxLength - 16));
+        safe.ShouldNotContain("\t");
+        safe.ShouldNotContain("\u0001");
+
+        // A cut inside a surrogate pair drops the orphan, so the line never carries half of one.
+        var emoji = new string('x', GateResultWriter.LogSafeMaxLength - 1) + "\ud83c\udfac";
+        GateResultWriter.LogSafe(emoji).Length.ShouldBe(GateResultWriter.LogSafeMaxLength - 1);
     }
 
     [Fact]
@@ -189,15 +314,17 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
         Checks: [new GateCheck(VideoGateCheckIds.Loudness, GateCheckKinds.Range, -15.1m, -14m, true, "LUFS")],
         Failures: []);
 
-    private static GateStoryEvidence Evidence() => new(
+    private static GateStoryEvidence Evidence(
+        IReadOnlyList<string>? categories = null,
+        string? unavailableDetail = null) => new(
         SourceSimilarity: 0.021m,
         PastEpisodeSimilarity: 0.044m,
         CorpusMax: 50,
         RealWorldHit: false,
         RealWorldKinds: [],
         ModerationFlagged: false,
-        ModerationCategories: [],
-        ModerationUnavailableDetail: null,
+        ModerationCategories: categories ?? [],
+        ModerationUnavailableDetail: unavailableDetail,
         ModerationCheckedAt: null,
         EpisodeStatusAtEvaluation: "story_review");
 

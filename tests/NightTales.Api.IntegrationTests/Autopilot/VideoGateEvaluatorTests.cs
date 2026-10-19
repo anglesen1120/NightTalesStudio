@@ -155,6 +155,17 @@ public sealed class VideoGateEvaluatorTests(TestDatabase database) : Integration
             .ShouldBe(OwnerActionReasons.FailedChecks);
         Scalar($"SELECT jsonb_array_length(data->'failures')::text FROM audit_logs WHERE action = '{OwnerActionAction}' AND data->>'runId' = '{world.RunId}'")
             .ShouldBe("1");
+
+        // F8: re-evaluating the same failing verdict is the stop the run already holds, so the owner keeps exactly
+        // one notice for it — one audit row, one outbox row and one e-mail.
+        var again = await EvaluateAsync(factory, world);
+
+        again.IsError.ShouldBeFalse(string.Join(", ", again.Errors.Select(error => error.Code)));
+        again.Value.Reason.ShouldBe(GateStopReason.FailedChecks);
+        StoredStatus(world).ShouldBe("video_review");
+        AuditCount(world, OwnerActionAction).ShouldBe(1);
+        OutboxCount(world, OwnerActionEvent).ShouldBe(1);
+        EmailCount(world).ShouldBe(1);
     }
 
     /// <summary>
@@ -322,6 +333,58 @@ public sealed class VideoGateEvaluatorTests(TestDatabase database) : Integration
         Scalar($"SELECT data->>'reason' FROM audit_logs WHERE action = '{OwnerActionAction}' AND data->>'runId' = '{world.RunId}'")
             .ShouldBe(OwnerActionReasons.OwnerApprovalRequired);
         StoredStatus(world).ShouldBe("video_review");
+    }
+
+    /// <summary>
+    /// F7: a <c>ready</c> episode is the replay of this render's own approval only while it still carries the asset
+    /// the verdict judged. A <c>ready</c> episode whose final asset moved is a stale verdict — the gate records
+    /// nothing and reports no pass for it.
+    /// </summary>
+    [Fact]
+    public async Task EvaluateVideo_ReadyWithAnotherAsset_IsRefusedAndRecordsNothing()
+    {
+        var world = await SeedAsync(episodeStatus: "ready");
+        using var factory = Factory(dryRun: false);
+
+        // The pointer moved after the approval: the episode is ready, but not for the render this run gated.
+        await Database.ExecuteAsync(
+            $"UPDATE episodes SET final_video_asset_id = NULL WHERE id = '{world.EpisodeId}'",
+            Ct);
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeTrue();
+        evaluated.FirstError.Code.ShouldBe(VideoGateEvaluator.EpisodeStateErrorCode);
+
+        RunGateResults(world).ShouldBeNull("a stale verdict is not recorded");
+        StoredStatus(world).ShouldBe("ready", "the gate neither approves nor un-approves anything");
+        AuditCount(world, VideoApprovedAction).ShouldBe(0);
+        AuditCount(world, EpisodeApprovedAction).ShouldBe(0);
+        OutboxCount(world, OwnerActionEvent).ShouldBe(0);
+        EmailCount(world).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// F13: an episode that is neither under review nor already ready for this render is not gated at all, so a
+    /// failing verdict cannot be stored for it — and the owner is not asked to act on a state the episode is not
+    /// in.
+    /// </summary>
+    [Fact]
+    public async Task EvaluateVideo_EpisodeOutsideReviewAndReady_IsRefusedAndRecordsNothing()
+    {
+        var world = await SeedAsync(episodeStatus: "published", integratedLufs: -25.5);
+        using var factory = Factory(dryRun: false);
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeTrue();
+        evaluated.FirstError.Code.ShouldBe(VideoGateEvaluator.EpisodeStateErrorCode);
+
+        RunGateResults(world).ShouldBeNull("no verdict may be stored for a state the episode is not in");
+        StoredStatus(world).ShouldBe("published");
+        AuditCount(world, OwnerActionAction).ShouldBe(0);
+        OutboxCount(world, OwnerActionEvent).ShouldBe(0);
+        EmailCount(world).ShouldBe(0);
     }
 
     /// <summary>The host of these tests: the real Api with the fixed clock and the mode under test.</summary>

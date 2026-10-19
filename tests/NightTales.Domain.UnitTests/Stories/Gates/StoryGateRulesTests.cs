@@ -181,6 +181,45 @@ public sealed class StoryGateRulesTests
     }
 
     [Fact]
+    public void StoryGate_UnknownSeverity_CountsAsBlocking()
+    {
+        // F5: only the two severities the audit writes are read. A differently cased, absent or unknown severity
+        // is an issue the gate cannot judge, so it counts — and no kind exempts it, because only the documented
+        // `blocking`/`taste` pair is a taste disagreement.
+        StoryGateRules.IsBlockingObjective(new GateIssueFacts("Blocking", "objective")).ShouldBeTrue();
+        StoryGateRules.IsBlockingObjective(new GateIssueFacts("blocker", "taste")).ShouldBeTrue();
+        StoryGateRules.IsBlockingObjective(new GateIssueFacts("advisory", "objective")).ShouldBeFalse();
+
+        var audit = GateTestData.Audit(issues:
+        [
+            new GateIssueFacts(Severity: string.Empty, Kind: string.Empty),
+            new GateIssueFacts(Severity: "advisory", Kind: "taste"),
+        ]);
+
+        var result = StoryGateRules.Evaluate(GateTestData.StoryInput(audit: audit), AutopilotGateProfile.Defaults);
+
+        result.Failures.ShouldBe([StoryGateCheckIds.BlockingObjectiveIssues]);
+        GateTestData.Find(result.Checks, StoryGateCheckIds.BlockingObjectiveIssues).Value.ShouldBe((decimal?)1);
+    }
+
+    [Fact]
+    public void StoryGate_UnknownKeywordViolationCount_FailsClosed()
+    {
+        // F4: the caller could not read the stored local block, so the violation count is unknown and the check
+        // fails with field_absent instead of reading "no stored violation" as zero.
+        var result = StoryGateRules.Evaluate(
+            GateTestData.StoryInput(version: GateTestData.Version(keywordViolationCount: null)),
+            AutopilotGateProfile.Defaults);
+
+        var check = GateTestData.Find(result.Checks, StoryGateCheckIds.KeywordRules);
+        check.Pass.ShouldBeFalse();
+        check.Value.ShouldBeNull();
+        check.Threshold.ShouldBe((decimal?)0);
+        check.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+        result.Failures.ShouldBe([StoryGateCheckIds.KeywordRules]);
+    }
+
+    [Fact]
     public void StoryGate_RevisionCountAboveMax_Fails()
     {
         var audit = GateTestData.Audit(revisionApplied: true);

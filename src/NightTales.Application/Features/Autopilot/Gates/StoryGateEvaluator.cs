@@ -97,8 +97,8 @@ public sealed partial class StoryGateEvaluator(
     public const string VersionMissingErrorCode = "autopilot_gate_version_missing";
 
     /// <summary>
-    /// The error code of a live pass whose episode is neither in <c>story_review</c> nor already approved for this
-    /// version: the approve command could not succeed, so no verdict is recorded.
+    /// The error code of an episode whose state cannot carry this verdict: it is neither in <c>story_review</c> nor
+    /// already approved for the version the gate judged, so no verdict is recorded and nobody is notified.
     /// </summary>
     public const string EpisodeStateErrorCode = "autopilot_gate_episode_state";
 
@@ -199,8 +199,12 @@ public sealed partial class StoryGateEvaluator(
         if (thresholdRef is not null && !string.Equals(profileName, thresholdRef, StringComparison.Ordinal))
         {
             // An unknown ref never disables the gate: it resolves to `default` and the run log shows why
-            // (plan §10 decision 6).
-            LogProfileUnknown(runId, thresholdRef, profileName);
+            // (plan §10 decision 6). Both values are stored configuration, so the log carries a bounded,
+            // control-character-free rendering of them (02.8.2-T1 SEC-6).
+            LogProfileUnknown(
+                runId,
+                GateResultWriter.LogSafe(thresholdRef),
+                GateResultWriter.LogSafe(profileName));
         }
 
         // SEC-1 (pinned data): a version written from a fact sheet is true crime even when the series topic was
@@ -281,18 +285,19 @@ public sealed partial class StoryGateEvaluator(
 
         var replay = episode.ApprovedStoryVersionId == version.Id;
 
-        // The approve path needs the state the command itself requires: only `story_review` accepts it. An episode
-        // already approved for this same version is this gate's own approval replayed; every other state means the
-        // run and the episode disagree — the gate records no verdict there, because a stored pass would claim an
-        // approval that cannot happen.
-        if (result.Pass && mode == GateMode.Live && episode.Status != EpisodeStatus.StoryReview && !replay)
+        // The episode's own state decides whether this verdict can be stored at all (02.8.2-T1 F13). The gate
+        // evaluates a story under review and the replay of one already approved for this same version; every other
+        // state means the run and the episode disagree. A failing verdict and a dry run are refused exactly like a
+        // live pass: a verdict stored from a state the episode is not in would claim an approval that cannot
+        // happen, and the owner notice it queues would ask for an action the episode no longer needs.
+        if (episode.Status != EpisodeStatus.StoryReview && !replay)
         {
             LogStateNotApprovable(runId, episodeId, episode.Status, version.Id);
 
             return Faulted(
                 startedAt,
                 EpisodeStateErrorCode,
-                $"Episode {episodeId} is {episode.Status} and only a story under review can be approved.");
+                $"Episode {episodeId} is {episode.Status} and only a story under review can be gated.");
         }
 
         var evidence = new GateStoryEvidence(

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Features.Autopilot.Gates;
@@ -292,6 +293,63 @@ public sealed class VideoGateInputFactoryTests
         Factory.ReadGateThresholdsRef(settings).ShouldBe(expected);
     }
 
+    /// <summary>
+    /// SEC-6: the schema of a foreign report is stored text, so the log property carries a cleaned, bounded excerpt
+    /// — at most 40 characters, with no control character and no line break — instead of the raw value.
+    /// </summary>
+    [Theory]
+    [InlineData("\0\a\t\r\n\u007f\u0085")]
+    [InlineData("\u0001\t\r\n\u009f")]
+    public void ParseQualityReport_ForeignSchema_LogsABoundedCleanedExcerpt(string controls)
+    {
+        var logger = new RecordingLogger();
+        var factory = new VideoGateInputFactory(logger);
+        var document = new JsonObject { ["schema"] = controls + new string('x', 200) }.ToJsonString();
+
+        factory.ParseQualityReport(document).ShouldBeNull();
+
+        var logged = logger.Values["Schema"].ShouldBeOfType<string>();
+        logged.Length.ShouldBe(40, "the stored schema is cut to the log bound");
+        logged.ShouldBe(
+            new string(' ', controls.Length) + new string('x', 40 - controls.Length),
+            "every control character became a space, line feed and carriage return too");
+        logged.Any(char.IsControl).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// SEC-6: the excerpt is cut at the bound without leaving half a surrogate pair in the log property.
+    /// </summary>
+    [Fact]
+    public void ParseQualityReport_ForeignSchema_NeverSplitsASurrogatePair()
+    {
+        var logger = new RecordingLogger();
+        var factory = new VideoGateInputFactory(logger);
+        var document = new JsonObject { ["schema"] = new string('x', 39) + "\U0001F600" + new string('x', 10) }
+            .ToJsonString();
+
+        factory.ParseQualityReport(document).ShouldBeNull();
+
+        var logged = logger.Values["Schema"].ShouldBeOfType<string>();
+        logged.ShouldBe(new string('x', 39), "the half pair at the bound is dropped, not kept as a lone surrogate");
+    }
+
+    /// <summary>
+    /// SEC-3: a stored number beyond any real measurement is read as the double the JSON carries; the Domain rules
+    /// turn it into a failed check (<c>field_absent</c>) instead of an <see cref="OverflowException"/>. This test
+    /// pins the boundary: the factory parses, the rule decides.
+    /// </summary>
+    [Fact]
+    public void ParseQualityReport_EnormousNumbers_ArePassedToTheRulesUnchanged()
+    {
+        var facts = Factory
+            .ParseQualityReport(
+                "{\"schema\":\"render-quality.v1\",\"pass\":true,\"duration_sec\":1e300,\"integrated_lufs\":1e300}")
+            .ShouldNotBeNull();
+
+        facts.DurationSec.ShouldBe(1e300);
+        facts.IntegratedLufs.ShouldBe(1e300);
+    }
+
     /// <summary>The stored <c>render-quality.v1</c> document the ingest writes, members and all (05 D10).</summary>
     private static RenderQualityReportV1 Report() => new()
     {
@@ -389,5 +447,34 @@ public sealed class VideoGateInputFactoryTests
         root["pass"] = true;
 
         return root.ToJsonString();
+    }
+
+    /// <summary>Captures the named property of every log call, keyed by its property name (SEC-6).</summary>
+    private sealed class RecordingLogger : ILogger<VideoGateInputFactory>
+    {
+        public Dictionary<string, object?> Values { get; } = new(StringComparer.Ordinal);
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (state is not IEnumerable<KeyValuePair<string, object?>> values)
+            {
+                return;
+            }
+
+            foreach (var (key, value) in values)
+            {
+                Values[key] = value;
+            }
+        }
     }
 }

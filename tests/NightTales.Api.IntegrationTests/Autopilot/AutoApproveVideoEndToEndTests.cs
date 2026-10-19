@@ -168,6 +168,36 @@ public sealed class AutoApproveVideoEndToEndTests(TestDatabase database) : Integ
         DocumentInner(world, "video", "pass").ShouldBe("true");
     }
 
+    /// <summary>
+    /// A <c>ready</c> episode is a replay of one verdict only when it carries the asset that verdict evaluated:
+    /// a verdict for a render the episode has moved past is refused, never accepted as an approved one. The
+    /// identity guard is what decides that, and it runs before the <c>ready</c> test.
+    /// </summary>
+    [Fact]
+    public async Task AutoApproveVideo_ReadyOnAnotherAsset_RefusesTheStaleVerdict()
+    {
+        var world = await SeedAsync(episodeStatus: EpisodeStatus.Ready);
+        using var factory = Factory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        using var pin = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(world.UserId);
+
+        var replaced = Guid.CreateVersion7();
+        var refused = await scope.ServiceProvider.GetRequiredService<AutopilotApprovalService>()
+            .ApproveVideoAsync(
+                world.RunId,
+                new VideoGateResult(true, world.RenderJobId, replaced, [], []),
+                GateMode.Live,
+                Ct);
+
+        refused.IsError.ShouldBeTrue("the episode is ready on another cut, so this is not this verdict's replay");
+        refused.FirstError.Code.ShouldBe("video_verdict_stale");
+        Scalar($"SELECT status FROM episodes WHERE id = '{world.EpisodeId}'")
+            .ShouldBe("ready", "a refused verdict never moves the episode");
+        AuditCount(world, AutoApprovedAction).ShouldBe(0, "a stale verdict is not an approval");
+        AuditCount(world, EpisodeApprovedAction).ShouldBe(0);
+        OutboxCount(world, VideoApprovedEvent).ShouldBe(0);
+    }
+
     /// <summary>The host of these tests: the real Api with the fixed clock and the gate live.</summary>
     /// <returns>The factory.</returns>
     private ApiFactory Factory() =>

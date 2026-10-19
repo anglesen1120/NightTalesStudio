@@ -24,6 +24,15 @@ public static class StoryGateRules
 {
     private const int ScoreDecimals = 2;
 
+    /// <summary>The only severity that does not count against the gate (README D22's two-value vocabulary).</summary>
+    private const string AdvisorySeverity = "advisory";
+
+    /// <summary>The severity whose issue counts unless its kind is <see cref="TasteKind"/>.</summary>
+    private const string BlockingSeverity = "blocking";
+
+    /// <summary>The only kind that exempts a <c>blocking</c> issue: a taste disagreement is the owner's call.</summary>
+    private const string TasteKind = "taste";
+
     /// <summary>Evaluates the fifteen story checks over one assembled input.</summary>
     /// <param name="input">The stored facts; see <see cref="StoryGateInput"/>.</param>
     /// <param name="profile">The resolved thresholds, normally <see cref="AutopilotGateProfile.Resolve"/>'s result.</param>
@@ -158,15 +167,18 @@ public static class StoryGateRules
             null));
 
         // 12 — the keyword rules and the ceil(D × K) cap (P5/F09). The value is the violation count; a total
-        // above the cap is reported by its code.
+        // above the cap is reported by its code. A local block the caller could not read leaves the count
+        // unknown (null), which fails the check closed instead of reading "no stored violation" (F4).
         var overCap = version.Keywords.Count > version.KeywordLimit;
-        checks.Add(new GateCheck(
-            StoryGateCheckIds.KeywordRules,
-            GateCheckKinds.Maximum,
-            version.KeywordViolationCount,
-            0,
-            version.KeywordViolationCount == 0 && !overCap,
-            overCap ? GateDetailCodes.KeywordCapExceeded : null));
+        checks.Add(version.KeywordViolationCount is not { } violations
+            ? Missing(StoryGateCheckIds.KeywordRules, GateCheckKinds.Maximum, 0)
+            : new GateCheck(
+                StoryGateCheckIds.KeywordRules,
+                GateCheckKinds.Maximum,
+                violations,
+                0,
+                violations == 0 && !overCap,
+                overCap ? GateDetailCodes.KeywordCapExceeded : null));
 
         // 13 — content_warnings must be a subset of the profile's allow-list (case-insensitive, so a
         // capitalised warning is the same code).
@@ -207,14 +219,19 @@ public static class StoryGateRules
     }
 
     /// <summary>
-    /// A blocking issue, per plan §3.1 check 4: severity <c>blocking</c> and a kind that is not clearly
-    /// <c>taste</c>. A malformed kind therefore counts and cannot open the gate.
+    /// A blocking objective issue, per plan §3.1 check 4: an <c>advisory</c> issue never counts, a
+    /// <c>blocking</c> one counts unless its kind is <c>taste</c>, and <b>every other severity counts</b> —
+    /// absent, malformed or differently cased (F5). An issue whose severity the gate cannot read therefore
+    /// cannot open the gate.
     /// </summary>
     /// <param name="issue">The issue as the audit stored it.</param>
     /// <returns>True when the issue counts against the gate.</returns>
-    public static bool IsBlockingObjective(GateIssueFacts issue) =>
-        string.Equals(issue.Severity, "blocking", StringComparison.Ordinal)
-        && !string.Equals(issue.Kind, "taste", StringComparison.Ordinal);
+    public static bool IsBlockingObjective(GateIssueFacts issue) => issue.Severity switch
+    {
+        AdvisorySeverity => false,
+        BlockingSeverity => !string.Equals(issue.Kind, TasteKind, StringComparison.Ordinal),
+        _ => true,
+    };
 
     private static GateCheck Flag(string id, bool value, bool required, string? detail) =>
         new(id, GateCheckKinds.Flag, value ? 1 : 0, required ? 1 : 0, value == required, detail);

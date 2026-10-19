@@ -103,7 +103,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":3,"pacing":3,"atmosphere":3,"natural_language":3,"originality":3,"factual_care":3,"length_fit":3},"issues":[{"severity":"blocking","kind":"objective","message":"fixed in revision #1"}]},"local":{"issues":[]},"revision":{"applied":true,"reason":"scores","review_after":{"scores":{"hook":5,"pacing":5,"atmosphere":4,"natural_language":5,"originality":4,"factual_care":5,"length_fit":5},"issues":[]}}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":3,"pacing":3,"atmosphere":3,"natural_language":3,"originality":3,"factual_care":3,"length_fit":3},"issues":[{"severity":"blocking","kind":"objective","message":"fixed in revision #1"}],"real_world_claims":[]},"local":{"issues":[]},"revision":{"applied":true,"reason":"scores","review_after":{"scores":{"hook":5,"pacing":5,"atmosphere":4,"natural_language":5,"originality":4,"factual_care":5,"length_fit":5},"issues":[]}}}""",
         });
 
         reading.Value.Audit.Scores.ShouldNotBeNull();
@@ -117,17 +117,31 @@ public sealed class StoryGateInputFactoryTests
         result.Failures.ShouldNotContain(StoryGateCheckIds.SelfReviewMeanScore);
     }
 
-    /// <summary>A revision that claims to be applied but has no complete <c>review_after</c> falls back to the stored review.</summary>
-    [Fact]
-    public async Task StoryGateInputFactory_AppliedRevisionWithoutReviewAfter_FallsBackToModelReview()
+    /// <summary>
+    /// F14: a revision marked applied whose <c>review_after</c> is absent or is not a complete block leaves the
+    /// current state's scores and issues unknown (null). The read never falls back to <c>model_review</c>, which
+    /// reviewed the text the revision replaced, so the gate cannot open on stale scores.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"applied":true,"reason":"scores","review_after":{"scores":{"hook":5}}}""")]
+    [InlineData("""{"applied":true,"reason":"scores","review_after":{}}""")]
+    [InlineData("""{"applied":true,"reason":"scores"}""")]
+    public async Task StoryGateInputFactory_AppliedRevisionWithoutCompleteReviewAfter_IsUnknown(string revision)
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":3,"pacing":3,"atmosphere":3,"natural_language":3,"originality":3,"factual_care":3,"length_fit":3},"issues":[]},"local":{"issues":[]},"revision":{"applied":true,"reason":"scores","review_after":{"scores":{"hook":5}}}}""",
+            AuditReport = $$$"""{"model_review":{"stale":false,"scores":{"hook":3,"pacing":3,"atmosphere":3,"natural_language":3,"originality":3,"factual_care":3,"length_fit":3},"issues":[],"real_world_claims":[]},"local":{"issues":[]},"revision":{{{revision}}}}""",
         });
 
         reading.Value.Audit.RevisionApplied.ShouldBe(true);
-        reading.Value.Audit.Scores.ShouldNotBeNull().Hook.ShouldBe(3, "the half-written review_after is not the current state");
+        reading.Value.Audit.Scores.ShouldBeNull("review #1 belongs to the text the revision replaced");
+        reading.Value.Audit.Issues.ShouldBeNull();
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        result.Failures.ShouldContain(StoryGateCheckIds.SelfReviewMeanScore);
+        result.Failures.ShouldContain(StoryGateCheckIds.SelfReviewMinDimension);
+        Check(result, StoryGateCheckIds.BlockingObjectiveIssues).Detail.ShouldBe(GateDetailCodes.FieldAbsent);
     }
 
     /// <summary>
@@ -139,7 +153,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[{"severity":"advisory","kind":"taste","message":"preference"}]},"local":{"issues":[{"severity":"blocking","rule":"Q-KW-03","message":"keyword"}]},"revision":{"applied":false}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[{"severity":"advisory","kind":"taste","message":"preference"}],"real_world_claims":[]},"local":{"issues":[{"severity":"blocking","rule":"Q-KW-03","message":"keyword"}]},"revision":{"applied":false}}""",
         });
 
         reading.Value.Audit.Issues!.Count.ShouldBe(2);
@@ -147,12 +161,99 @@ public sealed class StoryGateInputFactoryTests
 
         var malformed = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[{"severity":"blocking","kind":42,"rule":"other"}]},"revision":{"applied":false}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[{"severity":"blocking","kind":42,"rule":"other"}]},"revision":{"applied":false}}""",
         });
 
         malformed.Value.Audit.Issues.ShouldHaveSingleItem().Kind.ShouldBeEmpty();
         StoryGateRules.Evaluate(Compose(malformed.Value), AutopilotGateProfile.Defaults)
             .Failures.ShouldContain(StoryGateCheckIds.BlockingObjectiveIssues);
+    }
+
+    /// <summary>
+    /// F4: the <c>local</c> block is unreadable when it is absent, is not an object or carries no <c>issues</c>
+    /// array. Both writers always store it and <c>StoryReadProjection</c> reads a missing block as unreadable, so
+    /// the issues of check 4 and the keyword violations of check 12 are unknown (null) and both checks fail closed.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"revision":{"applied":false}}""")]
+    [InlineData("""{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{},"revision":{"applied":false}}""")]
+    [InlineData("""{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":42},"revision":{"applied":false}}""")]
+    public async Task StoryGateInputFactory_AbsentOrUnreadableLocalBlock_FailsChecks4And12Closed(string auditReport)
+    {
+        var reading = await ReadAsync(row: new Row { AuditReport = auditReport });
+
+        reading.Value.Audit.Issues.ShouldBeNull("an unreadable local block is unknown, never an empty list");
+        reading.Value.Version.KeywordViolationCount.ShouldBeNull();
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        Check(result, StoryGateCheckIds.BlockingObjectiveIssues).Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+        Check(result, StoryGateCheckIds.KeywordRules).Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+        result.Failures.ShouldContain(StoryGateCheckIds.BlockingObjectiveIssues);
+        result.Failures.ShouldContain(StoryGateCheckIds.KeywordRules);
+    }
+
+    /// <summary>
+    /// The other half of F4: a selected review without its own <c>issues</c> array cannot be counted either, so
+    /// check 4 fails closed — while check 12 still answers, because that readable <c>local</c> block did store its
+    /// (empty) issues.
+    /// </summary>
+    [Fact]
+    public async Task StoryGateInputFactory_ReviewWithoutIssuesArray_FailsCheck4Closed()
+    {
+        var reading = await ReadAsync(row: new Row
+        {
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"real_world_claims":[]},"local":{"issues":[]},"revision":{"applied":false}}""",
+        });
+
+        reading.Value.Audit.Issues.ShouldBeNull();
+        reading.Value.Version.KeywordViolationCount.ShouldBe(0);
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        Check(result, StoryGateCheckIds.BlockingObjectiveIssues).Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+        Check(result, StoryGateCheckIds.KeywordRules).Pass.ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// F5: an issue whose severity the gate cannot read — a different case, an absent member or an entry that is
+    /// not an object — counts as blocking, so a malformed issue can never open the gate.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"severity":"Blocking","kind":"objective"}""")]
+    [InlineData("""{"kind":"objective","rule":"other"}""")]
+    [InlineData("42")]
+    [InlineData("""{"severity":"blocking","kind":42}""")]
+    public async Task StoryGateInputFactory_UnreadableSeverity_CountsAsBlocking(string issue)
+    {
+        var reading = await ReadAsync(row: new Row
+        {
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":["""
+                + issue
+                + """]},"revision":{"applied":false}}""",
+        });
+
+        reading.Value.Audit.Issues.ShouldNotBeNull().Count.ShouldBe(1);
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        Check(result, StoryGateCheckIds.BlockingObjectiveIssues).Pass.ShouldBeFalse();
+        result.Failures.ShouldContain(StoryGateCheckIds.BlockingObjectiveIssues);
+    }
+
+    /// <summary>The other side of F5: only <c>advisory</c> issues are the owner's call, whatever their kind.</summary>
+    [Fact]
+    public async Task StoryGateInputFactory_AdvisoryIssues_DoNotBlock()
+    {
+        var reading = await ReadAsync(row: new Row
+        {
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[{"severity":"advisory","kind":"objective","rule":"other"},{"severity":"advisory","kind":"taste"}]},"revision":{"applied":false}}""",
+        });
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        Check(result, StoryGateCheckIds.BlockingObjectiveIssues).Value.ShouldBe((decimal?)0);
+        result.Failures.ShouldNotContain(StoryGateCheckIds.BlockingObjectiveIssues);
     }
 
     /// <summary>
@@ -165,7 +266,7 @@ public sealed class StoryGateInputFactoryTests
         var reading = await ReadAsync(row: new Row
         {
             Keywords = ["one", "two", "three"],
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[{"severity":"advisory","rule":"Q-KW-03"},{"severity":"blocking","rule":"keyword_invalid"},{"severity":"advisory","rule":"Q-REP-01"}]},"revision":{"applied":false}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[{"severity":"advisory","rule":"Q-KW-03"},{"severity":"blocking","rule":"keyword_invalid"},{"severity":"advisory","rule":"Q-REP-01"}]},"revision":{"applied":false}}""",
         });
 
         reading.Value.Version.KeywordViolationCount.ShouldBe(2, "Q-KW-03 and keyword_invalid are the KeywordRules violations");
@@ -200,18 +301,38 @@ public sealed class StoryGateInputFactoryTests
         result.Failures.ShouldContain(StoryGateCheckIds.RealWorldSignal);
     }
 
-    /// <summary>A review that stored no claims array asserted none: no hit, and check 8 passes.</summary>
+    /// <summary>
+    /// F6: a review that does not carry the <c>real_world_claims</c> member at all is a foreign or truncated
+    /// document — the member is unreadable, not empty — so check 8 fails closed (the real writer,
+    /// <c>AuditReportBuilder</c>, always stores it).
+    /// </summary>
     [Fact]
-    public async Task StoryGateInputFactory_NoClaimsArray_NoHit()
+    public async Task StoryGateInputFactory_AbsentClaimsMember_IsUnknown()
     {
         var reading = await ReadAsync(row: new Row
         {
             AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]},"revision":{"applied":false}}""",
         });
 
-        reading.Value.RealWorld.ShouldNotBeNull();
-        reading.Value.RealWorld!.Hit.ShouldBeFalse();
-        reading.Value.RealWorld.Hits.ShouldBeEmpty();
+        reading.Value.RealWorld.ShouldBeNull("there is no member to read");
+
+        var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
+
+        var check = Check(result, StoryGateCheckIds.RealWorldSignal);
+        check.Pass.ShouldBeFalse();
+        check.Value.ShouldBeNull();
+        check.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
+    }
+
+    /// <summary>A review that stored an empty claims array did assert none: no hit, and check 8 passes.</summary>
+    [Fact]
+    public async Task StoryGateInputFactory_EmptyClaimsArray_IsNoHit()
+    {
+        var reading = await ReadAsync(row: new Row());
+
+        var signal = reading.Value.RealWorld.ShouldNotBeNull();
+        signal.Hit.ShouldBeFalse();
+        signal.Hits.ShouldBeEmpty();
 
         StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults)
             .Failures.ShouldNotContain(StoryGateCheckIds.RealWorldSignal);
@@ -246,7 +367,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]},"revision":{"applied":false},"moderation":{"flagged":true,"categories":["sexual/minors"],"blocking":["sexual/minors"],"stale":false,"unavailable":false}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[]},"revision":{"applied":false},"moderation":{"flagged":true,"categories":["sexual/minors"],"blocking":["sexual/minors"],"stale":false,"unavailable":false}}""",
         });
 
         reading.Value.Audit.ModerationFlagged.ShouldBe(true);
@@ -273,7 +394,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]},"revision":{"applied":false},"moderation":"""
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[]},"revision":{"applied":false},"moderation":"""
                 + moderation
                 + "}",
         });
@@ -294,7 +415,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row
         {
-            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]}}""",
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[]}}""",
         });
 
         reading.Value.Audit.RevisionApplied.ShouldBe(false);
@@ -343,7 +464,6 @@ public sealed class StoryGateInputFactoryTests
 
         reading.Value.Audit.ModerationFlagged.ShouldBeNull();
         reading.Value.Moderation.Usable.ShouldBeFalse();
-        reading.Value.RealWorld.ShouldNotBeNull();
     }
 
     /// <summary>
@@ -452,6 +572,10 @@ public sealed class StoryGateInputFactoryTests
     private static StoryGateInput Compose(StoryGateInputFactory.StoryGateReading reading) =>
         StoryGateInputFactory.Compose(reading, pastEpisodeSimilarity: null, moderation: null, attempt: 1);
 
+    /// <summary>The single check with <paramref name="id"/>; a missing or duplicated id fails the calling test.</summary>
+    private static GateCheck Check(StoryGateResult result, string id) =>
+        result.Checks.Single(check => check.Id == id);
+
     private static StoryGateInputFactory Factory(PriceLimits limits, bool fails = false) =>
         new(new FixedCatalog(limits, fails));
 
@@ -478,7 +602,7 @@ public sealed class StoryGateInputFactoryTests
     private sealed record Row
     {
         /// <summary>The audit of a complete, current review: a clean scorecard, no issues, no revision, no claims.</summary>
-        public const string CleanAuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]},"revision":{"applied":false}}""";
+        public const string CleanAuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[]},"local":{"issues":[]},"revision":{"applied":false}}""";
 
         public Guid VersionId { get; init; } = Guid.CreateVersion7();
 

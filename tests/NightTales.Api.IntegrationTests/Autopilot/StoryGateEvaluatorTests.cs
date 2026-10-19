@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Similarity;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Domain.Common;
+using NightTales.Domain.Episodes;
 using NightTales.Domain.Stories.Gates;
 using NightTales.Domain.Stories.Similarity;
 using NightTales.Infrastructure.Persistence;
@@ -81,7 +82,7 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
         NoticeRows(world).ShouldBe(1);
         NoticePayloads(world).ShouldContain(OwnerActionReasons.DryRun);
         NoticeAuditRows(world, OwnerActionReasons.DryRun).ShouldBe(1);
-        EpisodeStatus(world.EpisodeId).ShouldBe("story_review");
+        StoredStatus(world.EpisodeId).ShouldBe("story_review");
         AutoApproveAuditRows(world).ShouldBe(0);
 
         AssertNoStoryText(world);
@@ -152,7 +153,7 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
         NoticeAuditRows(world, OwnerActionReasons.ModeratorUnavailable).ShouldBe(1);
         NoticeFailureCodes(world).ShouldContain(StoryGateCheckIds.ModerationGate);
         AutoApproveAuditRows(world).ShouldBe(0);
-        EpisodeStatus(world.EpisodeId).ShouldBe("story_review");
+        StoredStatus(world.EpisodeId).ShouldBe("story_review");
     }
 
     /// <summary>
@@ -265,6 +266,55 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
         var reader = new GateFailureStreakReader(Database.CreateAppDbContext(new TestCurrentUser { Id = first.UserId }));
 
         (await reader.GetStreakAsync(first.SeriesId, Ct)).ShouldBe(2);
+    }
+
+    /// <summary>
+    /// F8/SEC-9: re-evaluating the same failing run queues the owner's notice once — one outbox row, one audit row
+    /// and one e-mail — while a later attempt of the same run is a new verdict and is notified again. F13: an
+    /// episode that left <c>story_review</c> is never gated at all, in either mode, so a failing or dry-run verdict
+    /// cannot be stored for a state the episode is not in.
+    /// </summary>
+    [Fact]
+    public async Task StoryGateEvaluator_RepeatedFailingVerdict_NotifiesOnce_AndRefusesAnEpisodeOutOfReview()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct, auditReport: GateRunSeed.FailingAudit());
+        using var factory = Factory();
+
+        (await EvaluateAsync(factory, world)).Value.Result.Pass.ShouldBeFalse();
+        (await EvaluateAsync(factory, world)).Value.Result.Pass.ShouldBeFalse();
+
+        NoticeRows(world).ShouldBe(1, "the same stop is the verdict the run already holds");
+        NoticeAuditRows(world, OwnerActionReasons.FailedChecks).ShouldBe(1);
+        EmailCount(world).ShouldBe(1);
+
+        // A later story attempt is a different verdict: the owner is told about it too.
+        (await EvaluateAsync(factory, world, attempt: 2)).Value.Result.Pass.ShouldBeFalse();
+        NoticeRows(world).ShouldBe(2);
+        NoticeAuditRows(world, OwnerActionReasons.FailedChecks).ShouldBe(2);
+        EmailCount(world).ShouldBe(2);
+
+        // F13: the episode is not under review, so nothing may be recorded or notified for it any more — not even
+        // the failing verdict this run carries, and not in the dry run either.
+        var draft = await GateRunSeed.SeedRunAsync(
+            Database,
+            ct: Ct,
+            auditReport: GateRunSeed.FailingAudit(),
+            status: EpisodeStatus.Draft);
+        using var live = Factory(dryRun: false);
+
+        var refusedDryRun = await EvaluateAsync(factory, draft);
+        var refusedLive = await EvaluateAsync(live, draft);
+
+        refusedDryRun.IsError.ShouldBeTrue();
+        refusedDryRun.FirstError.Code.ShouldBe(StoryGateEvaluator.EpisodeStateErrorCode);
+        refusedLive.IsError.ShouldBeTrue();
+        refusedLive.FirstError.Code.ShouldBe(StoryGateEvaluator.EpisodeStateErrorCode);
+
+        VerdictRows(draft.RunId).ShouldBe(0, "a verdict stored from a state the episode is not in would claim an approval that cannot happen");
+        NoticeRows(draft).ShouldBe(0);
+        NoticeAuditRows(draft, OwnerActionReasons.FailedChecks).ShouldBe(0);
+        EmailCount(draft).ShouldBe(0);
+        StoredStatus(draft.EpisodeId).ShouldBe("draft");
     }
 
     /// <summary>
@@ -384,7 +434,7 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
     private long VerdictRows(Guid runId) =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM autopilot_runs WHERE id = '{runId}' AND gate_results IS NOT NULL");
 
-    private string EpisodeStatus(Guid episodeId) =>
+    private string StoredStatus(Guid episodeId) =>
         SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{episodeId}'");
 
     /// <summary>The notice rows this world queued: <c>type</c> plus the owner, proven scoping.</summary>
@@ -407,6 +457,13 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
             Database,
             $"SELECT count(*) FROM audit_logs WHERE action = '{AutopilotNotificationService.AuditAction}' "
             + $"AND data->>'runId' = '{world.RunId}' AND data->>'reason' = '{reason}'");
+
+    /// <summary>The owner-action e-mails this world queued (the TestKit sender writes real rows).</summary>
+    private long EmailCount(GateRunSeed.GateWorld world) =>
+        SqlProbe.Count(
+            Database,
+            $"SELECT count(*) FROM email_messages WHERE template = '{AutopilotNotificationService.EmailTemplate}' "
+            + $"AND user_id = '{world.UserId}'");
 
     /// <summary>The failure codes the notice audit row carries (check ids for a failed evaluation).</summary>
     private string NoticeFailureCodes(GateRunSeed.GateWorld world) =>

@@ -4,11 +4,34 @@ using System.Text.Json.Nodes;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Features.Stories.Generation;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Gates;
 
 namespace NightTales.Application.Features.Autopilot.Gates;
+
+/// <summary>
+/// What one merge did with the verdict it was handed (02.8.2-T1 F8): whether the stored document changed, already
+/// held exactly this verdict, or was owned by a later attempt.
+/// </summary>
+/// <remarks>
+/// The caller's next step depends on it. <see cref="Written"/> means the stored verdict is new and the owner's
+/// notice for it has not been queued yet; <see cref="Unchanged"/> and <see cref="Superseded"/> mean a second
+/// <c>autopilot.owner_action_required</c> row for the same stop would be a duplicate, so
+/// <see cref="GateOutcomeRecorder"/> records the verdict and notifies nobody.
+/// </remarks>
+public enum GateWriteResult
+{
+    /// <summary>The stored <c>gates.v1</c> document now carries this verdict.</summary>
+    Written,
+
+    /// <summary>The document already holds exactly this verdict for this gate: nothing was written.</summary>
+    Unchanged,
+
+    /// <summary>A later story attempt owns the stored verdict: this older attempt's write was ignored.</summary>
+    Superseded,
+}
 
 /// <summary>
 /// The read-modify-write of <c>autopilot_runs.gate_results</c> (02.8.2 plan §3.4, task step 4): it merges one
@@ -26,8 +49,16 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// treated as absent and a fresh <c>gates.v1</c> document is started: a half-written row degrades to "re-evaluate",
 /// never to an unreadable verdict the run log has to guess at. The one thing that is never overwritten is a
 /// higher story <c>attempt</c>: the gate evaluates at most two generations per run (D17), so a late write of the
-/// first attempt must not erase the second one's verdict — it is ignored and the call still succeeds, because the
-/// caller's verdict was already superseded (<c>GateResultWriter_SecondStoryAttempt_KeepsHigherAttempt</c>).
+/// first attempt must not erase the second one's verdict — it is ignored and answered with
+/// <see cref="GateWriteResult.Superseded"/> (<c>GateResultWriter_SecondStoryAttempt_KeepsHigherAttempt</c>).
+/// </para>
+/// <para>
+/// <b>It reports what the merge did, and refuses what PostgreSQL would refuse.</b> Every write answers whether the
+/// stored document changed (<see cref="GateWriteResult"/>), so the caller can tell a first verdict from the
+/// re-evaluation of one it already holds and does not queue the owner's notice twice (02.8.2-T1 F8). A merged
+/// document that carries a value <c>jsonb</c> refuses — a <c>NUL</c>, an unpaired surrogate — is answered with
+/// <see cref="NotPersistableErrorCode"/> instead of an exception at commit, so one unreadable vendor string cannot
+/// turn the run into a poison pill (02.8.2-T1 SEC-8).
 /// </para>
 /// <para>
 /// <b>Tracked, never committed.</b> The aggregate is loaded through the write model, so the change is visible to
@@ -46,6 +77,16 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
 {
     /// <summary>The document's own version key, written by every merge (02.8.2 plan §3.4).</summary>
     public const string SchemaVersion = "gates.v1";
+
+    /// <summary>
+    /// The fixed code a merge answers when the document it would store carries a value PostgreSQL's <c>jsonb</c>
+    /// refuses (a <c>NUL</c> or an unpaired surrogate, 02.8.2-T1 SEC-8). Nothing is written in that case: the
+    /// alternative is an exception at commit, which would roll back the verdict's whole transaction on every tick.
+    /// </summary>
+    public const string NotPersistableErrorCode = "autopilot_gate_document_not_persistable";
+
+    /// <summary>The most characters of a stored value a gate log line may carry (02.8.2-T1 SEC-6).</summary>
+    public const int LogSafeMaxLength = 40;
 
     /// <summary>The <c>story</c> block and the gate name <see cref="AppendFailureAsync"/> takes for it.</summary>
     public const string StoryGate = "story";
@@ -108,10 +149,10 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
     /// <param name="mode">The mode of this evaluation: <c>live</c> or <c>dry_run</c>.</param>
     /// <param name="profile">The effective profile name this evaluation used.</param>
     /// <param name="ct">The caller's cancellation token.</param>
-    /// <returns>Success, or the error that stopped the write.</returns>
+    /// <returns>What the merge did, or the error that stopped the write.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="result"/> or <paramref name="evidence"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="profile"/> is blank.</exception>
-    public async ValueTask<ErrorOr<Success>> WriteStoryAsync(
+    public async ValueTask<ErrorOr<GateWriteResult>> WriteStoryAsync(
         Guid runId,
         StoryGateResult result,
         GateStoryEvidence evidence,
@@ -133,7 +174,13 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
 
         if (StoredAttempt(stored) is { } storedAttempt && storedAttempt > result.Attempt)
         {
-            return Result.Success;
+            return GateWriteResult.Superseded;
+        }
+
+        var block = StoryBlock(result, evidence);
+        if (IsSameStoredVerdict(stored, StoryKeyName, block, mode))
+        {
+            return GateWriteResult.Unchanged;
         }
 
         var document = Rebuild(stored, new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
@@ -142,7 +189,7 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
             [ModeKeyName] = JsonValue.Create(mode.ToWire()),
             [ProfileKeyName] = JsonValue.Create(profile),
             [EvaluatedAtKeyName] = JsonValue.Create(Timestamp()),
-            [StoryKeyName] = StoryBlock(result, evidence),
+            [StoryKeyName] = block,
             [SimilarityKeyName] = SimilarityBlock(evidence),
             [RealWorldKeyName] = RealWorldBlock(evidence),
             [ModerationKeyName] = ModerationBlock(evidence),
@@ -161,10 +208,10 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
     /// <param name="mode">The mode of this evaluation: <c>live</c> or <c>dry_run</c>.</param>
     /// <param name="profile">The effective profile name this evaluation used.</param>
     /// <param name="ct">The caller's cancellation token.</param>
-    /// <returns>Success, or the error that stopped the write.</returns>
+    /// <returns>What the merge did, or the error that stopped the write.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="result"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="profile"/> is blank.</exception>
-    public async ValueTask<ErrorOr<Success>> WriteVideoAsync(
+    public async ValueTask<ErrorOr<GateWriteResult>> WriteVideoAsync(
         Guid runId,
         VideoGateResult result,
         GateMode mode,
@@ -180,13 +227,20 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
             return run.Errors;
         }
 
-        var document = Rebuild(Load(run.Value.GateResults), new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+        var stored = Load(run.Value.GateResults);
+        var block = VideoBlock(result);
+        if (IsSameStoredVerdict(stored, VideoKeyName, block, mode))
+        {
+            return GateWriteResult.Unchanged;
+        }
+
+        var document = Rebuild(stored, new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
         {
             [SchemaVersionKeyName] = JsonValue.Create(SchemaVersion),
             [ModeKeyName] = JsonValue.Create(mode.ToWire()),
             [ProfileKeyName] = JsonValue.Create(profile),
             [EvaluatedAtKeyName] = JsonValue.Create(Timestamp()),
-            [VideoKeyName] = VideoBlock(result),
+            [VideoKeyName] = block,
         });
 
         return Persist(run.Value, document);
@@ -207,9 +261,9 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
     /// <param name="gate">The gate whose block is amended: <see cref="StoryGate"/> or <see cref="VideoGate"/>.</param>
     /// <param name="failureCode">The code to append, for example <c>etag_conflict</c>.</param>
     /// <param name="ct">The caller's cancellation token.</param>
-    /// <returns>Success, or the error that stopped the write.</returns>
+    /// <returns>What the merge did — <see cref="GateWriteResult.Unchanged"/> when the code is already there — or the error that stopped the write.</returns>
     /// <exception cref="ArgumentException"><paramref name="gate"/> or <paramref name="failureCode"/> is blank.</exception>
-    public async ValueTask<ErrorOr<Success>> AppendFailureAsync(
+    public async ValueTask<ErrorOr<GateWriteResult>> AppendFailureAsync(
         Guid runId,
         string gate,
         string failureCode,
@@ -225,9 +279,19 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
         }
 
         var stored = Load(run.Value.GateResults);
+        var storedBlock = stored[gate] as JsonObject;
+        var updated = BlockWithFailure(storedBlock, failureCode);
+
+        // The same code on the same block is the same refusal recorded twice: the caller's notice for it is already
+        // queued, and a second stop with the same reason must not mail the owner again (02.8.2-T1 F8).
+        if (storedBlock is not null && JsonNode.DeepEquals(storedBlock, updated))
+        {
+            return GateWriteResult.Unchanged;
+        }
+
         var document = Rebuild(stored, new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
         {
-            [gate] = BlockWithFailure(stored[gate] as JsonObject, failureCode),
+            [gate] = updated,
         });
 
         return Persist(run.Value, document);
@@ -280,7 +344,7 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
         var block = new JsonObject
         {
             ["flagged"] = JsonValue.Create(evidence.ModerationFlagged),
-            ["categories"] = Strings(evidence.ModerationCategories),
+            ["categories"] = Strings(Storable(evidence.ModerationCategories)),
         };
 
         if (evidence.ModerationUnavailableDetail is { } detail)
@@ -325,6 +389,101 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
         }
 
         return array;
+    }
+
+    /// <summary>
+    /// Whether the stored document already holds exactly the verdict this write carries for one gate (02.8.2-T1
+    /// F8): the same block — checks, values, thresholds, details and failures included — under the same mode. The
+    /// comparison is by value, so a document that PostgreSQL re-ordered and re-normalised on its way through
+    /// <c>jsonb</c> still compares equal to the block just built.
+    /// </summary>
+    /// <remarks>
+    /// The caller needs this to tell "a verdict the run already holds" from "a new one": a re-evaluation of a stop
+    /// the owner was already told about must not queue a second notice. The mode is part of the comparison because
+    /// it is what turns a passing verdict into a dry-run stop, and the block is what turns it into a failing one.
+    /// </remarks>
+    /// <param name="stored">The stored document; an unusable one is empty and never matches.</param>
+    /// <param name="gateKey">The gate's block key: <see cref="StoryKeyName"/> or <see cref="VideoKeyName"/>.</param>
+    /// <param name="block">The block this write would store.</param>
+    /// <param name="mode">The mode of this evaluation.</param>
+    /// <returns><see langword="true"/> when the stored verdict is the one this write carries.</returns>
+    private static bool IsSameStoredVerdict(JsonObject stored, string gateKey, JsonObject block, GateMode mode) =>
+        stored[ModeKeyName] is JsonValue storedMode
+        && storedMode.TryGetValue<string>(out var storedModeWire)
+        && string.Equals(storedModeWire, mode.ToWire(), StringComparison.Ordinal)
+        && stored[gateKey] is { } storedBlock
+        && JsonNode.DeepEquals(storedBlock, block);
+
+    /// <summary>
+    /// The values of <paramref name="values"/> PostgreSQL can store (02.8.2-T1 SEC-8): a string a <c>jsonb</c> write
+    /// would refuse — one carrying a <c>NUL</c> or an unpaired surrogate — is dropped at copy time, so one
+    /// unreadable vendor string cannot make the run's verdict, and with it the notice the owner still needs,
+    /// unstoreable on every retry.
+    /// </summary>
+    /// <param name="values">The values as the evidence carries them.</param>
+    /// <returns>The storable ones, in order; the same list when every value is storable.</returns>
+    private static IReadOnlyList<string> Storable(IReadOnlyList<string> values)
+    {
+        for (var index = 0; index < values.Count; index++)
+        {
+            if (IsStorableText(values[index]))
+            {
+                continue;
+            }
+
+            var kept = new List<string>(values.Count - 1);
+
+            for (var keptIndex = 0; keptIndex < values.Count; keptIndex++)
+            {
+                if (keptIndex != index && IsStorableText(values[keptIndex]))
+                {
+                    kept.Add(values[keptIndex]);
+                }
+            }
+
+            return kept;
+        }
+
+        return values;
+    }
+
+    /// <summary>Whether a copied string is exactly what <c>jsonb</c> stores: nothing in it needed cleaning.</summary>
+    /// <param name="value">The value to copy.</param>
+    /// <returns><see langword="true"/> when the value can be stored as it is.</returns>
+    private static bool IsStorableText(string value) =>
+        string.Equals(TextSafety.Clean(value), value, StringComparison.Ordinal);
+
+    /// <summary>
+    /// A bounded, control-character-free rendering of a stored string for a log property (02.8.2-T1 SEC-6): the
+    /// gate profile reference and the profile name come from stored configuration, so a long value, or one carrying
+    /// control characters, must not reach a log line as it is.
+    /// </summary>
+    /// <remarks>
+    /// Public because this solution has no <c>InternalsVisibleTo</c> and the tests exercise it (the
+    /// <c>BibleEtags</c> precedent); the gate evaluators of this namespace call it too.
+    /// </remarks>
+    /// <param name="value">The stored value; <see langword="null"/> becomes the empty string.</param>
+    /// <returns>At most <see cref="LogSafeMaxLength"/> characters, none below U+0020 and none U+007F.</returns>
+    public static string LogSafe(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var length = Math.Min(value.Length, LogSafeMaxLength);
+        var buffer = new char[length];
+
+        for (var index = 0; index < length; index++)
+        {
+            var character = value[index];
+            buffer[index] = character < ' ' || character == '\u007f' ? '?' : character;
+        }
+
+        var safe = new string(buffer);
+
+        // A cut that lands inside a surrogate pair would leave half of one in the log line: drop the orphan.
+        return char.IsHighSurrogate(safe[^1]) ? safe[..^1] : safe;
     }
 
     /// <summary>The named block with its <c>failures[]</c> extended, or a minimal failing block when there is none.</summary>
@@ -453,11 +612,23 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
         return run is null ? GateErrors.RunNotFound : run;
     }
 
-    private static ErrorOr<Success> Persist(AutopilotRun run, JsonObject document)
+    private static ErrorOr<GateWriteResult> Persist(AutopilotRun run, JsonObject document)
     {
-        var recorded = run.RecordGateResults(document.ToJsonString());
+        var json = document.ToJsonString();
 
-        return recorded.IsError ? recorded.Errors : Result.Success;
+        // SEC-8 (02.8.2-T1): PostgreSQL's jsonb refuses a NUL and an unpaired surrogate, and the exception it
+        // answers at commit would roll back the verdict's whole transaction — including the owner's notice — on
+        // every retry. The one point every write path goes through checks the merged document first.
+        if (!TextSafety.IsPersistableJson(json))
+        {
+            return Error.Failure(
+                NotPersistableErrorCode,
+                "The gate verdict carries a value PostgreSQL cannot store; nothing was written.");
+        }
+
+        var recorded = run.RecordGateResults(json);
+
+        return recorded.IsError ? recorded.Errors : GateWriteResult.Written;
     }
 
     private string Timestamp() => Format(clock.UtcNow);

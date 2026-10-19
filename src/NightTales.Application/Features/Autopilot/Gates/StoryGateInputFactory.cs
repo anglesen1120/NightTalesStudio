@@ -31,15 +31,18 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <b>Never throws on stored data.</b> A null, truncated or foreign <c>audit_report</c>, a missing
 /// <c>model_review</c>, an unreadable <c>content</c> document and a malformed issue entry all have a defined
 /// answer here: the field reads as absent, and the Domain check that needs it fails closed with
-/// <see cref="GateDetailCodes.FieldAbsent"/> (or its own code). The one exception is the D4 length band, which
-/// cannot be absent (check 11 has no closed value) and is answered with an <see cref="ErrorOr"/> error instead
-/// of a band nobody calibrated.
+/// <see cref="GateDetailCodes.FieldAbsent"/> (or its own code). Nothing is made clean by omission: an absent
+/// <c>local</c> block, an absent issues array, an absent <c>real_world_claims</c> member and a half-written
+/// <c>revision.review_after</c> are all <em>unreadable</em>, so their checks fail (F4/F6/F14). The one exception
+/// is the D4 length band, which cannot be absent (check 11 has no closed value) and is answered with an
+/// <see cref="ErrorOr"/> error instead of a band nobody calibrated.
 /// </para>
 /// <para>
 /// <b>Review selection (02.6.2-T1, D22).</b> When <c>revision.applied</c> is true the current state is review #2,
 /// so the scores and the issues come from <c>revision.review_after</c>; otherwise they come from
-/// <c>model_review</c> — the same rule as <c>StoryReadProjection.Review</c>. <c>local.issues</c> is always
-/// unioned in, because a local validator issue is not part of either review.
+/// <c>model_review</c> — the same rule as <c>StoryReadProjection.Review</c>, and an unreadable <c>review_after</c>
+/// is unknown rather than a fallback to the superseded review. <c>local.issues</c> is always unioned in, because a
+/// local validator issue is not part of either review.
 /// </para>
 /// <para>
 /// <b>No story text leaves here.</b> The reading carries ids, codes, numbers, the D22 segment addresses of the
@@ -306,7 +309,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         if (root is null)
         {
             // A missing, truncated or foreign document: every check that reads the audit fails closed, and the
-            // real-world signal is unreadable rather than "no hit".
+            // real-world signal, the issues and the keyword violations are unreadable rather than clean.
             return new AuditReading(
                 new AuditFacts(
                     ModelReviewPresent: false,
@@ -317,7 +320,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                     RevisionApplied: null),
                 StoredModerationVerdict.None,
                 RealWorld: null,
-                KeywordViolations: 0);
+                KeywordViolations: null);
         }
 
         var review = root[ModelReviewMember] as JsonObject;
@@ -325,18 +328,18 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         var applied = ReadFlag(revision?[AppliedMember]);
 
         // 02.6.2-T1 (D22), the same rule as StoryReadProjection.Review: with an applied revision the current
-        // state is review #2 and only a well-formed one is read, so a half-written block falls back to
-        // model_review instead of opening the gate on review #1's already-fixed issues.
+        // state is review #2. F14: an absent or half-written review_after is not review #2 — the text was
+        // rewritten, so its scores and its issues are unknown (null) and checks 2–4 fail closed. The rule never
+        // falls back to model_review, whose review belongs to the text the revision replaced.
         var reviewAfter = applied == true ? revision?[ReviewAfterMember] as JsonObject : null;
-        var selected = reviewAfter is { } after && after[ScoresMember] is JsonObject && after[IssuesMember] is JsonArray
-            ? after
-            : review;
+        var selected = applied == true && !IsCompleteReview(reviewAfter) ? null : reviewAfter ?? review;
 
-        var localBlock = root[LocalMember] as JsonObject;
-        // The `local` node itself is handed over, not its `issues` member: a block that is present but is not an
-        // object could not be read, so its issues are unknown (null) and check 4 fails closed instead of reading an
-        // empty list as "the editor found nothing".
-        var issues = ReadIssues(root[LocalMember], selected?[IssuesMember]);
+        // F4: the `local` block is read whole. A block that is absent, is not an object or carries no `issues`
+        // array is unreadable — both writers always store it (StoryGenerationPipeline, EditStoryCommandHandler)
+        // and StoryReadProjection reads a missing block as unreadable — so the issues of check 4 and the keyword
+        // violations of check 12 are unknown (null) and both checks fail closed.
+        var local = ReadLocalIssues(root[LocalMember]);
+        var issues = selected is null || local is null ? null : ReadIssues(local, selected[IssuesMember]);
         var moderation = ReadModeration(root[ModerationMember]);
 
         return new AuditReading(
@@ -344,7 +347,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                 ModelReviewPresent: review is not null,
                 // A missing flag is stale (the projection's rule), so an edited story fails check 1.
                 ModelReviewStale: ReadFlag(review?[StaleMember]) is not false,
-                Scores: ReadScores(selected?[ScoresMember]),
+                Scores: selected is null ? null : ReadScores(selected[ScoresMember]),
                 Issues: issues,
                 // A block that is not a complete, current verdict — missing, malformed, stale or unavailable
                 // (StoryDraftModeration.NeedsRecheck, D12) — is no evidence that the draft was clean: check 6 fails
@@ -353,8 +356,18 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                 RevisionApplied: revision is null ? false : applied),
             moderation,
             ReadRealWorld(review),
-            CountKeywordViolations(localBlock?[IssuesMember]));
+            KeywordViolations: local is null ? null : CountKeywordViolations(local));
     }
+
+    // Whether a revision's review #2 is a complete block, the selection rule of StoryReadProjection.Review: only a
+    // review_after that carries both its scores and its issues is the current state (F14).
+    private static bool IsCompleteReview(JsonObject? reviewAfter) =>
+        reviewAfter is { } after && after[ScoresMember] is JsonObject && after[IssuesMember] is JsonArray;
+
+    // The `issues` member of the local block, or null when the block or the member is absent or of another type:
+    // an unreadable local block is unknown, never an empty list (F4).
+    private static JsonArray? ReadLocalIssues(JsonNode? localBlock) =>
+        localBlock is JsonObject block && block[IssuesMember] is JsonArray issues ? issues : null;
 
     // The stored moderation block's value for checks 7 and the check-6 fallback. StoryDraftModeration owns the
     // shape (flagged/categories/blocking/stale/unavailable) and the "needs a fresh check" rule, so the gate and
@@ -393,8 +406,10 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
 
         if (review[RealWorldClaimsMember] is not { } claims)
         {
-            // A review that stored no claims array asserted none (AuditReportBuilder always writes the member).
-            return new RealWorldSignal(false, []);
+            // F6: only a review that stored the member can assert "no claims" (AuditReportBuilder always writes
+            // it), so an absent one is a foreign or truncated document and check 8 fails closed. A present but
+            // empty array is still the clean signal "the model claimed nothing".
+            return null;
         }
 
         if (claims is not JsonArray array)
@@ -416,46 +431,26 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         return new RealWorldSignal(hits.Count > 0, hits);
     }
 
-    // local.issues ∪ the selected review's issues (plan §3.1 check 4). Null means "not readable" and fails the
-    // check closed; an entry whose severity or kind is unreadable is carried as an empty string, which the Domain
-    // rule reads as "not taste" — i.e. it counts, so a malformed issue can never open the gate. A `local` block
-    // that is present but is not an object is itself unreadable: its issues are unknown, not an empty list.
-    private static List<GateIssueFacts>? ReadIssues(JsonNode? localBlock, JsonNode? review)
+    // local.issues ∪ the selected review's issues (plan §3.1 check 4). Both sides must be arrays: a selected
+    // review without an `issues` array is as unreadable as an absent local block (AuditReportBuilder always writes
+    // it), so the check fails closed rather than counting one side only. An entry whose severity or kind is
+    // unreadable is carried as an empty string, which the Domain rule counts as blocking (F5), so a malformed
+    // issue can never open the gate.
+    private static List<GateIssueFacts>? ReadIssues(JsonArray local, JsonNode? reviewIssues)
     {
-        JsonNode? local;
-        if (localBlock is null)
-        {
-            local = null;
-        }
-        else if (localBlock is JsonObject block)
-        {
-            local = block[IssuesMember];
-        }
-        else
+        if (reviewIssues is not JsonArray review)
         {
             return null;
         }
 
-        if ((local is not null && local is not JsonArray) || (review is not null && review is not JsonArray))
-        {
-            return null;
-        }
-
-        var issues = new List<GateIssueFacts>(
-            ((local as JsonArray)?.Count ?? 0) + ((review as JsonArray)?.Count ?? 0));
-
-        Append(local as JsonArray);
-        Append(review as JsonArray);
+        var issues = new List<GateIssueFacts>(local.Count + review.Count);
+        Append(local);
+        Append(review);
 
         return issues;
 
-        void Append(JsonArray? array)
+        void Append(JsonArray array)
         {
-            if (array is null)
-            {
-                return;
-            }
-
             foreach (var entry in array)
             {
                 var issue = entry as JsonObject;
@@ -468,16 +463,12 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
 
     // Check 12's violations. The stored audit is the only source: the two blocked-keyword rules of
     // StoryDraftValidator (D3, blocking) and StoryQualityChecker (Q-KW-03, advisory) both mean a keyword broke
-    // KeywordRules, and the gate must not re-run the checker (StoryVersionFacts.KeywordViolationCount).
-    private static int CountKeywordViolations(JsonNode? localIssues)
+    // KeywordRules, and the gate must not re-run the checker (StoryVersionFacts.KeywordViolationCount). The local
+    // block is read, never empty-by-absence: an unreadable one leaves the count unknown (F4).
+    private static int CountKeywordViolations(JsonArray localIssues)
     {
-        if (localIssues is not JsonArray array)
-        {
-            return 0;
-        }
-
         var violations = 0;
-        foreach (var entry in array)
+        foreach (var entry in localIssues)
         {
             var rule = entry is JsonObject issue ? ReadText(issue[RuleMember]) : null;
             if (string.Equals(rule, StoryQualityChecker.KeywordInvalid, StringComparison.Ordinal)
@@ -540,19 +531,57 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// name the thresholds resolve through.
     /// </summary>
     /// <remarks>
-    /// The same read as <see cref="VideoGateInputFactory.ReadGateThresholdsRef"/>, and the same defensive one:
-    /// 02.8.3-T1 owns the document and has no typed member for it, so an absent, unreadable or foreign document —
-    /// or a key that is absent or not a non-blank string — is <see langword="null"/>.
+    /// The one implementation of this read (F11): <see cref="VideoGateInputFactory"/> calls
+    /// <see cref="ReadGateThresholdsRef(string, SettingsFault)"/> so the two factories cannot drift. The read is
+    /// defensive: 02.8.3-T1 owns the document and has no typed member for it, so an absent, unreadable or foreign
+    /// document — or a key that is absent or not a non-blank string — is <see langword="null"/>.
     /// </remarks>
     /// <param name="autopilotSettings">The stored <c>series.autopilot_settings</c> text, or null when there is none.</param>
     /// <returns>
     /// The profile name, or <see langword="null"/>. The caller resolves null to the <c>default</c> profile and never
     /// disables the gate (plan §10 decision 6).
     /// </returns>
-    public static string? ReadGateThresholdsRef(string? autopilotSettings)
+    public static string? ReadGateThresholdsRef(string? autopilotSettings) =>
+        ReadGateThresholdsRef(autopilotSettings, out _);
+
+    /// <summary>
+    /// The same read, reporting why an unreadable document could not be read so a caller that logs can say it
+    /// (F11); <see cref="VideoGateInputFactory.ReadGateThresholdsRef"/> is the only such caller.
+    /// </summary>
+    /// <param name="autopilotSettings">The stored <c>series.autopilot_settings</c> text, or null when there is none.</param>
+    /// <param name="fault">
+    /// <see cref="SettingsFault.None"/> when the document was read or was simply absent, otherwise the reason it
+    /// could not be read.
+    /// </param>
+    /// <returns>The profile name, or <see langword="null"/>.</returns>
+    internal static string? ReadGateThresholdsRef(string? autopilotSettings, out SettingsFault fault)
     {
-        var settings = ParseDocument(autopilotSettings);
-        var name = settings is null ? null : ReadText(settings[GateThresholdsRefMember]);
+        fault = SettingsFault.None;
+        if (string.IsNullOrWhiteSpace(autopilotSettings))
+        {
+            return null;
+        }
+
+        JsonNode? parsed;
+        try
+        {
+            parsed = JsonNode.Parse(autopilotSettings);
+        }
+        catch (JsonException)
+        {
+            fault = SettingsFault.Unreadable;
+
+            return null;
+        }
+
+        if (parsed is not JsonObject settings)
+        {
+            fault = SettingsFault.NotAnObject;
+
+            return null;
+        }
+
+        var name = ReadText(settings[GateThresholdsRefMember]);
         return string.IsNullOrWhiteSpace(name) ? null : name;
     }
 
@@ -670,10 +699,29 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// <param name="Facts">The facts checks 1–6 read.</param>
     /// <param name="Moderation">The stored moderation verdict (check 7).</param>
     /// <param name="RealWorld">The persisted model claims (check 8), or null when they could not be read.</param>
-    /// <param name="KeywordViolations">The stored blocked-keyword issues (check 12).</param>
+    /// <param name="KeywordViolations">
+    /// The stored blocked-keyword issues (check 12), or <see langword="null"/> when the local block could not be
+    /// read, which fails the check closed.
+    /// </param>
     private sealed record AuditReading(
         AuditFacts Facts,
         StoredModerationVerdict Moderation,
         RealWorldSignal? RealWorld,
-        int KeywordViolations);
+        int? KeywordViolations);
+
+    /// <summary>
+    /// Why a stored <c>autopilot_settings</c> document could not be read, so the one caller that logs
+    /// (<see cref="VideoGateInputFactory.ReadGateThresholdsRef"/>) can say which case it was (F11).
+    /// </summary>
+    internal enum SettingsFault
+    {
+        /// <summary>The document was read, or there was none to read.</summary>
+        None,
+
+        /// <summary>The stored text is not JSON.</summary>
+        Unreadable,
+
+        /// <summary>The stored text parses but is not a JSON object.</summary>
+        NotAnObject,
+    }
 }

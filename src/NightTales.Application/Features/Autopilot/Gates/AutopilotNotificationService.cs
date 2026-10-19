@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Email;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Generation;
 using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 
@@ -87,9 +88,10 @@ public static class OwnerActionReasons
 /// </para>
 /// <para>
 /// <b>Fail closed, never throws.</b> A missing run, a run without an episode, a missing episode/series/owner row,
-/// an unknown reason code and a refused e-mail queue are answered with an error instead of an exception, and
-/// nothing is written in those cases: a notification that cannot be addressed must not be able to approve or
-/// reject anything by mistake, and a half-written notice is no notice at all.
+/// an unknown reason code, a substitution value the message store cannot keep (<see cref="ParamsNotPersistableErrorCode"/>)
+/// and a refused e-mail queue are answered with an error instead of an exception, and nothing is written in those
+/// cases: a notification that cannot be addressed must not be able to approve or reject anything by mistake, and a
+/// half-written notice is no notice at all.
 /// </para>
 /// </remarks>
 /// <param name="db">The write model of the caller's unit of work; a tracked run is what raises the event.</param>
@@ -114,6 +116,14 @@ public sealed partial class AutopilotNotificationService(
 
     /// <summary>The catalog name of the owner-action e-mail (02.8.2 plan §5, 09 README BD9).</summary>
     public const string EmailTemplate = "autopilot_owner_action_required";
+
+    /// <summary>
+    /// The fixed code a notice answers when one of its substitution values cannot be stored (a <c>NUL</c> or an
+    /// unpaired surrogate, 02.8.2-T1 SEC-8). Nothing is queued and nothing is written in that case: the alternative
+    /// is an error at the caller's commit, which would fail the notice — and the run's whole transaction — on every
+    /// retry.
+    /// </summary>
+    public const string ParamsNotPersistableErrorCode = "autopilot_notice_params_not_persistable";
 
     /// <summary>
     /// The static episode path the e-mail points at. It is a plain path, not a minted link: this template carries
@@ -219,6 +229,27 @@ public sealed partial class AutopilotNotificationService(
                 $"The owner-action notice of autopilot run {runId} cannot be addressed: a row it names is gone.");
         }
 
+        // SEC-8 (02.8.2-T1): the five substitution values are the owner's own metadata and the run's slot, so a
+        // NUL or an unpaired surrogate can only come from the owner's own titles — and the write that refused one
+        // would fail the notice, and with it the run's transaction, on every retry. The message is checked before
+        // it is queued, so a bad value is a fixed code answer that adds nothing to the unit of work.
+        var parameters = EmailParameters(
+            series.Title,
+            episode.Title,
+            run.StartedAt,
+            reason,
+            failures,
+            episodeId,
+            profile.UiLocale);
+        if (!TextSafety.IsPersistableJson(JsonSerializer.Serialize(parameters)))
+        {
+            LogParamsNotPersistable(runId, episodeId);
+
+            return Error.Failure(
+                ParamsNotPersistableErrorCode,
+                $"The owner-action notice of autopilot run {runId} carries a value the message store cannot keep; nothing was written.");
+        }
+
         // Queued first, in this transaction: a refusal is an error answer the caller rolls back and nothing else of
         // the notice was added yet (the ConnectChannelConnectionHandler precedent, 06.1.2-T2). Queueing here, rather
         // than in the outbox delivery, is what keeps an at-least-once redelivery from queueing a second message
@@ -229,14 +260,7 @@ public sealed partial class AutopilotNotificationService(
                     run.UserId,
                     EmailTemplate,
                     profile.UiLocale,
-                    EmailParameters(
-                        series.Title,
-                        episode.Title,
-                        run.StartedAt,
-                        reason,
-                        failures,
-                        episodeId,
-                        profile.UiLocale)),
+                    parameters),
                 ct)
             .ConfigureAwait(false);
         if (queued.IsError)
@@ -346,6 +370,12 @@ public sealed partial class AutopilotNotificationService(
         Level = LogLevel.Warning,
         Message = "The owner-action notice of autopilot run {RunId} was not written: the run does not exist in this scope.")]
     private partial void LogRunMissing(Guid runId);
+
+    [LoggerMessage(
+        EventId = 6434,
+        Level = LogLevel.Warning,
+        Message = "The owner-action notice of autopilot run {RunId} for episode {EpisodeId} was not written: one of its substitution values cannot be stored.")]
+    private partial void LogParamsNotPersistable(Guid runId, Guid episodeId);
 
     [LoggerMessage(
         EventId = 6433,

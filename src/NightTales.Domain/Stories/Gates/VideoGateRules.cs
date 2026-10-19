@@ -11,7 +11,8 @@ namespace NightTales.Domain.Stories.Gates;
 /// It fails closed: the report's members are all nullable on purpose (CR-6), so a field that is missing,
 /// renamed or unmeasurable fails its own check with <see cref="GateDetailCodes.FieldAbsent"/> instead of being
 /// read as a zero or a <c>false</c>, and an absent report fails check 1 and closes every dependent check.
-/// Nothing here throws on data.
+/// Nothing here throws on data: a number the report could not have measured — non-finite, or beyond the
+/// magnitude of a real duration or loudness — is read as absent rather than cast (SEC-3).
 /// </para>
 /// <para>
 /// Checks 6 and 10 are recorded as passes with no measured value when subtitles were not requested, exactly
@@ -37,6 +38,13 @@ public static class VideoGateRules
     public const int PortraitHeight = 1920;
 
     private const int DriftDecimals = 4;
+
+    /// <summary>
+    /// The largest magnitude a stored measurement may carry before the gate refuses to read it (SEC-3): no render
+    /// reports a duration or a loudness this far out, and a value above it cannot be cast to <see cref="decimal"/>
+    /// without overflowing. Check 3 and check 4 read such a number as absent and fail closed instead of throwing.
+    /// </summary>
+    private const double MaxMeasurableMagnitude = 1e9;
 
     /// <summary>Evaluates the ten video checks over one assembled input.</summary>
     /// <param name="input">The stored facts; see <see cref="VideoGateInput"/>.</param>
@@ -68,16 +76,21 @@ public static class VideoGateRules
             : Missing(VideoGateCheckIds.QualityReportPass, GateCheckKinds.Flag, 1));
 
         // 3 — the container duration against the measured narration duration (05.5.1). A narration duration of
-        // zero or less cannot be judged, so it fails like an absent field, and the stored drift is rounded.
+        // zero or less cannot be judged, so it fails like an absent field, and so does a duration the report
+        // could not have measured (non-finite, or beyond MaxMeasurableMagnitude) — SEC-3. The verdict compares the
+        // exact drift; only the stored value is rounded.
         var tolerance = (decimal)thresholds.DurationTolerance;
-        var narration = report?.TtsDurationSec;
-        if (report?.DurationSec is { } container && narration is { } spoken && spoken > 0)
+        var containerSec = report?.DurationSec;
+        var narrationSec = report?.TtsDurationSec;
+        if (containerSec is { } container
+            && narrationSec is { } narration
+            && Measurable(container)
+            && Measurable(narration)
+            && narration > 0
+            && Drift(container, narration) is { } exact)
         {
-            var drift = Math.Round(
-                (decimal)(Math.Abs(container - spoken) / spoken),
-                DriftDecimals,
-                MidpointRounding.AwayFromZero);
-            checks.Add(new GateCheck(VideoGateCheckIds.Duration, GateCheckKinds.Maximum, drift, tolerance, drift <= tolerance, null));
+            var drift = Math.Round(exact, DriftDecimals, MidpointRounding.AwayFromZero);
+            checks.Add(new GateCheck(VideoGateCheckIds.Duration, GateCheckKinds.Maximum, drift, tolerance, exact <= tolerance, null));
         }
         else
         {
@@ -85,10 +98,11 @@ public static class VideoGateRules
         }
 
         // 4 — the integrated loudness, both ends inclusive. The recorded threshold is the deciding bound: the
-        // band's lower end when the value is below it, otherwise its upper end.
+        // band's lower end when the value is below it, otherwise its upper end. A loudness outside
+        // MaxMeasurableMagnitude is not a measurement (SEC-3), so it fails closed like an absent field.
         var minLufs = thresholds.LoudnessMinLufs;
         var maxLufs = thresholds.LoudnessMaxLufs;
-        if (report?.IntegratedLufs is { } lufs)
+        if (report?.IntegratedLufs is { } lufs && Measurable(lufs))
         {
             checks.Add(new GateCheck(
                 VideoGateCheckIds.Loudness,
@@ -206,6 +220,20 @@ public static class VideoGateRules
 
     private static GateCheck Flag(string id, bool value, bool required, string? detail) =>
         new(id, GateCheckKinds.Flag, value ? 1 : 0, required ? 1 : 0, value == required, detail);
+
+    // SEC-3: a number the report could not have measured — non-finite, or past the magnitude of a real duration
+    // or loudness — is not a measurement. Its check fails closed with field_absent, so the (decimal) cast of a
+    // poisoned stored value can never throw an OverflowException.
+    private static bool Measurable(double value) =>
+        double.IsFinite(value) && Math.Abs(value) <= MaxMeasurableMagnitude;
+
+    // The exact relative duration drift, or null when the quotient is not a usable measurement: a non-finite one
+    // (a denormal narration duration makes the ratio infinite) or one past the largest drift worth storing.
+    private static decimal? Drift(double container, double narration)
+    {
+        var ratio = Math.Abs(container - narration) / narration;
+        return double.IsFinite(ratio) && ratio <= MaxMeasurableMagnitude ? (decimal)ratio : null;
+    }
 
     private static GateCheck Missing(string id, string kind, decimal threshold) =>
         new(id, kind, null, threshold, false, GateDetailCodes.FieldAbsent);
