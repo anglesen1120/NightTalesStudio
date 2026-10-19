@@ -7,6 +7,7 @@ export { FactSheetEndpointsClient } from './services/fact-sheet-endpoints-client
 export { CatalogEndpointsClient } from './services/catalog-endpoints-client';
 export { EpisodeVideoEndpointsClient } from './services/episode-video-endpoints-client';
 export { RenderingEndpointsClient } from './services/rendering-endpoints-client';
+export { VideoReviewEndpointsClient } from './services/video-review-endpoints-client';
 export { YouTubeEtaEndpointsClient } from './services/you-tube-eta-endpoints-client';
 export { AuthEndpointsClient } from './services/auth-endpoints-client';
 export { MeEndpointsClient } from './services/me-endpoints-client';

@@ -1,5 +1,41 @@
 {
   "render": {
+    "review": {
+      "heading": "Review your video",
+      "approve": "Approve video",
+      "approve.title": "Approve this video?",
+      "approve.note": "Note for this version (optional)",
+      "approve.body": "The episode becomes ready to publish.",
+      "reject": "Reject — fix the script",
+      "reject.title": "Reject this video",
+      "reject.reason": "Reason (required, max 500 characters)",
+      "reject.target": "What happens next",
+      "reject.targetStory": "Fix the script, then render again",
+      "reject.targetReRender": "Re-render from the current script",
+      "reject.body": "The video is not published and the episode returns to the step you choose.",
+      "reMake": "Re-make video",
+      "reMake.title": "Re-make the video?",
+      "reMake.body": "A new render starts right away.",
+      "download": "Download MP4",
+      "urlFailed": "The video could not be loaded — try again",
+      "hints": "Quality notes",
+      "hints.none": "No quality notes",
+      "advisory": "Advisory only — you can still approve",
+      "noCaptions": "Vietnamese subtitles are burned into the video",
+      "expiresAt": "The viewing link expires at {{time}} and refreshes on its own",
+      "retry": "Try loading the video again",
+      "fieldInvalid": "Enter a value within 500 characters. A rejection reason cannot be blank.",
+      "size": "File size",
+      "duration": "Duration",
+      "retentionUntil": "The final video is kept until {{time}}."
+    },
+    "quality": {
+      "subtitleSyncSuspect": "Subtitles may not match the narration timing",
+      "subtitleCuesLong": "Some subtitles stay on screen for a long time",
+      "musicNone": "This video has no background music",
+      "scenesTrimmed": "Some scenes were trimmed",
+      "scenesSparse": "Few scenes for this video"
+    },
     "make": {
       "action": "Make video",
       "retry": "Retry making video",

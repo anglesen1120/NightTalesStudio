@@ -10,6 +10,11 @@ export { EpisodesRepository } from './domain/episodes.repository';
 // drives a render from a route of its own binds the port instead of reaching into `data-access/` (README D2). Its
 // adapter is bound by `episodes.routes.ts` on the `:id` route, beside `EpisodesRepository`.
 export { RenderRepository } from './domain/render.repository';
+// The video-review half of `/episodes/:id` (10.6.2-T1), exposed on the same terms as the render port above: the port
+// itself, so a feature that drives a review from a route of its own binds it instead of reaching into `data-access/`
+// (README D2). Its adapter is bound where `RenderRepository`'s is — on the `:id` route, through
+// `provideVideoReviewRepository()`.
+export { VideoReviewRepository } from './domain/video-review.repository';
 // `EPISODE_STATUSES` travels with `EpisodeStatus`: the dashboard de-duplicates drifting statuses by this enum order
 // (10.4.1-T1 contract item 2), and re-declaring the order there would let the two copies drift apart.
 export { EPISODE_STATUSES, type EpisodeListItem, type EpisodeStatus } from './domain/episode.model';

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { DeferBlockBehavior, DeferBlockState, TestBed, type ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TRANSLOCO_LOADER, TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
@@ -31,7 +31,11 @@ import { ResearchStore } from '../application/research.store';
 import type { ResearchSource } from '../domain/research.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { RenderRepository } from '../domain/render.repository';
+import { VideoReviewRepository } from '../domain/video-review.repository';
+import { FakeVideoReviewRepository } from '../testing/fake-video-review.repository';
 import { MakeVideoStore } from '../application/make-video.store';
+import { VideoReviewStore } from '../application/video-review.store';
+import { VideoDecisionDialogComponent } from '../ui/video-decisions/video-decision-dialog.component';
 import { FakeRenderRepository } from '../testing/fake-render.repository';
 import { FakeEpisodesRepository, EPISODE_ID, episodeDetail } from '../testing/fake-episodes.repository';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
@@ -48,7 +52,7 @@ import { FakeStoryRepository, attestation, auditReport, reviewIssue, similarityS
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import type { SegmentAnnotation } from '../domain/annotation.model';
-import type { EpisodeDetail } from '../domain/episode.model';
+import type { EpisodeDetail, FinalVideoAsset } from '../domain/episode.model';
 import type { RenderJob } from '../domain/render.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from './story-review.page';
@@ -302,6 +306,8 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: StoryRepository, useValue: repo },
       { provide: RenderRepository, useValue: renderRepo },
+      // The review port (10.6.2-T1): the page provides the component-scoped VideoReviewStore, which injects it.
+      { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
       // The page provides the render timeline store, which is the only thing here that reads the socket (D11/WR4).
       { provide: RealtimeService, useValue: realtime },
       { provide: ConflictDialog, useValue: dialogs },
@@ -320,6 +326,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: VersionsStore, useValue: versions },
       RenderTimelineStore,
       MakeVideoStore,
+      VideoReviewStore,
       ...fakeResearchStoreProviders(research),
       ApprovalStore,
     ] },
@@ -531,11 +538,12 @@ describe('StoryReviewPage self-review wiring', () => {
         { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
         { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: stories },
         { provide: RenderRepository, useValue: new FakeRenderRepository() },
+        { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
         { provide: RealtimeService, useValue: new PageRealtime() },
         { provide: SessionApi, useValue: new FakeSessionApi() },
       ],
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [EpisodeDetailStore, RenderTimelineStore, MakeVideoStore, StoryEditorStore, { provide: ApprovalStore, useValue: fakeApprovalStore() }, { provide: VersionsStore, useValue: fakeVersionsStore() }, ...fakeResearchStoreProviders(research)] },
+      set: { providers: [EpisodeDetailStore, RenderTimelineStore, MakeVideoStore, VideoReviewStore, StoryEditorStore, { provide: ApprovalStore, useValue: fakeApprovalStore() }, { provide: VersionsStore, useValue: fakeVersionsStore() }, ...fakeResearchStoreProviders(research)] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
@@ -569,6 +577,9 @@ describe('StoryReviewPage', () => {
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
         { provide: RenderRepository, useValue: new FakeRenderRepository() },
+        { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
+        // The page-scoped review store injects the root `SessionStore` (D6/WD10).
+        { provide: SessionApi, useValue: new FakeSessionApi() },
       ],
     }).overrideComponent(StoryReviewPage, {
       set: { providers: [
@@ -578,6 +589,7 @@ describe('StoryReviewPage', () => {
         { provide: ApprovalStore, useValue: fakeApprovalStore() },
         RenderTimelineStore,
         MakeVideoStore,
+        VideoReviewStore,
         ...fakeResearchStoreProviders(fakeResearchStore()),
       ] },
     }).compileComponents();
@@ -734,12 +746,15 @@ describe('StoryReviewPage', () => {
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
         { provide: RenderRepository, useValue: new FakeRenderRepository() },
+        { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
+        // The page-scoped review store injects the root `SessionStore` (D6/WD10).
+        { provide: SessionApi, useValue: new FakeSessionApi() },
       ],
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] },
       add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, MakeVideoStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, MakeVideoStore, VideoReviewStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -781,11 +796,14 @@ describe('StoryReviewPage', () => {
         { provide: ConflictDialog, useValue: { open: vi.fn() } },
         { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
         { provide: RenderRepository, useValue: new FakeRenderRepository() },
+        { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
+        // The page-scoped review store injects the root `SessionStore` (D6/WD10).
+        { provide: SessionApi, useValue: new FakeSessionApi() },
       ],
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, MakeVideoStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, RenderTimelineStore, MakeVideoStore, VideoReviewStore, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -1679,6 +1697,8 @@ async function createRenderPage(detail: EpisodeDetail, options: { readonly answe
   if (options.status !== undefined) approval.status.set(options.status);
   // The render command port (10.6.1-T2): both the timeline's cancel and the make-video command go through it.
   const renderRepo = new FakeRenderRepository();
+  // The review port (10.6.2-T1): unused by these states, but the page's component-scoped store injects it.
+  const reviewRepo = new FakeVideoReviewRepository();
   // The one confirm the make-video command opens; every other dialog in this view is a fake too.
   const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
   const params = new BehaviorSubject(convertToParamMap({ id: detail.id }));
@@ -1702,6 +1722,7 @@ async function createRenderPage(detail: EpisodeDetail, options: { readonly answe
       } },
       { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: new FakeStoryRepository() },
       { provide: RenderRepository, useValue: renderRepo },
+      { provide: VideoReviewRepository, useValue: reviewRepo },
       { provide: RealtimeService, useValue: realtime },
       { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: ConflictDialog, useValue: fakeConflictDialogs() },
@@ -1715,6 +1736,7 @@ async function createRenderPage(detail: EpisodeDetail, options: { readonly answe
       EpisodeDetailStore,
       RenderTimelineStore,
       MakeVideoStore,
+      VideoReviewStore,
       { provide: StoryEditorStore, useValue: story },
       { provide: ApprovalStore, useValue: approval },
       { provide: VersionsStore, useValue: fakeVersionsStore() },
@@ -1726,7 +1748,7 @@ async function createRenderPage(detail: EpisodeDetail, options: { readonly answe
   detailStore = fixture.componentRef.injector.get(EpisodeDetailStore);
   fixture.detectChanges(); await fixture.whenStable();
   fixture.detectChanges(); await fixture.whenStable();
-  return { fixture, root: fixture.nativeElement as HTMLElement, episodes, realtime, approval, params, renderRepo, story, confirm };
+  return { fixture, root: fixture.nativeElement as HTMLElement, episodes, realtime, approval, params, renderRepo, reviewRepo, story, confirm };
 }
 
 describe('StoryReviewPage render view (10.6.1-T1)', () => {
@@ -2134,5 +2156,419 @@ describe('StoryReviewPage make video and cancel wiring (10.6.1-T2)', () => {
     }));
     expect(root.querySelector('nts-render-timeline')).not.toBeNull();
     expect(root.querySelector('[data-testid="render-cancel"]')).toBeNull();
+  });
+});
+
+/** The final asset of a reviewed render (09.5.3-T1/WD4): metadata only, and never a media URL. */
+const FINAL_VIDEO: FinalVideoAsset = {
+  assetId: 'asset-1', contentType: 'video/mp4', sizeBytes: 12_345_678, durationSec: 184,
+  retentionUntil: '2026-11-19T10:00:00+00:00', sha256: 'a'.repeat(64),
+};
+
+/** The status chip's copy is the core scope's (`core.ui.statusChip.<status>`), not the episodes feature's. */
+const statusChipCopy: Readonly<Record<string, string>> = coreVi.core.ui.statusChip;
+
+/**
+ * The review fixture (WD4): the finished cut of an approved script, with the render-quality hints of 10 CR-12, one
+ * scene the image pipeline dropped and the asset `ready` downloads. `nextActions` is the server's own permission, so
+ * each spec states exactly which decision the episode offers.
+ */
+function reviewDetail(nextActions: readonly string[] = ['approve_video', 'reject_video', 'download'], overrides: Partial<EpisodeDetail> = {}): EpisodeDetail {
+  return episodeDetail({
+    status: 'video_review', hasCurrentStory: true, currentStory: snapshot, title: snapshot.content.title,
+    nextActions, finalVideo: FINAL_VIDEO,
+    renderJob: renderJobFixture({
+      status: 'succeeded', stage: 'ingesting', percent: 100, finishedAt: '2026-10-19T00:00:00+00:00',
+      hints: ['subtitle_sync_suspect', 'unknown_hint'],
+      images: { needed: 3, succeeded: 2, skipped: [{ segment: 'seg-2', reason: 'moderated' }] },
+    }),
+    ...overrides,
+  });
+}
+
+/**
+ * The review-view harness (10.6.2-T1/WD4): the page with the real `EpisodeDetailStore` and the real
+ * `VideoReviewStore` over the scriptable review port, progress-pushing realtime and episodes repository, so a spec
+ * proves the served branch and the two counts the view promises against the fakes' own call records — one
+ * `GET …/video-url` per review view open, one `GET /episodes/{id}` for the whole page. `answers` queues the reads
+ * after the first one (the `EpisodeDetailStore.refetch()` a decision awaits; holding one open proves that the
+ * *refetch*, not the answer, moves the branch), `urlFailure` fails the opening URL read, and `messageKey` is the leaf
+ * the mapper answers a refusal with (the default ignores the code, so a spec that asserts copy names its own).
+ */
+async function createReviewPage(
+  detail: EpisodeDetail,
+  options: {
+    readonly answers?: readonly (EpisodeDetail | Promise<EpisodeDetail>)[];
+    readonly urlFailure?: unknown;
+    readonly messageKey?: (error: AppError) => string;
+  } = {},
+) {
+  const episodes = new FakeEpisodesRepository().scriptGet(() => Promise.resolve(detail));
+  for (const answer of options.answers ?? []) episodes.scriptGet(() => Promise.resolve(answer));
+  const reviewRepo = new FakeVideoReviewRepository();
+  if (options.urlFailure !== undefined) reviewRepo.willFailUrl(options.urlFailure);
+  const renderRepo = new FakeRenderRepository();
+  const snack = fakeSnackBar();
+  const realtime = new PageRealtime();
+  // The real `ApprovalStore` derives its status from the episode the page owns; this fake mirrors that derivation, so a
+  // refetched `story_approved` reaches the branch the template gates on `approval.status()`.
+  const approval = { ...fakeApprovalStore(), status: computed(() => detailStore?.detail()?.status ?? 'story_review') };
+  const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
+  const params = new BehaviorSubject(convertToParamMap({ id: detail.id }));
+  const query = convertToParamMap({});
+  let detailStore: EpisodeDetailStore | null = null;
+  const story = { ...fakeStoryStore(), load: (id: string) => detailStore?.load(id) ?? Promise.resolve(null) };
+  await TestBed.configureTestingModule({
+    imports: [StoryReviewPage, translations], deferBlockBehavior: DeferBlockBehavior.Manual,
+    providers: [
+      ...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+      { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: of(query), snapshot: { paramMap: params.value, queryParamMap: query } } },
+      { provide: AppErrorMapper, useValue: { messageKey: options.messageKey ?? (() => 'errors.service_unavailable'), traceFooter: () => null } },
+      { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: new FakeStoryRepository() },
+      { provide: RenderRepository, useValue: renderRepo },
+      { provide: VideoReviewRepository, useValue: reviewRepo },
+      { provide: RealtimeService, useValue: realtime },
+      { provide: SessionApi, useValue: new FakeSessionApi() },
+      { provide: ConflictDialog, useValue: fakeConflictDialogs() },
+      { provide: ConfirmDialog, useValue: { confirm } },
+      { provide: MatSnackBar, useValue: { open: snack.open } },
+    ],
+  }).overrideComponent(StoryReviewPage, {
+    remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
+  }).overrideComponent(StoryReviewPage, {
+    set: { providers: [
+      EpisodeDetailStore,
+      RenderTimelineStore,
+      MakeVideoStore,
+      VideoReviewStore,
+      { provide: StoryEditorStore, useValue: story },
+      { provide: ApprovalStore, useValue: approval },
+      { provide: VersionsStore, useValue: fakeVersionsStore() },
+      ...fakeResearchStoreProviders(fakeResearchStore()),
+    ] },
+  }).compileComponents();
+  const fixture = TestBed.createComponent(StoryReviewPage);
+  detailStore = fixture.componentRef.injector.get(EpisodeDetailStore);
+  fixture.detectChanges(); await fixture.whenStable();
+  fixture.detectChanges(); await fixture.whenStable();
+  // The view's signed-URL read is fired, not awaited (`loadUrl`), so its answer lands on a later microtask: flush it
+  // and re-render before a spec reads the DOM it feeds (the loading skeleton, the player or the failed link).
+  for (let turn = 0; turn < 3; turn++) await Promise.resolve();
+  fixture.detectChanges(); await fixture.whenStable();
+  return {
+    fixture, root: fixture.nativeElement as HTMLElement, episodes, reviewRepo, renderRepo, realtime, confirm, snack,
+    detailStore, params,
+    store: fixture.componentRef.injector.get(VideoReviewStore),
+    reviewDialog: (): VideoDecisionDialogComponent | undefined => fixture.debugElement
+      .query(By.directive(VideoDecisionDialogComponent))?.componentInstance as VideoDecisionDialogComponent | undefined,
+  };
+}
+
+/**
+ * Renders every manual `@defer` block of the page (the page spec configures `DeferBlockBehavior.Manual`): the review
+ * container defers the player to its viewport, and C9 keeps that the only defer — the element inside the player is
+ * rendered with it.
+ */
+async function renderDeferBlocks(fixture: ComponentFixture<StoryReviewPage>): Promise<void> {
+  for (let pass = 0; pass < 3; pass++) {
+    for (const block of await fixture.getDeferBlocks()) await block.render(DeferBlockState.Complete);
+    fixture.detectChanges(); await fixture.whenStable();
+  }
+}
+
+describe('StoryReviewPage video review (10.6.2-T1)', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('serves video_review off exactly one URL read and one episode read, with the hints as advice', async () => {
+    const { root, fixture, episodes, reviewRepo } = await createReviewPage(reviewDetail());
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('h1')?.textContent).toContain(snapshot.content.title);
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['video_review']);
+    // AC 1: one signed-URL read for the view open, and it is the automatic one (a background read, never USER_ACTION).
+    expect(reviewRepo.urlCalls).toEqual([{ method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: false }]);
+    // AC 1: the review view adds no second `GET /episodes/{id}` — `EpisodeDetailStore` owns the episode, this view does not.
+    expect(episodes.getCalls).toEqual([{ episodeId: EPISODE_ID, userAction: true }]);
+    // The quality hints are advice and the dropped scenes are named, and neither is a decision (C11 / 03.4.2-T1).
+    expect(root.querySelector('nts-quality-notes')).not.toBeNull();
+    expect(root.querySelector('[data-testid="skipped-scenes"]')).not.toBeNull();
+    // AC 8: the container's decisions follow the server's own `nextActions`.
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')?.getAttribute('aria-disabled')).toBeNull();
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="re-make-video"]')?.getAttribute('aria-disabled')).toBeNull();
+    await renderDeferBlocks(fixture);
+    expect(root.querySelector('nts-video-player')).not.toBeNull();
+    // Rendering the view fetched nothing else: the player, the notes and the banner are all off the one read.
+    expect(reviewRepo.urlCalls).toHaveLength(1);
+    expect(episodes.getCalls).toHaveLength(1);
+  });
+
+  it('narrows the ready branch to the asset metadata and the download link, with no decision controls', async () => {
+    const { root, fixture, episodes, reviewRepo } = await createReviewPage(
+      reviewDetail(['download'], { status: 'ready' }),
+    );
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['ready']);
+    // AC 11: `ready` offers the download and nothing to decide, and the little of the cut kept is metadata only.
+    expect(root.querySelector('[data-testid="approve-video"]')).toBeNull();
+    expect(root.querySelector('[data-testid="reject-video"]')).toBeNull();
+    expect(root.querySelector('[data-testid="re-make-video"]')).toBeNull();
+    expect(root.querySelector('nts-final-video-meta')).not.toBeNull();
+    // The publication half of `ready` belongs to 10.7.4-T1 (plan §10 O-1): nothing of it is rendered here.
+    expect(root.querySelector('nts-quality-notes')).toBeNull();
+    const link = root.querySelector<HTMLAnchorElement>('[data-testid="download-mp4"]');
+    expect(link?.getAttribute('href')).toBe(reviewRepo.url);
+    expect(link?.getAttribute('download')).toBe(`${snapshot.content.title}.mp4`);
+    expect(link?.getAttribute('rel')).toBe('noopener');
+    // The link downloads the very URL this view opened with: `ready` costs no second read.
+    expect(reviewRepo.urlCalls).toEqual([{ method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: false }]);
+    expect(episodes.getCalls).toHaveLength(1);
+    await renderDeferBlocks(fixture);
+  });
+
+  it('leaves every other status to its own branch and never reads a video-url for them', async () => {
+    const { root, reviewRepo } = await createReviewPage(episodeDetail({
+      status: 'story_review', hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'],
+    }));
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(root.querySelector('nts-story-editor')).not.toBeNull();
+    expect(reviewRepo.urlCalls).toHaveLength(0);
+  });
+
+  it.each(['scheduled', 'published'])('keeps %s reserved: no review container and no URL read for it', async (status) => {
+    const { root, reviewRepo, episodes } = await createReviewPage(reviewDetail(['download'], { status }));
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(root.querySelector('[data-testid="download-mp4"]')).toBeNull();
+    expect(reviewRepo.urlCalls).toHaveLength(0);
+    expect(episodes.getCalls).toHaveLength(1);
+  });
+
+  it('opens the one decision dialog from the container and routes its outputs to the store', async () => {
+    const { root, fixture, store, reviewRepo, reviewDialog } = await createReviewPage(reviewDetail());
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(store.dialog()).toBe('approve');
+    expect(reviewDialog()?.mode()).toBe('approve');
+    // "Re-make video" opens that same dialog with the `re_render` target preselected (WD4/F12).
+    root.querySelector<HTMLButtonElement>('[data-testid="re-make-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(store.dialog()).toBe('reject');
+    const dialog = reviewDialog()!;
+    expect(dialog.mode()).toBe('reject');
+    expect(dialog.target()).toBe('re_render');
+    // The radio writes the store's own target…
+    dialog.targetChange.emit('story');
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(store.target()).toBe('story');
+    expect(reviewDialog()?.target()).toBe('story');
+    // …and the dismissal is the store's own close: the dialog goes and nothing was sent.
+    dialog.dismissed.emit();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(store.dialog()).toBeNull();
+    expect(reviewDialog()).toBeUndefined();
+    expect(reviewRepo.approveCalls).toHaveLength(0);
+    expect(reviewRepo.rejectCalls).toHaveLength(0);
+  });
+
+  it('approves through the dialog and hands the ready branch to the refetched episode, not to the answer', async () => {
+    const { root, fixture, episodes, reviewRepo, store, reviewDialog } = await createReviewPage(
+      reviewDetail(), { answers: [reviewDetail(['download'], { status: 'ready' })] },
+    );
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    // AC 11: one approve, with the episode's own ETag and no key (the route requires none) and no note.
+    expect(reviewRepo.approveCalls).toEqual([
+      { method: 'approveVideo', episodeId: EPISODE_ID, etag: '"ep-1"', note: undefined },
+    ]);
+    // AC 12: nothing is painted from the 200 — the awaited refetch is what moves the view, off the server's own status.
+    expect(episodes.getCalls).toHaveLength(2);
+    expect(store.dialog()).toBeNull();
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['ready']);
+    expect(root.querySelector('[data-testid="approve-video"]')).toBeNull();
+    expect(root.querySelector('[data-testid="download-mp4"]')?.getAttribute('href')).toBe(reviewRepo.url);
+    // The link minted for this open is the one the approved episode downloads: no second URL read.
+    expect(store.url()?.url).toBe(reviewRepo.url);
+    expect(reviewRepo.urlCalls).toHaveLength(1);
+  });
+
+  it('holds a re_render 202 until the authoritative refetch lands, and moves the branch only for it', async () => {
+    let land!: (detail: EpisodeDetail) => void;
+    const held = new Promise<EpisodeDetail>((resolve) => { land = resolve; });
+    const { root, fixture, episodes, reviewRepo, store, reviewDialog } = await createReviewPage(
+      reviewDetail(), { answers: [held] },
+    );
+    reviewRepo.willAcceptReject({ status: 'story_approved', etag: '"ep-3"', accepted: true });
+    root.querySelector<HTMLButtonElement>('[data-testid="re-make-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    store.reason.setValue('  the last shot is unreadable  ');
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable();
+    // AC 12: one reject with the current ETag, the trimmed reason, the `re_render` target and a held key OBJECT.
+    expect(reviewRepo.rejectCalls).toHaveLength(1);
+    const call = reviewRepo.rejectCalls[0]!;
+    expect(call.episodeId).toBe(EPISODE_ID);
+    expect(call.etag).toBe('"ep-1"');
+    expect(call.reason).toBe('the last shot is unreadable');
+    expect(call.target).toBe('re_render');
+    expect(call.intent.key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(call.intent.isSettled).toBe(true);
+    // The 202 is accepted, its dialog is gone and the view still shows the cut: the refetch has not answered yet, so
+    // no status, no render job id and no branch came out of the 202.
+    expect(store.accepted()).toBe(true);
+    expect(store.dialog()).toBeNull();
+    expect(store.deciding()).toBe(true);
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('[data-testid="make-video"]')).toBeNull();
+    expect(episodes.getCalls).toHaveLength(2);
+    land(reviewDetail(['render', 'reopen_story'], { status: 'story_approved' }));
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    // The server's own read is the only thing that switched the view, and it released the command.
+    expect(store.deciding()).toBe(false);
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(root.querySelector('[data-testid="make-video"]')).not.toBeNull();
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['story_approved']);
+  });
+
+  it('walks re_render → story_approved → make video → rendering with nothing painted ahead of the server', async () => {
+    const approved = reviewDetail(['render', 'reopen_story'], { status: 'story_approved' });
+    const rendering = reviewDetail(['cancel'], {
+      status: 'rendering', renderJob: renderJobFixture({ status: 'running', stage: 'voice', percent: 40 }),
+    });
+    const { root, fixture, episodes, reviewRepo, renderRepo, store, reviewDialog, confirm } = await createReviewPage(
+      reviewDetail(), { answers: [approved, rendering] },
+    );
+    reviewRepo.willAcceptReject({ status: 'story_approved', etag: '"ep-3"', accepted: true });
+    root.querySelector<HTMLButtonElement>('[data-testid="re-make-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    store.reason.setValue('the last shot is unreadable');
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(root.querySelector('[data-testid="make-video"]')).not.toBeNull();
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['story_approved']);
+    // The view that left the review branches released its own link (WD10): the signed URL dies with the branch.
+    expect(store.url()).toBeNull();
+    // The re-make is the approved view's own command: it opens the page's confirm, and the read after the 202 brings
+    // the timeline in — again without a status written from the answer.
+    renderRepo.willAcceptRender('job-9');
+    root.querySelector<HTMLButtonElement>('[data-testid="make-video"]')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(renderRepo.requestCalls).toHaveLength(1);
+    expect(episodes.getCalls).toHaveLength(3);
+    expect(root.querySelector('nts-render-timeline')).not.toBeNull();
+    expect(root.querySelector('nts-status-chip')?.textContent).toContain(statusChipCopy['rendering']);
+    // One URL read for the whole walk: neither the approve nor the re-make asked for a second signed link.
+    expect(reviewRepo.urlCalls).toHaveLength(1);
+    expect(reviewRepo.rejectCalls).toHaveLength(1);
+  });
+
+  it('offers the retry after a failed opening read, and that retry is the only USER_ACTION URL read', async () => {
+    const { root, fixture, episodes, reviewRepo } = await createReviewPage(reviewDetail(), {
+      urlFailure: { code: 'service_unavailable', status: 503, kind: 'server', fieldErrors: {} },
+    });
+    // AC 2: the view says the link failed and offers the retry instead of a player claiming a healthy source.
+    const error = root.querySelector('.url-error');
+    expect(error).not.toBeNull();
+    expect(root.querySelector('nts-video-player')).toBeNull();
+    expect(error!.querySelector('button')?.textContent?.trim()).toBe(episodesVi.render.review.retry);
+    await renderDeferBlocks(fixture);
+    expect(root.querySelector('nts-video-player')).toBeNull();
+    // The retry carries USER_ACTION (it is the owner's own click, so it may extend the session — WR11/D7)…
+    error!.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewRepo.urlCalls).toEqual([
+      { method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: false },
+      { method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: true },
+    ]);
+    // …and reads no episode: the episode is still the one `EpisodeDetailStore` already owns.
+    expect(episodes.getCalls).toHaveLength(1);
+    expect(root.querySelector('.url-error')).toBeNull();
+    await renderDeferBlocks(fixture);
+    expect(root.querySelector('nts-video-player')).not.toBeNull();
+  });
+
+  it('never reads a signed link for a ready episode with no download action, and reads one when the action appears', async () => {
+    const { root, fixture, reviewRepo, detailStore, episodes } = await createReviewPage(
+      reviewDetail([], { status: 'ready' }),
+      { answers: [reviewDetail(['download'], { status: 'ready' })] },
+    );
+    // AC 11 / SP-8: `ready` without `download` shows the asset metadata and nothing that could use a link, so the
+    // view reads none — no audited `GET …/video-url`, and nothing for the due check to poll.
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    expect(root.querySelector('nts-final-video-meta')).not.toBeNull();
+    expect(reviewRepo.urlCalls).toHaveLength(0);
+    // The server starts offering the download (the read the owner's reload shows): the branch reads the link then, once.
+    await detailStore.refetch();
+    fixture.detectChanges(); await fixture.whenStable();
+    for (let turn = 0; turn < 3; turn++) await Promise.resolve();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewRepo.urlCalls).toEqual([{ method: 'getVideoUrl', episodeId: EPISODE_ID, userAction: false }]);
+    expect(episodes.getCalls).toHaveLength(2);
+    expect(root.querySelector<HTMLAnchorElement>('[data-testid="download-mp4"]')?.getAttribute('href')).toBe(reviewRepo.url);
+  });
+
+  it('announces a decision the moved-on episode refused, exactly once, as the branch it belonged to is left', async () => {
+    const { root, fixture, reviewRepo, snack, reviewDialog } = await createReviewPage(
+      reviewDetail(),
+      { answers: [reviewDetail(['edit_story'], { status: 'story_review' })], messageKey: (error) => `errors.${error.code}` },
+    );
+    // The other tab decided first: this tab's approve is refused with the 409 the dialog would show…
+    reviewRepo.willFailApprove({ code: 'episode_invalid_state', status: 409, kind: 'conflict', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    // …and the refetched status takes the branch, and the dialog carrying that key, away (F5).
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(reviewDialog()).toBeUndefined();
+    const text = errorsVi.episode_invalid_state;
+    expect(snack.open).toHaveBeenCalledTimes(1);
+    expect(snack.open).toHaveBeenCalledWith(text, undefined, { duration: 5000, politeness: 'off' });
+    expect(root.querySelector('.story-review-page__announcement')?.textContent).toContain(text);
+    // Exactly once: the one region carries it once, and the refusal is retired with the branch.
+    expect(root.textContent?.split(text)).toHaveLength(2);
+  });
+
+  it('does not surface a refusal that belongs to the episode the user navigated away from', async () => {
+    let land!: (detail: EpisodeDetail) => void;
+    const held = new Promise<EpisodeDetail>((resolve) => { land = resolve; });
+    const second = episodeDetail({ id: SECOND_EPISODE_ID, status: 'story_review', hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'] });
+    const { root, fixture, reviewRepo, snack, reviewDialog, params } = await createReviewPage(
+      reviewDetail(),
+      { answers: [held, second], messageKey: (error) => `errors.${error.code}` },
+    );
+    reviewRepo.willFailApprove({ code: 'episode_invalid_state', status: 409, kind: 'conflict', fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('[data-testid="approve-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable();
+    // The refused decision's read is still in flight (a `Promise` the spec holds) when the user opens another episode:
+    // the branch being left is not the one the refusal belongs to, so its message is not carried onto the new page.
+    params.next(convertToParamMap({ id: SECOND_EPISODE_ID }));
+    fixture.detectChanges(); await fixture.whenStable();
+    fixture.detectChanges(); await fixture.whenStable();
+    land(reviewDetail());
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(snack.open).not.toHaveBeenCalled();
+    expect(root.querySelector('.story-review-page__announcement')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('nts-video-review')).toBeNull();
+  });
+
+  it('leaves the branch silently when the decision succeeded — a release without a refusal announces nothing', async () => {
+    const { root, fixture, reviewRepo, snack, store, reviewDialog } = await createReviewPage(
+      reviewDetail(), { answers: [reviewDetail(['edit_story'], { status: 'story_review' })] },
+    );
+    expect(root.querySelector('nts-video-review')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-testid="reject-video"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    store.reason.setValue('the last shot is unreadable');
+    reviewDialog()!.confirmed.emit();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(reviewRepo.rejectCalls).toHaveLength(1);
+    expect(root.querySelector('nts-video-review')).toBeNull();
+    expect(snack.open).not.toHaveBeenCalled();
+    expect(root.querySelector('.story-review-page__announcement')?.textContent?.trim()).toBe('');
   });
 });

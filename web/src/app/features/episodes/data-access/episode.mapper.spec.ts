@@ -46,7 +46,7 @@ describe('mapEpisodeDetail', () => {
       id: DETAIL.id, seriesId: DETAIL.seriesId, status: DETAIL.status, etag: DETAIL.etag,
       generation: { ...DETAIL.generation, processingPaused: null },
       hasCurrentStory: false, currentStory: null, nextActions: ['edit_story'], lengthTier: DETAIL.lengthTier,
-      renderJob: null,
+      renderJob: null, title: null, finalVideo: null,
     });
   });
 

@@ -18,6 +18,7 @@ import type { GateState } from '../domain/episode-gate';
 import { ResearchStore } from '../application/research.store';
 import { MakeVideoStore } from '../application/make-video.store';
 import { RenderTimelineStore } from '../application/render-timeline.store';
+import { VideoReviewStore } from '../application/video-review.store';
 import { GENERIC_TITLE_KEY, failureCopy } from '../application/render-failure';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { FailureCopy } from '../domain/render.model';
@@ -27,6 +28,8 @@ import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.compone
 import { RenderFailureComponent } from '../ui/render-failure/render-failure.component';
 import { RenderTimelineComponent } from '../ui/render-timeline/render-timeline.component';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
+import { VideoReviewComponent } from '../ui/video-review/video-review.component';
+import { VideoDecisionDialogComponent } from '../ui/video-decisions/video-decision-dialog.component';
 import { VersionsStore } from '../application/versions.store';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
 import { StoryEditorComponent } from '../ui/story-editor.component';
@@ -85,8 +88,8 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent, RenderTimelineComponent, RenderFailureComponent, MakeVideoButtonComponent, RetryCountdown],
-  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, RenderTimelineStore, MakeVideoStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
+  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent, RenderTimelineComponent, RenderFailureComponent, MakeVideoButtonComponent, RetryCountdown, VideoReviewComponent, VideoDecisionDialogComponent],
+  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, RenderTimelineStore, MakeVideoStore, VideoReviewStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -103,6 +106,12 @@ export class StoryReviewPage {
    * failure panel's retry (one store, one intent, one set of disabled reasons).
    */
   protected readonly makeVideo = inject(MakeVideoStore);
+  /**
+   * The video review of this episode (10.6.2-T1, WD4): component-scoped like the timeline. Its signed URL, its due
+   * check and a held reject intent must die with the page, not survive in the route injector the router caches
+   * (plan.md §12); the page only opens and releases the view around it.
+   */
+  protected readonly reviewStore = inject(VideoReviewStore);
   /** Component-owned so the gate and its reads are discarded when this editor is destroyed. */
   private readonly researchGate = inject(EPISODE_GATE);
   private readonly research = inject(ResearchStore);
@@ -132,8 +141,9 @@ export class StoryReviewPage {
   protected readonly reopenOpen = signal(false);
   protected readonly approvalSaveHint = computed(() => this.store.dirty() || this.store.saving());
   private readonly pendingApprovalAnnouncement = signal<'approved' | 'reopened' | null>(null);
-  protected readonly approvalAnnouncement = signal<StoryEditorAnnouncement | null>(null);
-  private approvalAnnouncementSequence = 0;
+  /** The page's one polite live region: an approval outcome, and a decision a moved-on episode refused (F5/C3). */
+  protected readonly pageAnnouncement = signal<StoryEditorAnnouncement | null>(null);
+  private announcementSequence = 0;
   private readonly restoreVersionsFocus = signal(false);
   private readonly restoreSaveFocus = signal(false);
   protected readonly conflictDialogOpen = signal(false);
@@ -173,6 +183,8 @@ export class StoryReviewPage {
   }
   private readonly focusRequest = signal<{ readonly address: SegmentAddress; readonly sequence: number } | null>(null);
   private lastEpisodeId: string | null = null;
+  /** The episode the review view is currently open for, or `null`; drives the one URL read and its release (WD4). */
+  private reviewingEpisodeId: string | null = null;
   private lastFocusSequence = -1;
   private lastSegmentFocusKey: string | null = null;
   private focusSequence = 0;
@@ -320,6 +332,14 @@ export class StoryReviewPage {
     if (episode === null) return false;
     return episode.status === 'rendering' || (episode.status === 'failed' && episode.renderJob !== null);
   });
+  /**
+   * The review view of `/episodes/:id` (WD4): `video_review` — the finished cut before the owner decides — and `ready`,
+   * the state an approval produces. Both render the same container; `ready` narrows it to the `finalVideo` metadata and
+   * the download link (no decisions, **no** publication state — the per-publication half of `ready`/`scheduled`/
+   * `published` is 10.7.4-T1's, `plan.md` §10 O-1), so `scheduled` and `published` stay unhandled here on purpose.
+   */
+  protected readonly reviewView = computed<boolean>(() => this.episode()?.status === 'video_review');
+  protected readonly readyView = computed<boolean>(() => this.episode()?.status === 'ready');
   /** The failure panel's copy, resolved to keys only (F7/D9): the server's own prose is never read or rendered. */
   protected readonly renderFailureCopy = computed<FailureCopy>(() => {
     const failure = this.renderStore.failure();
@@ -418,6 +438,18 @@ export class StoryReviewPage {
     this.restoreApprovalFocus.set(true);
   }
 
+  /**
+   * The review dialog's confirm (10.6.2-T1): one decision, by the mode the store opened. `approve()` and `reject()`
+   * write nothing locally — each awaits the authoritative refetch, so the status the page switches on is the server's.
+   * The mode is read here rather than passed as an event payload: the store owns which dialog is open, and `null`
+   * (a dialog that is already gone) sends nothing at all.
+   */
+  protected confirmReviewDecision(): void {
+    const mode = this.reviewStore.dialog();
+    if (mode === 'approve') void this.reviewStore.approve();
+    else if (mode === 'reject') void this.reviewStore.reject();
+  }
+
   protected async confirmApproval(intent: 'approve' | 'reopen', episodeId: string): Promise<void> {
     if (this.savedDetailRefresh !== null) await this.savedDetailRefresh;
     if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId || this.episode()?.id !== episodeId) return;
@@ -439,7 +471,7 @@ export class StoryReviewPage {
           this.approvalTrigger = null;
           this.restoreApprovalFocus.set(false);
           this.pendingApprovalAnnouncement.set(null);
-          this.approvalAnnouncement.set(null);
+          this.pageAnnouncement.set(null);
           this.approval.reset();
           void this.store.load(id);
           // One component-owned gate load; a return to this editor gets a fresh instance and fresh metadata.
@@ -473,6 +505,38 @@ export class StoryReviewPage {
     effect(() => {
       if (!this.renderStore.needsRefetch()) return;
       untracked(() => { void this.renderStore.refresh(); });
+    });
+    /**
+     * The review branches' opening read and their due check (WD4/WB3/F10): entering `video_review`/`ready` fetches the
+     * signed URL once and arms `visiblePoll`; leaving them releases both. The release is what keeps a `re_render` that
+     * ends in another `video_review` for the same id honest — the page instance is reused, so a kept URL would serve
+     * the previous render's link and no-op the opening read — and it stops every `video-url` request behind the
+     * timeline branch. `ready` uses the link for its download action alone, so it reads one only while the server
+     * offers `download` (SP-8): without it that branch shows metadata and nothing else, and a link read there would be
+     * an audited request plus a poll for a copy nothing can open. The comparison is the episode id, not a flag, so a
+     * `:id` change re-reads; the effect depends on that id, the branch and the server's own `download` permission alone
+     * (a keystroke or a poll never re-runs it), and both store calls are idempotent.
+     */
+    effect(() => {
+      const episodeId = this.episode()?.id ?? null;
+      const open = episodeId !== null && (this.reviewView() || (this.readyView() && this.reviewStore.canDownload()));
+      untracked(() => {
+        const served = open ? episodeId : null;
+        if (served === this.reviewingEpisodeId) return;
+        if (this.reviewingEpisodeId !== null) {
+          // F5/C3: a decision the server refused is often the very reason this branch is being left (the 409 of a
+          // second tab), and the dialog carrying that key is torn down with the branch — so the one message the
+          // refusal owes the user moves to the page's own announcement before `release()` clears it. Only the
+          // episode being left: a `:id` change takes the user elsewhere, and that page is no place for this message.
+          const refusalKey = this.reviewingEpisodeId === episodeId ? this.reviewStore.errorKey() : null;
+          this.reviewStore.release();
+          if (refusalKey !== null) this.announceKey(refusalKey);
+        }
+        this.reviewingEpisodeId = served;
+        if (served === null) return;
+        void this.reviewStore.loadUrl();
+        this.reviewStore.startUrlRefresh();
+      });
     });
     this.destroyRef.onDestroy(() => {
       this.closeApprovalConflict?.();
@@ -520,8 +584,7 @@ export class StoryReviewPage {
       const text = this.resolveEpisodesKey(outcome === 'approved' ? 'approve.done' : 'reopen.done');
       if (text === null) return;
       untracked(() => {
-        this.approvalAnnouncement.set({ text, sequence: ++this.approvalAnnouncementSequence });
-        this.snack.open(text, undefined, { duration: 5000, politeness: 'off' });
+        this.announce(text);
         this.pendingApprovalAnnouncement.set(null);
       });
     });
@@ -810,6 +873,24 @@ export class StoryReviewPage {
   private resolveEpisodesKey(key: string, params: Record<string, unknown> = {}): string | null {
     const text = this.transloco.translate(key, params, 'episodes');
     return text === key || text === `episodes.${key}` ? null : text;
+  }
+
+  /**
+   * One transient message on the page's own channel: the polite live region (a new sequence re-creates the announced
+   * node, so a screen reader reads a change rather than a region that appeared with its text) and the snackbar.
+   */
+  private announce(text: string): void {
+    this.pageAnnouncement.set({ text, sequence: ++this.announcementSequence });
+    this.snack.open(text, undefined, { duration: 5000, politeness: 'off' });
+  }
+
+  /**
+   * One `errors.<code>` leaf on that channel. The page's scope provider loads the global `errors` scope, so a key that
+   * still resolves to itself is a leaf the active language lacks — and a raw key never reaches the user (D9).
+   */
+  private announceKey(key: string): void {
+    const text = this.transloco.translate(key);
+    if (text !== key) this.announce(text);
   }
 
   /** The diff and the changed-elsewhere notice name segments exactly like the editor does; an empty diff still says so. */

@@ -39,6 +39,10 @@ export type { ApiV1EpisodesIdRenderPost$Params as ApiV1EpisodesIdRenderPost$Para
 export { apiV1EpisodesIdRenderPost as apiV1EpisodesIdRenderPost } from './fn/rendering-endpoints/api-v-1-episodes-id-render-post';
 export type { ApiV1RenderJobsIdDelete$Params as ApiV1RenderJobsIdDelete$Params } from './fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
 export { apiV1RenderJobsIdDelete as apiV1RenderJobsIdDelete } from './fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
+export type { ApiV1EpisodesIdVideoApprovePost$Params as ApiV1EpisodesIdVideoApprovePost$Params } from './fn/video-review-endpoints/api-v-1-episodes-id-video-approve-post';
+export { apiV1EpisodesIdVideoApprovePost as apiV1EpisodesIdVideoApprovePost } from './fn/video-review-endpoints/api-v-1-episodes-id-video-approve-post';
+export type { ApiV1EpisodesIdVideoRejectPost$Params as ApiV1EpisodesIdVideoRejectPost$Params } from './fn/video-review-endpoints/api-v-1-episodes-id-video-reject-post';
+export { apiV1EpisodesIdVideoRejectPost as apiV1EpisodesIdVideoRejectPost } from './fn/video-review-endpoints/api-v-1-episodes-id-video-reject-post';
 export type { ApiV1PublishingYoutubeEtaGet$Params as ApiV1PublishingYoutubeEtaGet$Params } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
 export { apiV1PublishingYoutubeEtaGet as apiV1PublishingYoutubeEtaGet } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
 export type { ApiV1AuthLoginPost$Params as ApiV1AuthLoginPost$Params } from './fn/auth-endpoints/api-v-1-auth-login-post';

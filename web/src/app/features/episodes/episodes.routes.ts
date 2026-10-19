@@ -7,6 +7,7 @@ import { HttpResearchRepository } from './data-access/http-research.repository';
 import { HttpSourceFinderRepository } from './data-access/http-source-finder.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
 import { RenderHttpRepository } from './data-access/render-http.repository';
+import { provideVideoReviewRepository } from './episodes.providers';
 import { dirtyStoryGuard } from './guards/dirty-story.guard';
 import { dirtyResearchGuard } from './guards/dirty-research.guard';
 import { EpisodesRepository } from './domain/episodes.repository';
@@ -55,6 +56,9 @@ export const episodesRoutes: Routes = [
       { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
       { provide: RenderRepository, useClass: RenderHttpRepository },
+      // The review port (10.6.2-T1): the same shape as the render binding above — one class binding, the generated
+      // client behind `data-access/` (D2/D5) — so the page-scoped `VideoReviewStore` can inject it.
+      ...provideVideoReviewRepository(),
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],

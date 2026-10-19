@@ -4,6 +4,20 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume bullet (2026-10-19, replaced by the Session 68 PR)
+
+Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 60, merged #239 `a6261054`):** **02.8.4-T1** variety guard: pure Domain `VarietyGuard` (R1 same sub_genre+setting+opening within 10 episodes rejects `variety_triple_repeat`, R2 tag share cap penalty 0.5/0.75, R3 same beat signature + opening + twist within 5 rejects `variety_template_repeat` and beats R1, R4 deterministic rotation suggestions, R5 cold start), `VarietyOptions` (`Autopilot:Variety:*`, validated, WindowK <= 50), `IdeaPlanner` wiring (assessment before the one paid call, `required_tags`/`forbidden_tags` steering, per-candidate `Evaluate`, penalty replaces the 02.8.1-T2 `VarietyPenalty = 0` seam, counters `variety_rejections_total{rule}` and `variety_penalty_total`), `IdeaStructureMapper` (IDEA-S52-1: model tags through `StructureVocabMapper`, unknown values stored `other:<text>`), `IStructurePlanProvider`/`StructurePlanProvider` (null for user episodes). No migration, no route, `openapi.json` unchanged. CI refused (billing, CI-01, owner treats as pass); full remote gate `GATE_RC=2` on `2bab1051` (Ubuntu arm64, 9591 tests, 1 failed: the known flake `FetcherHostEndToEndTests.EndToEnd_SourceDeletedMidFetch_ResultIs404AndLoopContinues` (Open tasks row), which passes on a filtered rerun with `GATE_RC=0` on the same sha); T2 gates closed (QA agent, code review, perf+security review, one `judge_batch` triage, fixes, delta review). The six panel [DECISION]s (S60-1) were ratified by the owner 2026-10-18 before the merge. Next (backend): coordinator to assign; 02.8.2-T1 is the consumer of `VerifyWritten`.
+
+Replaced text (verbatim), the tail of the Session 65 web bullet (the 10.6.2-T1 clause, now delivered by the Session 68 PR):
+
+- ``Next (web): **10.6.2-T1** (video approve/reject UI, unblocked — the routes merged #249 `ee3de595`), which needs its own `web/openapi.json` re-pin (§Plan 10 hand-overs); **11.5.1-T1** owns the real-stack e2e (S59-2, S65-5).``
+
+Also replaced (verbatim; the Resume block hit 16 bullets after the Session 66 merge):
+
+- **Web (Session 51 closed):** **10.5.8-T1** find-sources suggestions panel (flag `source_finder`) merged as #223 (`cb491bbf`, tip `47736f04`, `feature/10.5.8-T1-s51`, from `develop` `3bf0d380`; web lane; `/episodes/:id/research`; code tip `484e3646`); `web/openapi.json` re-pinned from `develop` `3bf0d380` (authorised by the coordinator; `SourceFinderEndpoints` client generated). T2 gates closed (QA agent, code review, perf/security review, one `judge_batch` triage, fixes, delta review); local web gate exit 0 on `2f539040` (lint, i18n:check, api:gen:check, test:ci 3171 tests, test:tools, legal:gen:check, build, budget:gzip, csp:gen); CI refused: CI-01 (`build-test` jobs `117395058146`, `117395057922`, 0 steps, billing annotation), owner treats as pass. Keep the `source_finder` flag OFF until **02.7.2-T3** ships the Worker consumer of `SourceFindRequested` (S49-1/S51-2). Open items: §Open findings S51-1, S51-2. Next web candidates unchanged: **10.10.2-T1** render / "Make video" (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`) and **10.5.1-T0/T1** (check each header's `Depends on`).
+
 ### Superseded web Next clause (2026-10-19, replaced when the 10.6.1-T2 PR opened)
 
 Replaced text (verbatim), the tail of the Session 59 web bullet:

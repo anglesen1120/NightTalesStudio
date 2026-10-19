@@ -50,6 +50,37 @@
           (cancelRequest)="renderStore.cancel()"
         />
       }
+    } @else if (reviewView() || readyView()) {
+      <!--
+        The review view (WD4). `video_review` is the finished cut before the owner decides; `ready` is the same
+        container narrowed by `[ready]` to the `finalVideo` metadata and the download link — no decision buttons and
+        **no** publication state, which is 10.7.4-T1's (`plan.md` §10 O-1), so `scheduled`/`published` stay unhandled.
+      -->
+      <nts-page-header [title]="store.title() || undefined" titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      <nts-video-review
+        [ready]="readyView()"
+        [url]="reviewStore.url()"
+        [urlFailed]="reviewStore.urlFailed()"
+        [urlErrorKey]="reviewStore.urlErrorKey()"
+        [urlRetryAfterSec]="reviewStore.urlRetryAfterSec()"
+        [loadingUrl]="reviewStore.loadingUrl()"
+        [notes]="reviewStore.notes()"
+        [skipped]="reviewStore.skipped()"
+        [episodeId]="detail.id"
+        [finalVideo]="reviewStore.finalVideo()"
+        [canApprove]="reviewStore.canApprove()"
+        [canReject]="reviewStore.canReject()"
+        [canDownload]="reviewStore.canDownload()"
+        [downloadName]="reviewStore.downloadName()"
+        [busy]="reviewStore.deciding()"
+        (approveRequest)="reviewStore.openApprove()"
+        (rejectRequest)="reviewStore.openReject('story')"
+        (reMakeRequest)="reviewStore.openReject('re_render')"
+        (retryUrl)="reviewStore.retryUrl()"
+        (mediaError)="reviewStore.onPlayerError()"
+      />
     } @else if (detail.currentStory === null) {
       <nts-page-header titleKey="episodes.editor.pageTitle" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
@@ -168,9 +199,24 @@
     @if (reopenOpen()) {
       <nts-reopen-dialog [busy]="approval.reopening()" [blocked]="approval.blocked() ?? approval.error()" [retryAfterSec]="approval.retryAfterSec()" (reopened)="confirmApproval('reopen', detail.id)" (cancelled)="closeApprovalDialogs()" />
     }
+    @if (reviewStore.dialog(); as reviewDialog) {
+      <nts-video-decision-dialog
+        [mode]="reviewDialog"
+        [target]="reviewStore.target()"
+        [noteControl]="reviewStore.note"
+        [reasonControl]="reviewStore.reason"
+        [busy]="reviewStore.deciding()"
+        [errorKey]="reviewStore.errorKey()"
+        [retryAfterSec]="reviewStore.retryAfterSec()"
+        [confirmDisabled]="reviewStore.needsRefresh()"
+        (confirmed)="confirmReviewDecision()"
+        (dismissed)="reviewStore.closeDialog()"
+        (targetChange)="reviewStore.setTarget($event)"
+      />
+    }
   }
   <div class="story-review-page__announcement" role="status" aria-live="polite" aria-atomic="true">
-    @if (approvalAnnouncement(); as announcement) {
+    @if (pageAnnouncement(); as announcement) {
       @for (message of [announcement]; track message.sequence) { <span>{{ message.text }}</span> }
     }
   </div>
