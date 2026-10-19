@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
+import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import episodesEn from '../../../../../assets/i18n/episodes/en.json';
@@ -30,17 +30,20 @@ afterEach(() => TestBed.resetTestingModule());
 describe('SkippedScenesComponent', () => {
   it.each(['vi', 'en'] as const)('supports both consumer headings and moderated guidance in %s', async (lang) => {
     const { fixture, root } = await setup([{ segment: 'p:3', reason: 'moderated' }, { segment: 'hook', reason: 'timeout' }], lang);
-    expect(root.querySelector('h3')?.textContent).toBe(TestBed.inject(TranslocoService).translate('episodes.render.failure.scenes'));
+    const messages = lang === 'vi' ? episodesVi : episodesEn;
+    expect(root.querySelector('h3')?.textContent).toBe(messages.render.failure.scenes);
     expect(root.querySelectorAll('li')).toHaveLength(2);
     const link = root.querySelector<HTMLAnchorElement>('a')!;
     expect(link.textContent).toBe('p:3');
     expect(link.getAttribute('href')).toBe('/episodes/episode-1?segment=p:3');
     expect(root.querySelectorAll('.scene-guidance')).toHaveLength(1);
-    expect(root.querySelector('.scene-guidance')?.textContent).toBe(TestBed.inject(TranslocoService).translate('episodes.render.images.moderatedScene'));
-    expect(root.textContent).toContain(TestBed.inject(TranslocoService).translate('episodes.render.images.reason.timeout'));
+    expect(root.querySelector('.scene-guidance')?.textContent).toBe(messages.render.images.moderatedScene);
+    expect(root.textContent).toContain(messages.render.images.reason.timeout);
     fixture.componentRef.setInput('headingKey', 'render.images.skippedBanner');
     await fixture.whenStable();
-    expect(root.querySelector('h3')?.textContent).toBe(TestBed.inject(TranslocoService).translate('episodes.render.images.skippedBanner'));
+    expect(root.querySelector('h3')?.textContent).toBe(messages.render.images.skippedBanner);
+    expect([...root.querySelectorAll('.scene-count')].map((node) => node.textContent)).toEqual(['1.', '2.']);
+    expect(root.querySelector('nts-icon-alert')).not.toBeNull();
   });
 
   it('replaces invalid addresses with neutral scene labels and never renders an unknown reason', async () => {
@@ -59,8 +62,8 @@ describe('SkippedScenesComponent', () => {
     expect(root.textContent).not.toContain(javascriptAddress);
     expect(root.textContent).not.toContain(unsafeIntegerAddress);
     expect(root.textContent).not.toContain('p:03');
-    expect([1, 2, 3, 4].map((index) => TestBed.inject(TranslocoService).translate('episodes.render.images.sceneUnnamed', { index })).every((label) => root.textContent?.includes(label))).toBe(true);
-    expect([...root.querySelectorAll('.scene-reason')].map((node) => node.textContent)).toEqual(Array.from({ length: 4 }, () => TestBed.inject(TranslocoService).translate('episodes.render.images.reason.unknown')));
+    expect([1, 2, 3, 4].map((index) => episodesEn.render.images.sceneUnnamed.replace('{{index}}', String(index))).every((label) => root.textContent?.includes(label))).toBe(true);
+    expect([...root.querySelectorAll('.scene-reason')].map((node) => node.textContent)).toEqual(Array.from({ length: 4 }, () => episodesEn.render.images.reason.unknown));
     expect(root.textContent).not.toContain('private-provider-detail');
     expect(root.textContent).not.toContain('constructor');
   });

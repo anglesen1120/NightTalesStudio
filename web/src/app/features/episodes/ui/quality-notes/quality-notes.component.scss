@@ -1,0 +1,7 @@
+:host { display: block; min-width: 0; }
+h3 { margin: 0 0 var(--nts-space-3); font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
+ul { display: grid; gap: var(--nts-space-3); list-style: none; padding: 0; margin: 0; }
+li { display: flex; align-items: start; gap: var(--nts-space-2); }
+nts-icon-alert { flex: none; color: var(--nts-color-warn); }
+p { max-width: var(--nts-measure); margin: var(--nts-space-3) 0 0; }
+.advisory { color: var(--nts-color-on-surface-muted); }

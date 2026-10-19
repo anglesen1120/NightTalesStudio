@@ -1,0 +1,14 @@
+<div class="actions">
+  @if (showDecisions()) {
+    <button class="primary" type="button" data-testid="approve-video" [attr.aria-disabled]="!canApprove() || busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="request($event, 'approve')">{{ 'episodes.render.review.approve' | transloco }}</button>
+    <button type="button" data-testid="reject-video" [attr.aria-disabled]="!canReject() || busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="request($event, 'reject')">{{ 'episodes.render.review.reject' | transloco }}</button>
+    <button type="button" data-testid="re-make-video" [attr.aria-disabled]="!canReject() || busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null" (click)="request($event, 'reMake')">{{ 'episodes.render.review.reMake' | transloco }}</button>
+  }
+  @if (canDownload()) {
+    @if (url() && !downloadErrorKey()) {
+      <a [href]="url()" [attr.download]="downloadName()" target="_blank" rel="noopener" data-testid="download-mp4" (click)="downloadClick.emit()">{{ 'episodes.render.review.download' | transloco }}</a>
+    } @else {
+      <span class="download-disabled" aria-disabled="true">{{ 'episodes.render.review.download' | transloco }}@if (downloadErrorKey(); as key) { <span>{{ key | transloco }}</span> }</span>
+    }
+  }
+</div>

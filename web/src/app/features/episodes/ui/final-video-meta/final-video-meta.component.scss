@@ -1,0 +1,5 @@
+:host { display: block; min-width: 0; }
+dl { display: flex; flex-wrap: wrap; gap: var(--nts-space-3) var(--nts-space-6); margin: 0; }
+dt { color: var(--nts-color-on-surface-muted); }
+dd { margin: var(--nts-space-1) 0 0; font-weight: var(--nts-type-label-weight); }
+p { margin: var(--nts-space-3) 0 0; max-width: var(--nts-measure); overflow-wrap: anywhere; color: var(--nts-color-on-surface-muted); }

@@ -414,6 +414,24 @@ internal static class SeedPrevious
                     'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
                     'seed-client', now(), now())
             """),
+        (
+            // 06.2.1-T1: the table the `_06_Publications` migration creates. Same rule as above: skipped while
+            // the previous schema lacks it, so the row lands only on a schema that has the table. It is one
+            // unpublished post of the seed episode as the create command leaves it — `awaiting_consent`, the
+            // metadata the owner submitted, `private` until the consent comes — and it names the seed user's
+            // own episode and connection, so both the same-owner composite key to `episodes(id, user_id)` and
+            // the `channel_connections` key resolve. It is the only live member of
+            // `ux_publications_active_episode_platform` for that pair, and `platform` is supplied because D20
+            // gives the column no store default (the model's generator fills it on insert only).
+            "publications",
+            """
+            INSERT INTO publications (id, user_id, episode_id, channel_connection_id, status, title, description,
+                                      privacy, contains_synthetic_media, created_at, updated_at, platform)
+            VALUES ('01920000-0000-7000-8000-00000000001e', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-00000000001d',
+                    'awaiting_consent', 'Seed publication', 'Seed publication description', 'private', true,
+                    now(), now(), 'youtube')
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

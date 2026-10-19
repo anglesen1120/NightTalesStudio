@@ -1,6 +1,6 @@
 {
   "source": "artifact openapi (09.1.5-T1)",
   "specVersion": "1.0.0",
-  "sha256": "ceda853c4e404e7e76452381078b630f407aeb35e2e9f04586c131927ce8185b",
-  "sourceCommit": "d5fd2a46fac16319cee53b2b1765056147d6c4bb"
+  "sha256": "1771a1e9cb539ca91931590f48ddd44e0541b03c95e206a71755c60ae1326cc3",
+  "sourceCommit": "83d7d08700a85bff566f46a5b0999bf4323df9c5"
 }

@@ -27,8 +27,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTest(database)
 {
     /// <summary>
-    /// Every same-owner foreign key of the initial schema, in the form
-    /// <c>child.parent_column,user_id-&gt;parent(id,user_id)</c>, ordered by child table.
+    /// Every same-owner foreign key of the schema, in the form
+    /// <c>child.parent_column,user_id-&gt;parent(id,user_id)</c>, ordered by child table. The list keeps growing
+    /// with the feature tables (06.2.1-T1's <c>publications</c> is the newest).
     /// </summary>
     private static readonly string[] SameOwnerForeignKeys =
     [
@@ -52,6 +53,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "generation_runs.result_story_version_id,user_id->story_versions(id,user_id)",
         "generation_runs.series_id,user_id->series(id,user_id)",
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
+        "publications.episode_id,user_id->episodes(id,user_id)",
         "render_jobs.episode_id,user_id->episodes(id,user_id)",
         "render_jobs.story_version_id,user_id->story_versions(id,user_id)",
         "series.current_autopilot_authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
@@ -75,8 +77,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     /// Every nullable <c>ON DELETE SET NULL</c> foreign key in the schema, in constraint-name order: the
     /// same-owner ones (<c>InitialCore</c>'s four plus 02.8.1-T1's <c>episode_ideas</c> key), whose column
     /// list the migration writes with raw SQL because EF cannot emit it (a plain <c>SET NULL</c> would null
-    /// <c>user_id</c> too and fail on the first delete of a parent), plus 09.3.2-T1's self-reference, which
-    /// needs no column list and no same-owner rule.
+    /// <c>user_id</c> too and fail on the first delete of a parent), plus 09.3.2-T1's self-reference and
+    /// 06.2.1-T1's autopilot authorization reference, which need no column list and no same-owner rule.
     /// </summary>
     private static readonly string[] NullableSameOwnerDefinitions =
     [
@@ -94,6 +96,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "REFERENCES fact_sheets(id, user_id) ON DELETE SET NULL (result_fact_sheet_id)",
         "fk_generation_runs_story_versions_result_story_version_id_user|FOREIGN KEY (result_story_version_id, "
         + "user_id) REFERENCES story_versions(id, user_id) ON DELETE SET NULL (result_story_version_id)",
+        "fk_publications_series_autopilot_authorizations_autopilot_auth|FOREIGN KEY "
+        + "(autopilot_authorization_id) REFERENCES series_autopilot_authorizations(id) ON DELETE SET NULL",
         "fk_refresh_tokens_refresh_tokens_replaced_by_id|FOREIGN KEY (replaced_by_id) "
         + "REFERENCES refresh_tokens(id) ON DELETE SET NULL",
         "fk_series_bibles_episodes_proposed_from_episode_id_user_id|FOREIGN KEY "
@@ -384,6 +388,15 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     /// column. The only single-column keys the schema may carry into a user-owned parent are none:
     /// <c>user_id -&gt; users</c> points at <c>users</c>, which is not a user-owned parent here.
     /// </summary>
+    /// <remarks>
+    /// 06.2.1-T1's <c>publications.autopilot_authorization_id</c> is the one exception, and it is deliberate:
+    /// 00 §6 and 06 README D20 declare it as an optional, nullable reference (a removed authorization only drops
+    /// the reference, <c>SET NULL</c>), and the row's tenant is pinned by the same-owner composite key to
+    /// <c>episodes(id, user_id)</c> plus its own <c>user_id</c> — a publication is never read through this
+    /// column. 02.8.3 writes it from the authenticated series' own authorization, so the application refuses a
+    /// foreign one; the database cannot, because a composite form would need an alternate key on
+    /// <c>series_autopilot_authorizations(id, user_id)</c> that D20 does not define.
+    /// </remarks>
     [Fact]
     public void NoSingleColumnForeignKey_ReachesAUserOwnedParent()
     {
@@ -400,6 +413,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
                       AND array_length(c.conkey, 1) = 1
                       AND pl.relname IN ('series', 'episodes', 'assets', 'story_versions',
                                          'series_autopilot_authorizations', 'story_sources', 'fact_sheets')
+                      AND NOT (cl.relname = 'publications' AND a.attname = 'autopilot_authorization_id')
                 ORDER BY 1
                 """)
             .ShouldBeEmpty();

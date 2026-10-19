@@ -1,0 +1,24 @@
+<button class="backdrop" type="button" tabindex="-1" [attr.aria-disabled]="busy() ? 'true' : null" [attr.aria-label]="'core.ui.dialog.close' | transloco" (mousedown)="$event.preventDefault()" (click)="dismiss()"></button>
+<nts-confirm-dialog [titleKey]="prefix() + '.title'" [bodyKey]="prefix() + '.body'" [confirmLabelKey]="prefix()" [pending]="busy()" [confirmDisabled]="(confirmDisabled() || fieldInvalid()) && !busy() && !retryPending()" [confirmHeld]="busy() || retryPending()" [scrollableBody]="true" (confirmed)="confirm()" (cancelled)="dismiss()">
+  <div dialog-body class="dialog-body">
+    @if (mode() === 'approve') {
+      <label [for]="fieldId">{{ 'episodes.render.review.approve.note' | transloco }}</label>
+      <textarea [id]="fieldId" rows="4" [formControl]="noteControl()" [readOnly]="busy()" [attr.aria-invalid]="fieldErrorVisible() ? 'true' : null" [attr.aria-describedby]="fieldErrorVisible() ? fieldId + '-error ' + fieldId + '-count' : fieldId + '-count'"></textarea>
+      <nts-char-counter [id]="fieldId + '-count'" [value]="(noteState()?.value ?? noteControl().value).length" [max]="500" />
+    } @else {
+      <label [for]="fieldId">{{ 'episodes.render.review.reject.reason' | transloco }}</label>
+      <textarea [id]="fieldId" data-testid="reject-reason" rows="4" required [formControl]="reasonControl()" [readOnly]="busy()" [attr.aria-invalid]="fieldErrorVisible() ? 'true' : null" [attr.aria-describedby]="fieldErrorVisible() ? fieldId + '-error ' + fieldId + '-count' : fieldId + '-count'"></textarea>
+      <nts-char-counter [id]="fieldId + '-count'" [value]="(reasonState()?.value ?? reasonControl().value).trim().length" [max]="500" />
+      <fieldset [disabled]="busy()">
+        <legend>{{ 'episodes.render.review.reject.target' | transloco }}</legend>
+        <label class="radio"><input type="radio" [name]="fieldId + '-target'" value="story" data-testid="reject-target-story" [checked]="target() === 'story'" (change)="targetChange.emit('story')" />{{ 'episodes.render.review.reject.targetStory' | transloco }}</label>
+        <label class="radio"><input type="radio" [name]="fieldId + '-target'" value="re_render" data-testid="reject-target-re-render" [checked]="target() === 're_render'" (change)="targetChange.emit('re_render')" />{{ 'episodes.render.review.reject.targetReRender' | transloco }}</label>
+      </fieldset>
+    }
+    @if (fieldErrorVisible()) {
+      <p class="field-error" [id]="fieldId + '-error'" aria-live="polite">{{ 'episodes.render.review.fieldInvalid' | transloco }}</p>
+    }
+    @if (errorKey(); as key) { <p class="error" role="alert" aria-live="polite">{{ key | transloco }}</p> }
+    @if (retryAfterSec(); as seconds) { <nts-retry-countdown [seconds]="seconds" /> }
+  </div>
+</nts-confirm-dialog>

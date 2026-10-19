@@ -1,6 +1,6 @@
-import type { EpisodeDetailDto, EpisodeListItemDto, RenderJobSummaryDto } from '@shared/api';
+import type { EpisodeDetailDto, EpisodeListItemDto, FinalVideoAssetDto, RenderJobSummaryDto } from '@shared/api';
 import { clampPercent } from '../application/render-stage';
-import { EPISODE_STATUSES, type EpisodeDetail, type EpisodeListItem } from '../domain/episode.model';
+import { EPISODE_STATUSES, type EpisodeDetail, type EpisodeListItem, type FinalVideoAsset } from '../domain/episode.model';
 import { RENDER_STATUSES, type RenderImages, type RenderJob, type RenderStatus, type SkippedScene } from '../domain/render.model';
 import { mapStorySnapshot } from './story.mapper';
 
@@ -45,6 +45,31 @@ export function mapEpisodeDetail(dto: EpisodeDetailDto): EpisodeDetail {
     currentStory: dto.currentStory === null ? null : mapStorySnapshot(dto.currentStory),
     nextActions: dto.nextActions,
     renderJob: mapRenderJob(dto.renderJob),
+    title: typeof dto.title === 'string' && dto.title !== '' ? dto.title : null,
+    finalVideo: mapFinalVideoAsset(dto.finalVideo),
+  };
+}
+
+/**
+ * The finished asset (WD4/F10) as the review view needs it: metadata only, never a media URL (09.7.2-T1 owns that
+ * endpoint). A member the wire omits or sends with the wrong shape becomes `null` instead of a guess, and an object
+ * with no usable identity is `null` as a whole — the view then hides the metadata block, exactly like a `null`
+ * `finalVideo` (a race, or a `final_video_asset_id` whose row is missing: 09.5.3-T1 returns no 500 for that).
+ */
+function mapFinalVideoAsset(dto: FinalVideoAssetDto | null): FinalVideoAsset | null {
+  if (dto === null || typeof dto !== 'object') return null;
+  const { assetId, contentType, sizeBytes, durationSec, retentionUntil, sha256 } = dto;
+  if (typeof assetId !== 'string' || assetId === '') return null;
+  const size = readCount(sizeBytes);
+  if (size === null) return null;
+  const duration = readCount(durationSec);
+  return {
+    assetId,
+    contentType: typeof contentType === 'string' ? contentType : '',
+    sizeBytes: size,
+    durationSec: duration,
+    retentionUntil: typeof retentionUntil === 'string' && retentionUntil !== '' ? retentionUntil : null,
+    sha256: typeof sha256 === 'string' ? sha256 : '',
   };
 }
 

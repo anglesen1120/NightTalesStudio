@@ -19,6 +19,8 @@ import type { EpisodeDetail } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { RenderRepository } from '../domain/render.repository';
 import { FakeRenderRepository } from '../testing/fake-render.repository';
+import { VideoReviewRepository } from '../domain/video-review.repository';
+import { FakeVideoReviewRepository } from '../testing/fake-video-review.repository';
 import type { StoryDraftWire, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
 import { StoryVersionRepository } from '../domain/story-version.repository';
@@ -68,6 +70,7 @@ function providers(h: Harness) {
     { provide: RealtimeService, useValue: h.realtime }, { provide: SessionStore, useValue: { generation: h.sessionGeneration } },
     // The page provides the render timeline store and the make-video store (10.6.1-T2); both read the render port.
     { provide: RenderRepository, useValue: new FakeRenderRepository() },
+    { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
     { provide: APP_ERROR_DEV_MODE, useValue: false },
   ];
 }

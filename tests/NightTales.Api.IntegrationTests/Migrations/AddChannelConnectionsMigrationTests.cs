@@ -18,8 +18,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <c>ITokenProtector</c> ciphertext and the OAuth client that minted the code pinned on the row.
 /// <c>Up</c> is expand-only — one <c>CreateTable</c>, its tenant index, the partial unique index
 /// <c>ux_channel_connections_account</c> and the two <c>CHECK</c>s, no other schema change — and
-/// <c>Down</c> drops the table and nothing else. 09.7.1-T1 appended <c>_09_EpisodeVideoReview</c> after it, so
-/// the newest migration's test (<c>AddEpisodeVideoReviewMigrationTests</c>) owns the last-migration check
+/// <c>Down</c> drops the table and nothing else. 06.2.1-T1 appended <c>_06_Publications</c> after it, so
+/// the newest migration's test (<c>AddPublicationsMigrationTests</c>) owns the last-migration check
 /// (<c>migrations[^1]</c>) and this class finds its own migration by name.
 /// </summary>
 [Trait("Category", "Integration")]

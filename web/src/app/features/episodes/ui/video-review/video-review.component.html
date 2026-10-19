@@ -1,0 +1,33 @@
+<section class="review">
+  @if (!ready()) { <h2>{{ 'episodes.render.review.heading' | transloco }}</h2> }
+  <nts-final-video-meta [finalVideo]="finalVideo()" [expiresAt]="url()?.expiresAt ?? null" />
+  @if (urlFailed() || (!url() && urlErrorKey())) {
+    <div class="url-error" aria-live="polite">
+      <nts-error-state titleKey="episodes.render.review.urlFailed" [bodyKey]="urlErrorKey() ?? 'episodes.render.review.urlFailed'" />
+      @if (urlRetryAfterSec(); as seconds) { <nts-retry-countdown [seconds]="seconds" /> }
+      <button type="button" [attr.aria-disabled]="retryBusy() ? 'true' : null" [attr.aria-busy]="retryBusy() ? 'true' : null" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
+    </div>
+  } @else if (!url() && loadingUrl()) {
+    <nts-loading-state />
+  } @else if (!ready() && url()) {
+    @defer (on viewport) {
+      <nts-video-player [url]="url()?.url ?? null" [label]="'episodes.render.review.heading' | transloco" (mediaError)="mediaError.emit()" />
+    } @placeholder {
+      <div><nts-loading-state /></div>
+    }
+  }
+  @if (url() && urlErrorKey() && !urlFailed()) {
+    <div class="url-error" aria-live="polite">
+      <nts-error-state [bodyKey]="urlErrorKey()!" />
+      @if (urlRetryAfterSec(); as seconds) { <nts-retry-countdown [seconds]="seconds" /> }
+      <button type="button" [attr.aria-disabled]="retryBusy() ? 'true' : null" [attr.aria-busy]="retryBusy() ? 'true' : null" (click)="retry()">{{ 'episodes.render.review.retry' | transloco }}</button>
+    </div>
+  }
+  @if (!ready()) {
+    <nts-quality-notes [codes]="notes()" />
+    @if (skipped().length > 0) {
+      <nts-skipped-scenes data-testid="skipped-scenes" [skipped]="skipped()" [episodeId]="episodeId()" headingKey="render.images.skippedBanner" />
+    }
+  }
+  <nts-video-decisions [canApprove]="canApprove()" [canReject]="canReject()" [canDownload]="canDownload()" [url]="urlFailed() ? null : (url()?.url ?? null)" [downloadName]="downloadName()" [busy]="busy()" [showDecisions]="!ready()" [downloadErrorKey]="storageDegraded() ? urlErrorKey() : null" (approveRequest)="approveRequest.emit()" (rejectRequest)="rejectRequest.emit()" (reMakeRequest)="reMakeRequest.emit()" (downloadClick)="downloadClick.emit()" />
+</section>
