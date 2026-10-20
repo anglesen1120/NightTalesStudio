@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Domain.Common;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Gates;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
@@ -354,14 +355,18 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
         var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, ct: CancellationToken.None);
-        var runId = Guid.CreateVersion7();
-        var stored = storedDocument is null ? "NULL" : $"'{storedDocument}'::jsonb";
+        var run = await new AutopilotRunBuilder(Database, actor).CreateAsync(
+            user.Id,
+            series.Id,
+            slotAt: Start,
+            startAt: Start,
+            now: Start,
+            episodeId: episode.Id,
+            state: AutopilotRunState.StoryGate,
+            gateResults: storedDocument,
+            ct: CancellationToken.None);
 
-        await Database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, gate_results, created_at, updated_at) "
-            + $"VALUES ('{runId}', '{user.Id}', '{series.Id}', '{episode.Id}', '{Start:O}', {stored}, now(), now())");
-
-        return new World(user.Id, runId, episode.Id);
+        return new World(user.Id, run.Id, episode.Id);
     }
 
     private sealed record World(Guid UserId, Guid RunId, Guid EpisodeId);

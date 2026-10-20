@@ -1,4 +1,5 @@
 using NightTales.Application.Abstractions;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
@@ -11,13 +12,14 @@ namespace NightTales.Api.IntegrationTests.Autopilot;
 
 /// <summary>
 /// The gate-failure streak over real rows (02.8.2 plan §3.5, task 02.8.2-T1): consecutive <c>gate_failed</c>
-/// outcomes, the window cap, and what resets the count.
+/// outcomes, the window cap, and what resets the count — plus the slot ordering and the wire form of the pause
+/// reason 02.8.3-T1 added to the same reader.
 /// </summary>
 /// <remarks>
-/// The rows are seeded with raw SQL because <c>autopilot_runs</c> has no Domain factory yet: 02.8.3-T1 adds the run
-/// state machine and with it the write path (the same reason <c>CoreSchemaBoundaryTests</c> inserts a run that way).
-/// Everything else — the user, the series, the episode — goes through the real builders, so the foreign keys the
-/// composite constraints require are the ones production writes, and the reader under test is the production one.
+/// The run rows go through <see cref="AutopilotRunBuilder"/>, which plans them with the production factory and then
+/// seeds the machine position the scenario needs; the user, the series and the episode go through their own
+/// builders, so every foreign key is the row production writes. The reader under test is the production one, and it
+/// now orders by <c>slot_at</c> (STATUS S67-6), which the tests below vary independently of <c>started_at</c>.
 /// </remarks>
 /// <param name="database">The class's own migrated database, from <see cref="IntegrationTest"/>.</param>
 public sealed class GateFailureStreakReaderTests(TestDatabase database) : IntegrationTest(database)
@@ -30,8 +32,8 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     {
         var world = await SeedWorldAsync();
 
-        await SeedRunAsync(world, Start, "gate_failed");
-        await SeedRunAsync(world, Start.AddMinutes(15), "gate_failed");
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
+        await SeedRunAsync(world, Start.AddMinutes(15), AutopilotRunOutcome.GateFailed);
 
         var reader = Reader(world);
 
@@ -47,9 +49,9 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     {
         var world = await SeedWorldAsync();
 
-        await SeedRunAsync(world, Start, "gate_failed");
-        await SeedRunAsync(world, Start.AddMinutes(15), "gate_failed");
-        var newest = await SeedRunAsync(world, Start.AddMinutes(30), "gate_failed");
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
+        await SeedRunAsync(world, Start.AddMinutes(15), AutopilotRunOutcome.GateFailed);
+        var newest = await SeedRunAsync(world, Start.AddMinutes(30), AutopilotRunOutcome.GateFailed);
 
         var reader = Reader(world);
 
@@ -67,9 +69,9 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     {
         var world = await SeedWorldAsync();
 
-        await SeedRunAsync(world, Start, "gate_failed");
-        await SeedRunAsync(world, Start.AddMinutes(15), "published");
-        await SeedRunAsync(world, Start.AddMinutes(30), "gate_failed");
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
+        await SeedRunAsync(world, Start.AddMinutes(15), AutopilotRunOutcome.Published);
+        await SeedRunAsync(world, Start.AddMinutes(30), AutopilotRunOutcome.GateFailed);
 
         (await Reader(world).GetStreakAsync(world.SeriesId, CancellationToken.None)).ShouldBe(0);
     }
@@ -80,10 +82,45 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     {
         var world = await SeedWorldAsync();
 
-        await SeedRunAsync(world, Start, "gate_failed");
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
         await SeedRunAsync(world, Start.AddMinutes(15), outcome: null);
 
         (await Reader(world).GetStreakAsync(world.SeriesId, CancellationToken.None)).ShouldBe(1);
+    }
+
+    /// <summary>
+    /// <see cref="IGateFailureStreakReader.GetLatestAsync"/> answers the newest <b>slot</b>, not the row planned last
+    /// (STATUS S67-6), and reports the pause trigger as its snake_case wire value — including the one member whose
+    /// wire value the plan fixes separately from its name (<c>autopilot_channel_unsupported</c>, 02.8.3 plan §3.6 row
+    /// 6b).
+    /// </summary>
+    [Fact]
+    public async Task Latest_OrdersBySlot_AndReportsTheWirePauseReason()
+    {
+        var world = await SeedWorldAsync();
+
+        // The later slot is planned first and the earlier slot last: only `slot_at` order names the later one.
+        var laterSlot = await SeedRunAsync(
+            world,
+            Start.AddHours(2),
+            AutopilotRunOutcome.Paused,
+            state: AutopilotRunState.Paused,
+            pauseReason: AutopilotPauseReason.ChannelUnsupported,
+            now: Start);
+        await SeedRunAsync(
+            world,
+            Start.AddHours(1),
+            AutopilotRunOutcome.Paused,
+            state: AutopilotRunState.Paused,
+            pauseReason: AutopilotPauseReason.OwnerPaused,
+            now: Start.AddHours(3));
+
+        var latest = await Reader(world).GetLatestAsync(world.SeriesId, CancellationToken.None);
+
+        latest.ShouldNotBeNull();
+        latest.RunId.ShouldBe(laterSlot);
+        latest.Outcome.ShouldBe(AutopilotRunOutcome.Paused);
+        latest.PauseReason.ShouldBe("autopilot_channel_unsupported");
     }
 
     /// <summary>
@@ -94,7 +131,7 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     public async Task AnonymousScope_IsRefused()
     {
         var world = await SeedWorldAsync();
-        await SeedRunAsync(world, Start, "gate_failed");
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
 
         var anonymous = new GateFailureStreakReader(Database.CreateAppDbContext(new TestCurrentUser()));
 
@@ -115,23 +152,45 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, title: "Tập cổng", ct: CancellationToken.None);
 
-        return new World(user.Id, series.Id, episode.Id);
+        return new World(user.Id, series.Id, episode.Id, actor);
     }
 
-    /// <summary>One <c>autopilot_runs</c> row; <paramref name="outcome"/> is the stored snake_case wire value.</summary>
-    private async Task<Guid> SeedRunAsync(World world, DateTimeOffset startedAt, string? outcome)
+    /// <summary>
+    /// One <c>autopilot_runs</c> row of the world's series; <paramref name="slotAt"/> is both the slot and the
+    /// planned instant unless <paramref name="now"/> says otherwise, and <paramref name="outcome"/> null leaves the
+    /// run in flight.
+    /// </summary>
+    private async Task<Guid> SeedRunAsync(
+        World world,
+        DateTimeOffset slotAt,
+        AutopilotRunOutcome? outcome,
+        AutopilotRunState? state = null,
+        AutopilotPauseReason? pauseReason = null,
+        DateTimeOffset? now = null)
     {
-        var outcomeSql = outcome is null ? "NULL" : $"'{outcome}'";
-        var runId = Guid.CreateVersion7();
+        var seededState = state ?? outcome switch
+        {
+            null => AutopilotRunState.Planned,
+            AutopilotRunOutcome.GateFailed => AutopilotRunState.GateFailed,
+            AutopilotRunOutcome.Published => AutopilotRunState.Published,
+            _ => AutopilotRunState.Planned,
+        };
 
-        await Database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, outcome, created_at, updated_at) "
-            + $"VALUES ('{runId}', '{world.UserId}', '{world.SeriesId}', '{world.EpisodeId}', "
-            + $"'{startedAt:O}', {outcomeSql}, now(), now())");
+        var run = await new AutopilotRunBuilder(Database, world.Actor).CreateAsync(
+            world.UserId,
+            world.SeriesId,
+            slotAt: slotAt,
+            startAt: slotAt.AddDays(-2),
+            now: now ?? slotAt,
+            episodeId: world.EpisodeId,
+            state: seededState,
+            outcome: outcome,
+            pauseReason: pauseReason,
+            ct: CancellationToken.None);
 
-        return runId;
+        return run.Id;
     }
 
     /// <summary>The series, its owner and its episode, as the seeded rows name them.</summary>
-    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId);
+    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, TestCurrentUser Actor);
 }

@@ -11,6 +11,7 @@ using NightTales.Domain.Assets;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Gates;
@@ -274,13 +275,18 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
             ct: Ct);
         await builder.AttachFinalVideoAsync(user.Id, episode.Id, asset.Id, Ct);
 
-        var runId = Guid.CreateVersion7();
         var renderJobId = Guid.CreateVersion7();
-        await Database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, outcome, gate_results, "
-            + "created_at, updated_at) "
-            + $"VALUES ('{runId}', '{user.Id}', '{series.Id}', '{episode.Id}', '{Start:O}', 'gate_failed', NULL, now(), now())",
-            Ct);
+        var run = await new AutopilotRunBuilder(Database, actor, clock).CreateAsync(
+            user.Id,
+            series.Id,
+            slotAt: Start,
+            startAt: Start,
+            now: Start,
+            episodeId: episode.Id,
+            state: AutopilotRunState.GateFailed,
+            outcome: AutopilotRunOutcome.GateFailed,
+            ct: Ct);
+        var runId = run.Id;
 
         await Database.ExecuteAsync(
             "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, "

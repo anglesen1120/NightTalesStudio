@@ -6,6 +6,7 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Domain.Common;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Series.Events;
 using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Persistence;
@@ -321,11 +322,17 @@ public sealed class AutopilotNotificationTests(TestDatabase database) : Integrat
         var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, title: SeriesTitle);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, title: EpisodeTitle, ct: CancellationToken.None);
-        var runId = Guid.CreateVersion7();
-
-        await Database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, outcome, created_at, updated_at) "
-            + $"VALUES ('{runId}', '{user.Id}', '{series.Id}', '{episode.Id}', '{Start:O}', 'gate_failed', now(), now())");
+        var run = await new AutopilotRunBuilder(Database, actor).CreateAsync(
+            user.Id,
+            series.Id,
+            slotAt: Start,
+            startAt: Start,
+            now: Start,
+            episodeId: episode.Id,
+            state: AutopilotRunState.GateFailed,
+            outcome: AutopilotRunOutcome.GateFailed,
+            ct: CancellationToken.None);
+        var runId = run.Id;
 
         return new World(user.Id, runId, episode.Id);
     }

@@ -46,9 +46,12 @@ public interface IGateFailureStreakReader
 /// </summary>
 /// <param name="RunId">The run row.</param>
 /// <param name="EpisodeId">The episode it is producing, or <see langword="null"/> before one exists.</param>
-/// <param name="StartedAt">The ordering column this reader uses (<c>autopilot_runs.started_at</c>).</param>
+/// <param name="StartedAt">The instant the row was planned (<c>autopilot_runs.started_at</c>).</param>
 /// <param name="Outcome">The stored terminal outcome, or <see langword="null"/> while the run is in flight.</param>
-/// <param name="PauseReason">The code the run state machine wrote when it paused the run, or <see langword="null"/>.</param>
+/// <param name="PauseReason">
+/// The wire value (<c>gate_failed_streak</c>, <c>autopilot_channel_unsupported</c>, …) of the trigger the run state
+/// machine wrote when it paused the run, or <see langword="null"/>.
+/// </param>
 /// <param name="GateResults">The <c>gates.v1</c> document of the run's verdicts, or <see langword="null"/> before one.</param>
 public sealed record AutopilotRunGateSnapshot(
     Guid RunId,

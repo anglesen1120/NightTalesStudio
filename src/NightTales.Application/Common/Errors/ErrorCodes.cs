@@ -68,6 +68,15 @@ public static class ErrorCodes
     /// <summary><c>PUT /series/{id}/autopilot</c> body fails validation (02 D8).</summary>
     public const string AutopilotSettingsInvalid = "autopilot_settings_invalid";
 
+    /// <summary>An autopilot step was asked to run without its owner's id, so no tenant-filtered read is possible (02.8.3-T1, 09 README D10).</summary>
+    public const string AutopilotUserRequired = "autopilot_user_required";
+
+    /// <summary>The autopilot run is not visible to the given owner, or does not exist (02.8.3-T1).</summary>
+    public const string AutopilotRunNotFound = "autopilot_run_not_found";
+
+    /// <summary>An autopilot step handler (or the rows it needs) failed; the next tick retries (02.8.3-T1).</summary>
+    public const string AutopilotStepFailed = "autopilot_step_failed";
+
     /// <summary>Settings validation (09.10.2).</summary>
     public const string SettingInvalid = "setting_invalid";
 

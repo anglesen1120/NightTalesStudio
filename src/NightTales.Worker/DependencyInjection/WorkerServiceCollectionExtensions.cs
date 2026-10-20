@@ -12,6 +12,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Autopilot.Events;
+using NightTales.Application.Features.Autopilot.Orchestration;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Research.Fetcher;
@@ -306,6 +307,39 @@ public static class WorkerServiceCollectionExtensions
         // redelivery cannot queue a second message — and this handler only publishes `EpisodeUpdated`; the Api
         // never resolves it.
         services.AddOutboxHandler<AutopilotOwnerActionRequired, AutopilotOwnerActionRequiredHandler>();
+
+        // 02.8.3-T1 (plan §3 Steps 4–9, 02 README D17): the one tick. Its two halves are the slot planner (rows
+        // per cadence slot, `UNIQUE (series_id, slot_at)`) and the run orchestrator (one handler call per state,
+        // one scope pinned to the run's owner, one compare-and-set save); the recurring registration is found by
+        // the job scan below (`AutopilotPlanJobRegistration`), because it lives in this assembly.
+        //
+        // `Autopilot:Run` carries a default for every key, so none is a required start-up key. The two estimates
+        // are the plan's ⚠️ placeholders (05 render measurement and the M1 story p95 replace them), the lead time
+        // and the minimum veto window are read from `YouTube:*` and never duplicated here (06 CR-3), and the
+        // task-file key names of the older subsections are still honoured as fall-backs by
+        // `ApplyPlatformValues`. An impossible run policy fails the boot, not the first tick.
+        services.AddOptions<AutopilotRunOptions>()
+            .BindConfiguration(AutopilotRunOptions.SectionName)
+            .Configure<IConfiguration>((runOptions, configuration) =>
+                AutopilotRunOptions.ApplyPlatformValues(runOptions, key => configuration[key]))
+            .Validate(
+                options => AutopilotRunOptions.Validate(options).Count == 0,
+                $"'{AutopilotRunOptions.SectionName}' must hold a run policy whose bounds are in range (see AutopilotRunOptions.Validate).")
+            .ValidateOnStart();
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<AutopilotRunOptions>>().Value);
+
+        // The Application half: the calculator, the planner, the orchestrator, the instruments and every
+        // `IAutopilotStepHandler` found in that assembly (no step needs a DI edit here).
+        services.AddAutopilotOrchestration();
+
+        // The event half: the outbox consumers that move a run on when its paid step's event arrives. They only
+        // call the orchestrator, so they are idempotent by construction (the compare-and-set is the guard).
+        services.AddAutopilotOutboxHandlers();
+
+        // The cadence's two boot preconditions (`BackgroundJobActivationCheck`'s shape): the runtime can resolve
+        // the IANA time zones the slots are computed in, and exactly one step handler claims each run state.
+        services.AddSingleton<AutopilotStartupCheck>();
+        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<AutopilotStartupCheck>());
 
         // `Bible:Proposal` is read by both halves of this feature: the handler reads the kill switch through
         // `IBibleProposalSwitch`, whose Worker implementation holds the `IOptionsMonitor` so the switch takes

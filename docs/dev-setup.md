@@ -664,6 +664,10 @@ dotnet ef database update --project src/NightTales.Infrastructure --context AppD
   on top. The published migration id of the first branch never changes.
 - **A migration that adds a table extends** `tests/NightTales.Api.IntegrationTests/Migrations/SeedPrevious.cs`
   with a row of that table, so the *next* migration is exercised over data, not only over an empty schema.
+- **A migration that adds columns to an existing table** extends the same dataset with a row of *that* table in its
+  old shape (02.8.3-T1's `autopilot_runs` row), and its test pins whatever backfill `Up` performs: the harness
+  fingerprints only the columns schema N-1 had, so an inherited value must come out untouched while the new ones are
+  computed from the old ones.
 - **A destructive step** (drop a table/column, narrow a column) needs `[ContractMigration("why the previous
   release is over")]` on the migration class; without it `Migrations_ContainNoDestructiveOperations` fails the
   build, in the unit job and in the `migrations` job. The review checklist is in

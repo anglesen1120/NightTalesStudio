@@ -19,8 +19,7 @@ namespace NightTales.Api.IntegrationTests.Autopilot;
 /// The stored world one story-gate evaluation needs (02.8.2-T1): an owner, a series, an episode in
 /// <c>story_review</c> whose current <c>story_versions</c> row carries a well-formed <c>audit.v1</c> document, a
 /// D4-band sized body, a stored similarity score, one past episode of the same series (check 10's corpus) and an
-/// <c>autopilot_runs</c> row — which has no Domain factory yet, so it is inserted with raw SQL exactly as
-/// <c>GateFailureStreakReaderTests</c> does.
+/// <c>autopilot_runs</c> row inserted through <see cref="AutopilotRunBuilder"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -147,12 +146,12 @@ internal static class GateRunSeed
             + Instant(Start) + "')", ct);
     }
 
-    /// <summary>Inserts one <c>autopilot_runs</c> row (no Domain factory exists until 02.8.3-T1) and returns its id.</summary>
+    /// <summary>Inserts one <c>autopilot_runs</c> row through the TestKit builder and returns its id.</summary>
     /// <param name="database">The class's own database.</param>
     /// <param name="userId">The run's owner.</param>
     /// <param name="seriesId">The run's series.</param>
     /// <param name="episodeId">The run's episode.</param>
-    /// <param name="startedAt">The run's slot instant, which is also the streak order.</param>
+    /// <param name="startedAt">The run's slot instant (its <c>started_at</c> and <c>slot_at</c> alike).</param>
     /// <param name="ct">The caller's cancellation token.</param>
     internal static async Task<Guid> SeedRunRowAsync(
         TestDatabase database,
@@ -162,14 +161,17 @@ internal static class GateRunSeed
         DateTimeOffset startedAt,
         CancellationToken ct = default)
     {
-        var runId = Guid.CreateVersion7();
+        var actor = new TestCurrentUser { Id = userId };
+        var run = await new AutopilotRunBuilder(database, actor).CreateAsync(
+            userId,
+            seriesId,
+            slotAt: startedAt,
+            startAt: startedAt,
+            now: startedAt,
+            episodeId: episodeId,
+            ct: ct);
 
-        await database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, created_at, updated_at) VALUES ('"
-            + runId + "', '" + userId + "', '" + seriesId + "', '" + episodeId + "', '" + Instant(startedAt)
-            + "', now(), now())", ct);
-
-        return runId;
+        return run.Id;
     }
 
     /// <summary>
@@ -263,12 +265,16 @@ internal static class GateRunSeed
         return (episode.Id, versionId, runId);
     }
 
-    /// <summary>Marks one run terminal the way 02.8.3-T1 will, so the streak reader can count it.</summary>
+    /// <summary>Marks one run terminal the way the run state machine does, so the streak reader can count it.</summary>
     /// <param name="database">The class's own database.</param>
     /// <param name="runId">The run to stop.</param>
     /// <param name="ct">The caller's cancellation token.</param>
     internal static Task MarkRunGateFailedAsync(TestDatabase database, Guid runId, CancellationToken ct = default) =>
-        database.ExecuteAsync($"UPDATE autopilot_runs SET outcome = 'gate_failed' WHERE id = '{runId}'", ct);
+        database.ExecuteAsync(
+            "UPDATE autopilot_runs SET outcome = 'gate_failed', state = 'gate_failed', "
+            + "finished_at = now(), last_transition_at = now() "
+            + $"WHERE id = '{runId}'",
+            ct);
 
     /// <summary>The ISO-8601 instant the seed SQL literals carry.</summary>
     internal static string Instant(DateTimeOffset instant) =>

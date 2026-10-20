@@ -20,7 +20,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// row per platform post of one episode — the metadata YouTube is given, the consent that allowed it and where
 /// the upload stands. <c>Up</c> is expand-only — one <c>CreateTable</c>, the four D18 indexes, the two indexes
 /// EF adds for the foreign keys, the four <c>CHECK</c>s and the primary key, no other schema change — and
-/// <c>Down</c> drops the table and nothing else. The class owns the last-migration check for the new tip.
+/// <c>Down</c> drops the table and nothing else. 02.8.3-T1 appended <c>_02_AutopilotRunsStateAndSlot</c> after it, so
+/// the last-migration check (<c>migrations[^1]</c>) now belongs to
+/// <c>AddAutopilotRunsStateAndSlotMigrationTests</c> and this class only proves its own migration is compiled in.
 /// </summary>
 /// <remarks>
 /// The table-wide expectations are read from the live catalog (<c>information_schema</c>, <c>pg_indexes</c>,
@@ -169,11 +171,13 @@ public sealed class AddPublicationsMigrationTests(TestDatabase database) : Integ
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsApplied_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 02.8.3-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

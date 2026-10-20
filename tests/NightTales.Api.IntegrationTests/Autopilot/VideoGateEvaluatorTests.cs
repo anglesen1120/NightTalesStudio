@@ -13,6 +13,7 @@ using NightTales.Domain.Assets;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Gates;
@@ -484,15 +485,19 @@ public sealed class VideoGateEvaluatorTests(TestDatabase database) : Integration
             ct: Ct);
         await builder.AttachFinalVideoAsync(user.Id, episode.Id, asset.Id, Ct);
 
-        var runId = Guid.CreateVersion7();
         var renderJobId = Guid.CreateVersion7();
-        await Database.ExecuteAsync(
-            "INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, outcome, gate_results, "
-            + "created_at, updated_at) "
-            + $"VALUES ('{runId}', '{user.Id}', '{series.Id}', '{episode.Id}', '{Start:O}', 'gate_failed', "
-            + (gateResults is null ? "NULL" : $"'{gateResults}'::jsonb")
-            + ", now(), now())",
-            Ct);
+        var run = await new AutopilotRunBuilder(Database, actor, clock).CreateAsync(
+            user.Id,
+            series.Id,
+            slotAt: Start,
+            startAt: Start,
+            now: Start,
+            episodeId: episode.Id,
+            state: AutopilotRunState.GateFailed,
+            outcome: AutopilotRunOutcome.GateFailed,
+            gateResults: gateResults,
+            ct: Ct);
+        var runId = run.Id;
 
         // BD5's one-active-render-per-episode index covers only the active statuses, so a terminal row is free to
         // stand beside nothing else; a failed row is the "no succeeded render" case.
