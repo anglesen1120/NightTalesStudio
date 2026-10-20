@@ -120,7 +120,7 @@ public sealed class DisconnectChannelAuditProjectionTests
 
         // No value is free text: every one is a string id, a count or a frozen code, so a title or a token cannot
         // even be typed into the projection without a key appearing above.
-        data.Summary.Values.ShouldAllBe(value => value is string or int);
+        data.Summary.Values.All(value => value is string or int).ShouldBeTrue();
 
         // A refusal (404, a refused deletion request) leaves no outcome, so the behaviour writes no row for it.
         var refused = command with { Outcome = null };
