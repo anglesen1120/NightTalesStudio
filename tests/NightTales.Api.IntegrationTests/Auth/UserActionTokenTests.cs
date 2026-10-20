@@ -136,7 +136,10 @@ public sealed class UserActionTokenTests(TestDatabase database) : IntegrationTes
 
         results.Count(result => !result.IsError).ShouldBe(1, "the UPDATE … RETURNING serialises the two callers");
         results.Count(result => result.IsError).ShouldBe(1);
-        results.Single(result => !result.IsError).Value.ShouldBe(user.Id);
+        results.Single(result => !result.IsError).Value.UserId.ShouldBe(user.Id);
+        results
+            .Single(result => !result.IsError)
+            .Value.SubjectId.ShouldBeNull("a plain password-reset token carries no subject");
         results
             .Single(result => result.IsError)
             .Errors.ShouldContain(error => error.Code == ErrorCodes.ValidationFailed);
@@ -163,7 +166,7 @@ public sealed class UserActionTokenTests(TestDatabase database) : IntegrationTes
         var correct = await AuthTestFlow.ConsumeActionTokenAsync(
             factory.Services, issued.Value, UserActionKind.EmailVerify, ct);
         correct.IsError.ShouldBeFalse();
-        correct.Value.ShouldBe(user.Id);
+        correct.Value.UserId.ShouldBe(user.Id);
     }
 
     [Fact]
@@ -235,6 +238,36 @@ public sealed class UserActionTokenTests(TestDatabase database) : IntegrationTes
             AuthTestFlow.ConsumeActionTokenAsync(factory.Services, second.Value, UserActionKind.PasswordReset, ct));
 
         consumed.Count(result => !result.IsError).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Consume_ReturnsTheSubjectOfASubjectScopedToken()
+    {
+        // 06 README YR8: the token does not carry its subject, so the consume statement returns it from the
+        // row — the cancel-by-link route compares it with the publication its body names. A plain flow's token
+        // answers null (asserted by Consume_IsSingleUse_UnderConcurrency), so the two shapes stay distinct.
+        var ct = TestContext.Current.CancellationToken;
+        using var factory = new ApiFactory(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        var otherUser = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        var subject = Guid.CreateVersion7();
+
+        var issued = await AuthTestFlow.IssueSubjectActionTokenAsync(
+            factory.Services, user.Id, UserActionKind.PublicationCancel, subject, DateTimeOffset.UtcNow.AddHours(1), ct);
+        issued.IsError.ShouldBeFalse();
+
+        var consumed = await AuthTestFlow.ConsumeActionTokenAsync(
+            factory.Services, issued.Value, UserActionKind.PublicationCancel, ct);
+
+        consumed.IsError.ShouldBeFalse();
+        consumed.Value.UserId.ShouldBe(user.Id);
+        consumed.Value.SubjectId.ShouldBe(subject, "the subject round-trips through the row, not through the token");
+
+        SqlProbe
+            .Count(
+                Database,
+                $"SELECT count(*) FROM user_action_tokens WHERE user_id = '{otherUser.Id}'")
+            .ShouldBe(0, "the subject is the row's, never a second user's: no row is written for anyone else");
     }
 
     /// <summary>The stored form of a token: SHA-256 as lowercase hex (BD3).</summary>

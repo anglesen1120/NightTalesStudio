@@ -9,6 +9,7 @@ using NightTales.Api.Http.Filters;
 using NightTales.Api.RateLimiting;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Commands.CancelPublication;
+using NightTales.Application.Features.Publishing.Commands.CancelPublicationByLink;
 using NightTales.Application.Features.Publishing.Commands.ConsentPublication;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Features.Publishing.Queries.GetConsentText;
@@ -16,10 +17,12 @@ using NightTales.Application.Features.Publishing.Queries.GetConsentText;
 namespace NightTales.Api.Endpoints.Publishing;
 
 /// <summary>
-/// The publication routes of 06.2.2-T1 and 06.2.6-T1 (06 README D7, 10 CR-17): <c>POST
+/// The publication routes of 06.2.2-T1, 06.2.6-T1 and 06.2.2-T2 (06 README D7, 10 CR-17): <c>POST
 /// /api/v1/publications/{id}/consent</c> records the owner's consent on an <c>awaiting_consent</c> row, <c>DELETE
-/// /api/v1/publications/{id}</c> cancels a row that has not started uploading, and <c>GET
-/// /api/v1/publications/consent-text</c> serves the <c>pc.v1</c> text the consent dialogue displays.
+/// /api/v1/publications/{id}</c> cancels a row that has not started uploading, <c>GET
+/// /api/v1/publications/consent-text</c> serves the <c>pc.v1</c> text the consent dialogue displays, and <c>POST
+/// /api/v1/publications/cancel-by-link</c> cancels one publication anonymously from the single-use link in the
+/// veto-notice e-mail.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -70,6 +73,18 @@ public static class PublicationEndpoints
 
     /// <summary>The consent-text route, relative to <see cref="GroupPrefix"/>.</summary>
     public const string ConsentTextRoute = "/consent-text";
+
+    /// <summary>
+    /// The anonymous cancel-by-link route of 06.2.2-T2, relative to <see cref="GroupPrefix"/>: a literal segment,
+    /// so it never binds as a <c>{id}</c>.
+    /// </summary>
+    public const string CancelByLinkRoute = "/cancel-by-link";
+
+    /// <summary>
+    /// The <c>Cache-Control</c> of every answer of the cancel-by-link route (06.2.2-T2 §Design): nothing about this
+    /// call belongs in a cache, because its body names a publication and its token is a capability.
+    /// </summary>
+    public const string CancelByLinkCacheControl = "no-store";
 
     /// <summary>
     /// The feature flag that gates every YouTube publishing route (06 README D9); the same key the sibling publishing
@@ -138,6 +153,25 @@ public static class PublicationEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // 06.2.2-T2: the one anonymous write of this group. The token in the body is its authentication, so the
+        // route answers without a bearer, and the `auth` policy (BD14) is what keeps the token space unprobeable.
+        // The header filter goes on before the feature guard so the guard's own 404 carries it too; it is placed
+        // last in the file so no existing route is reshaped (06.2.2-T2 §Design).
+        publications.MapPost(CancelByLinkRoute, CancelByLinkAsync)
+            .AddEndpointFilter((context, next) =>
+            {
+                SetCancelByLinkHeaders(context.HttpContext);
+
+                return next(context);
+            })
+            .RequireFeature(FeatureKey)
+            .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Auth)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         return routes;
     }
@@ -280,5 +314,68 @@ public static class PublicationEndpoints
         http.Response.Headers.CacheControl = ConsentTextCacheControl;
 
         return result.ToHttpResult(http);
+    }
+
+    /// <summary>
+    /// <c>POST /api/v1/publications/cancel-by-link</c>: 204 when the token was spent and the publication cancelled,
+    /// or the single 400 <c>cancel_token_invalid</c> of every other outcome, or 404 <c>feature_disabled</c>, or 429
+    /// <c>rate_limited</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Anonymous, and the token is the credential.</b> The route carries no bearer and no cookie: the caller
+    /// holds only the mailed link, which may be opened in another browser. The command is marked
+    /// <c>[AllowAnonymousRequest]</c> (D4's marker), so the pipeline's authorization slot passes it through without
+    /// a principal, and the <c>auth</c> policy (BD14) is what makes the token space unprobeable.
+    /// </para>
+    /// <para>
+    /// <b>One refusal for every failure.</b> A used, expired or unknown token, a token minted for another
+    /// publication, an unknown or foreign publication and a row that has left <c>awaiting_consent</c> all answer
+    /// the identical 400 body, because the handler collapses them onto one error code with no metadata. A 503 is
+    /// the only failure with its own answer, and it says nothing about the token (09 README D5).
+    /// </para>
+    /// <para>
+    /// <b>Headers on every answer.</b> Both are set by the route's first endpoint filter — before the feature guard
+    /// can answer 404 — so the success, each refusal and a thrown failure are uncacheable and leak no referrer. The
+    /// 429 is written by the rate-limiting middleware before the endpoint runs: the host's hardening headers
+    /// (BD12) still give it <c>Referrer-Policy: no-referrer</c>, and its missing <c>no-store</c> is a property of
+    /// the shared limiter writer, not of this route.
+    /// </para>
+    /// <para>
+    /// No <c>If-Match</c> and no <c>Idempotency-Key</c>: the single-use token is the optimistic guard, and a second
+    /// call is a refusal rather than a replay (06.2.2 §Design "Cancel-by-link").
+    /// </para>
+    /// </remarks>
+    /// <param name="request">The publication the link named and the token it carried.</param>
+    /// <param name="sender">The Mediator sender.</param>
+    /// <param name="http">The request, for the problem details.</param>
+    /// <param name="ct">The request cancellation token.</param>
+    private static async Task<IResult> CancelByLinkAsync(
+        CancelByLinkRequest request,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var result = await sender
+            .Send(new CancelPublicationByLinkCommand(request.PublicationId, request.Token), ct)
+            .ConfigureAwait(false);
+
+        return result.IsError
+            ? ProblemDetailsWriter.ToProblem(result.Errors, http)
+            : result.ToNoContentResult(http);
+    }
+
+    /// <summary>
+    /// The two headers of the cancel-by-link route (06 README D3/D17): nothing about the call may reach a cache, and
+    /// no referrer may carry the link onward.
+    /// </summary>
+    /// <param name="http">The request being answered.</param>
+    private static void SetCancelByLinkHeaders(HttpContext http)
+    {
+        http.Response.Headers.CacheControl = CancelByLinkCacheControl;
+
+        // Spelled here as the callback's route spells it (PublishingEndpoints): the requirement is part of this
+        // route's contract and must survive a change to the host's global defaults (BD12).
+        http.Response.Headers["Referrer-Policy"] = "no-referrer";
     }
 }

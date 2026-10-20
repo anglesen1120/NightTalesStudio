@@ -2,15 +2,18 @@ using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Features.Publishing.Commands.CreatePublication;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Publishing;
+using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Publishing;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Publishing;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -444,6 +447,8 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
             context,
             new YouTubeOptions { AuditStatus = auditStatus },
             clock,
+            new FakePublicationNotices(),
+            new FakeUserProfileReader(scene.UserId),
             logger ?? NullLogger<CreatePublicationHandler>.Instance);
 
         var result = await handler.Handle(command, ct);
@@ -470,6 +475,30 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         rows.Count.ShouldBe(1);
 
         return int.Parse(rows[0], System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// The account read the autopilot branch's veto notice needs (06.2.2-T2): one profile of the scene's owner, so
+    /// the notice is queued with a name and a locale while no account row has to exist for this level's scene.
+    /// </summary>
+    /// <param name="ownerId">The only id this reader answers for; another id is a missing account.</param>
+    private sealed class FakeUserProfileReader(Guid ownerId) : IUserProfileReader
+    {
+        /// <summary>The display name the notice carries.</summary>
+        internal const string OwnerDisplayName = "Mai";
+
+        public Task<UserProfile?> GetAsync(Guid userId, CancellationToken ct) =>
+            Task.FromResult<UserProfile?>(
+                userId == ownerId
+                    ? new UserProfile(
+                        ownerId,
+                        OwnerDisplayName,
+                        "mai@example.test",
+                        Language.Vi,
+                        PlatformRole.User,
+                        false,
+                        null)
+                    : null);
     }
 
     /// <summary>

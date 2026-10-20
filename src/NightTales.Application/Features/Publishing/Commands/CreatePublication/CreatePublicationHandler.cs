@@ -3,7 +3,9 @@ using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Publishing;
@@ -17,7 +19,8 @@ namespace NightTales.Application.Features.Publishing.Commands.CreatePublication;
 /// Creates an episode's publication in <c>awaiting_consent</c> (06.2.1-T1 task §Application steps 1-10, 06 README
 /// D6/D11/D12/D13/D17): reads the episode, the connection and the render's music attribution, refuses a metadata
 /// set YouTube would reject, resolves the veto window of an autopilot create, applies the pre-audit privacy
-/// override and writes the row, its outbox message and its audit row in one transaction.
+/// override and writes the row, its outbox message and its audit row in one transaction — and, on an autopilot
+/// create, queues the veto notice of 06.2.2-T2 in that same transaction.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -44,11 +47,21 @@ namespace NightTales.Application.Features.Publishing.Commands.CreatePublication;
 /// <param name="db">The tracked write model; the tenant filter is what turns "another owner's row" into a 404.</param>
 /// <param name="options">The <c>YouTube</c> section (06 README D11): the audit status, the publish lead time and the minimum veto window.</param>
 /// <param name="clock">The scope's clock; one instant is read for the whole command.</param>
+/// <param name="notices">
+/// The veto notice of 06.2.2-T2 (D7), queued only on an autopilot create. It queues and never commits, so it joins
+/// this command's transaction and a queueing failure fails the whole create.
+/// </param>
+/// <param name="profiles">
+/// The owner's display name and <c>ui_locale</c>, read only on the autopilot branch: the veto notice renders both
+/// and this handler has no other reason to read the account (09 README D16).
+/// </param>
 /// <param name="logger">The id-only log lines of this path.</param>
 public sealed partial class CreatePublicationHandler(
     IAppDbContext db,
     YouTubeOptions options,
     IClock clock,
+    IPublicationNotices notices,
+    IUserProfileReader profiles,
     ILogger<CreatePublicationHandler> logger)
     : ICommandHandler<CreatePublicationCommand, ErrorOr<PublicationDto>>
 {
@@ -197,8 +210,10 @@ public sealed partial class CreatePublicationHandler(
             vetoEndsAt = vetoEnd;
         }
 
-        // Step 7: the pre-audit privacy override (D12/C4). The submitted value is kept in platform_payload so
-        // 06.2.2-T2 can release it once Google approves the client; the row itself is stored private.
+        // Step 7: the pre-audit privacy override (D12/C4). The row is stored private and stays private for its
+        // whole life (06.2.2-T2 §Notes: only a later autopilot publication is released once Google approves the
+        // client, YR20); the submitted value is kept in platform_payload because it is what the consent receipt and
+        // the veto notice name in their privacy note ("you selected …").
         var preAudit = !string.Equals(options.AuditStatus, YouTubeAuditStatuses.Approved, StringComparison.Ordinal);
         var privacy = preAudit ? PublicationPrivacy.Private : command.Privacy;
         var platformPayload = preAudit ? PublicationPlatformPayload.WritePreAudit(command.Privacy) : null;
@@ -221,6 +236,47 @@ public sealed partial class CreatePublicationHandler(
 
         var publication = created.Value;
         db.Publications.Add(publication);
+
+        // Step 8 continued (06.2.2-T2, D7): an autopilot publication announces itself before it is stored, so the
+        // veto notice and the row leave in the same commit. The notice's id is the only handle kept, in
+        // `platform_payload.vetoNoticeEmailId` (06.2.2-T3 polls that message's delivery and writes
+        // `veto_notice_sent_at` itself, D8). A queueing failure fails the whole command: nothing half-created.
+        if (command.AutopilotAuthorizationId is not null)
+        {
+            // The two names and the locale the message carries come from rows the notice's template needs; the
+            // profile read is owner-scoped by its own id and happens only on this branch, so a manual create pays
+            // no extra query.
+            var owner = await profiles.GetAsync(publication.UserId, cancellationToken).ConfigureAwait(false);
+
+            if (owner is null)
+            {
+                return Errors.NotFound();
+            }
+
+            var notice = await notices
+                .QueueVetoNoticeAsync(
+                    publication,
+                    // `DisplayName` is nullable only because 06.1.2-T1's disconnect purges the YouTube data of
+                    // the connection (ChannelConnection.PurgeYouTubeData); a row the create could read here is
+                    // active and titled, so the empty string is a shape, never a state this path reaches.
+                    connection.DisplayName ?? string.Empty,
+                    owner.DisplayName,
+                    owner.UiLocale,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (notice.IsError)
+            {
+                return notice.Errors;
+            }
+
+            var stamped = publication.SetVetoNoticeEmailId(notice.Value);
+
+            if (stamped.IsError)
+            {
+                return stamped.Errors;
+            }
+        }
 
         try
         {

@@ -158,6 +158,7 @@ public sealed class EmailSenderTests(TestDatabase database) : IntegrationTest(da
             ("setting_change_pending", "cancelUrl"),
             ("mfa_reset_forced", "resetUrl"),
             ("approval_cancel", "cancelLink"),
+            ("publication_veto_notice", "cancelUrl"),
         ];
 
         foreach (var (template, key) in mintedLinks)

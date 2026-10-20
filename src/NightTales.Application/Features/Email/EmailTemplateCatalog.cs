@@ -99,6 +99,18 @@ public static class EmailTemplateCatalog
     /// <summary>The template of 09.3.1-T3's e-mail verification (S phase); its link is minted at send time.</summary>
     public const string EmailVerify = "email_verify";
 
+    /// <summary>
+    /// 06.2.2-T2 (06 CR-6, D7): the receipt of every consent, user or autopilot (YR9). Token-free — the
+    /// publication page it links to is reached with a plain URL, not a capability.
+    /// </summary>
+    public const string PublicationConsented = "publication_consented";
+
+    /// <summary>
+    /// 06.2.2-T2 (06 CR-6, D7): the veto notice of an autopilot publication. Its <c>cancelUrl</c> carries a
+    /// single-use publication-scoped token, so it is minted at send time (09 README §B10 WT17, WT30).
+    /// </summary>
+    public const string PublicationVetoNotice = "publication_veto_notice";
+
     /// <summary>Every template the platform ships, keyed by its exact name.</summary>
     public static readonly IReadOnlyDictionary<string, EmailTemplateDefinition> All =
         new Dictionary<string, EmailTemplateDefinition>(StringComparer.Ordinal)
@@ -152,6 +164,28 @@ public static class EmailTemplateCatalog
             // producer supplies, so the template is not token-bearing: no minter and no `link` key
             // (09 README §B10 WT17/WT30).
             ["channel_connected"] = new(["displayName", "channelTitle", "occurredAt", "device", "securityLink"]),
+
+            // 06.2.2-T2 (06 CR-6, D7): the consent receipt, queued for a user consent and for an autopilot
+            // one alike (YR9). `consentSource` is a producer key kept for the queued payload and the audit
+            // trail and deliberately not rendered: the renderer substitutes flat `{{key}}`s and has no
+            // conditionals, so the source-dependent sentence is the code-built `approvalLine` instead
+            // (09-backend-api README §6). Token-free, therefore no minter.
+            [PublicationConsented] = new(
+                [
+                    "displayName", "channelTitle", "videoTitle", "privacy", "privacyNote", "scheduledAt",
+                    "publicationUrl", "approvalLine", "consentSource",
+                ]),
+
+            // 06.2.2-T2 (06 CR-6, D7, YR8). `publicationId` and `vetoEndsAt` are producer keys: the id scopes
+            // the token and is consumed by the minter that builds the link, so it is never rendered. `cancelUrl`
+            // carries the single-use publication-cancel token and is minted at send time (WT17/WT30);
+            // 06.2.2-T4 later adds the `approveUrl` key to this same template.
+            [PublicationVetoNotice] = new(
+                [
+                    "displayName", "channelTitle", "videoTitle", "description", "tags", "privacy",
+                    "privacyNote", "scheduledAt", "vetoEndsAt", "publicationUrl", "publicationId",
+                ],
+                ["cancelUrl"]),
         };
 
     /// <summary>The definition of <paramref name="template"/>, or <see langword="null"/> when it is unknown.</summary>
