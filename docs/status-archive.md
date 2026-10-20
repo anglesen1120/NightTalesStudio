@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume bullet (2026-10-21, replaced by the Session 74 06.2.2-T2 PR)
+
+Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 67 closed, merged #257 → `develop` `ddb05b38`; branch `feature/02.8.2-T1-s67` from `develop` `fa6c0aa2`, merged develop `c53efc0c`):** **02.8.2-T1** auto-approval gate engine: Domain `Stories/Gates` (15 true-crime / 13 fiction story checks, 10 video checks, threshold profile overlay `default`/`strict`), `StoryGateEvaluator`/`VideoGateEvaluator` behind an `IAutoApprovalGate` facade, `GateResultWriter` (`gates.v1` into `autopilot_runs.gate_results`), `GateOutcomeRecorder`, `AutopilotApprovalService` (sends the same `ApproveStoryCommand`/`ApproveVideoCommand` under `ISystemContext.For(owner)`; the story ETag is bound to the evaluated version and the video `IfMatch` comes from the checked snapshot), `AutopilotNotificationService` (owner e-mail + audit + outbox in the verdict's own transaction; the handler only publishes realtime), `GateFailureStreakReader`, options/metrics/DI in Api and Worker, `AutopilotRun.RecordGateResults`/`RaiseOwnerActionRequired`, and a defence-in-depth `trueCrime && Source == Autopilot` guard in `ApproveStoryCommandHandler`. No migration, no public route, `openapi.json`/`web/openapi.json` untouched, `Autopilot:Gates:DryRun` defaults true. Gates: build-only and targeted remote runs `GATE_RC=0`, full remote `GATE_RC=0` on `98df4ada`. T3 gates: QA agent (defect D1 fixed), code review 15, perf 5, security 9, one `judge_batch` triage (`typesafe/jev-1.13.0`, 27/27, USD 0.0005), 19 fixed, delta review: R1 and R2 regressions fixed, R3 and R4 open as S67-8 and S67-9. Open items S67-1..S67-9 (§Open findings); contract deviations in the task §Notes. Next (backend): 02.8.2-T2 merged #263 → `develop` `11d22f48`; next 02.8.2-T3 (thresholds config + dry-run calibration) or 02.8.3-T1.
+
 ### Superseded backend Next clause (2026-10-21, replaced when the Session 73 06.4.1-T1 PR opened)
 
 Replaced text (verbatim), the tail of the Session 72 backend Resume bullet:
