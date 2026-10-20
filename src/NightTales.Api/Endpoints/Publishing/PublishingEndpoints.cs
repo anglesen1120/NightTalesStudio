@@ -157,7 +157,9 @@ public static class PublishingEndpoints
         // 06.4.1-T1 (06 README D15/D17/D18): the disconnect — the owner's own destructive intent on a connection the
         // path names, so no If-Match and no idempotency key (D15: the repeat answers 204 again, and the locked read,
         // not a stale tag, decides). Rate-limited like the connect route because it is the one channel route that
-        // reaches Google.
+        // reaches Google. The 409 is not the connect route's: the command answers `concurrency_conflict` when the
+        // deletion engine's conflicting insert keeps racing a request that completes under it three times
+        // (`DeletionRequests.CreateAsync`, `ErrorCodes.ConcurrencyConflict`), so it stays advertised.
         channels.MapDelete(DisconnectRoute, DisconnectAsync)
             .RequireFeature(FeatureKey)
             .RequireAuthorization()
@@ -173,7 +175,9 @@ public static class PublishingEndpoints
 
     /// <summary>
     /// <c>DELETE /api/v1/channels/{id}</c>: 204 once the connection is revoked, its open publications are cancelled and
-    /// its deletion request is scheduled — or 404 for an unknown or foreign id.
+    /// its deletion request is scheduled — or 404 for an unknown or foreign id. The only conflict it can answer is the
+    /// deletion engine's own <c>concurrency_conflict</c> (409), raised when the request it is scheduling keeps being
+    /// completed by the job under its insert.
     /// </summary>
     /// <remarks>
     /// 204 for the repeat too (D15, R3): a retried request after a lost response answers exactly what the first attempt

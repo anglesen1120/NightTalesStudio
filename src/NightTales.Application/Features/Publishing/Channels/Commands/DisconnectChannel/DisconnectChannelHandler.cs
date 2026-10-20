@@ -51,7 +51,8 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.Disconnec
 /// <para>
 /// <b>Written once.</b> The connection touches the row, the cascade's rows and the deletion request; the outbox row
 /// (<c>channel_connection_changed.v1</c>, raised by the aggregate's <c>Revoke</c>) and the audit row commit in the
-/// same transaction as the unit of work. The repeat of a lost response writes none of them.
+/// same transaction as the unit of work. The repeat of a lost response writes none of them, and — once the engine
+/// holds any request for the same duty, open or completed — schedules no second one either (D4).
 /// </para>
 /// </remarks>
 public sealed partial class DisconnectChannelHandler(
@@ -118,15 +119,30 @@ public sealed partial class DisconnectChannelHandler(
 
         // Step 2: the lost-response repeat. The row already holds the state this request would write, so nothing is
         // re-revoked at Google (the ciphertexts are gone — there is nothing to revoke) and neither the state nor the
-        // outbox changes. The deletion request is scheduled again because the create is the engine's own idempotent
-        // entry point: a first attempt whose response was lost may have rolled the request back with it.
+        // outbox changes. The create only runs while no duty is on record: the engine's open-row dedupe cannot see a
+        // request it already completed, so re-entering it after the purge would open a second clock over data that is
+        // gone (06.4.1-T1 §Failure handling "Connection already revoked and its request already completed_at"). With
+        // no row at all, the engine's own idempotent create still runs, because a first attempt whose response was
+        // lost may have rolled the request back with it.
         if (connection.Status == ChannelConnectionStatus.Revoked)
         {
-            var repeat = await ScheduleDeletionAsync(userId, connection.Id, cancellationToken).ConfigureAwait(false);
+            var recorded = await deletionRequests
+                .ExistsAsync(
+                    userId,
+                    DeletionScope.Channel,
+                    connection.Id,
+                    DeletionReason.InAppRevoke,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            if (repeat.IsError)
+            if (!recorded)
             {
-                return repeat.Errors;
+                var repeat = await ScheduleDeletionAsync(userId, connection.Id, cancellationToken).ConfigureAwait(false);
+
+                if (repeat.IsError)
+                {
+                    return repeat.Errors;
+                }
             }
 
             LogAlreadyRevoked(connection.Id);
@@ -383,7 +399,7 @@ public sealed partial class DisconnectChannelHandler(
     [LoggerMessage(
         EventId = 6507,
         Level = LogLevel.Information,
-        Message = "Channel connection {ConnectionId} was already revoked; the repeat wrote nothing but scheduled the deletion request again.")]
+        Message = "Channel connection {ConnectionId} was already revoked; the repeat changed no state and writes no audit or outbox row.")]
     private partial void LogAlreadyRevoked(Guid connectionId);
 
     [LoggerMessage(

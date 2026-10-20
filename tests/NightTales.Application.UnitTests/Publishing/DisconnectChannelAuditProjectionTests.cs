@@ -537,6 +537,13 @@ public sealed class DisconnectChannelAuditProjectionTests
         /// <summary>Every create, in arrival order.</summary>
         internal List<DeletionRequestCall> Calls { get; } = [];
 
+        public Task<bool> ExistsAsync(
+            Guid userId,
+            DeletionScope scope,
+            Guid? targetId,
+            DeletionReason reason,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task<ErrorOr<DeletionRequest>> CreateAsync(
             Guid userId,
             DeletionScope scope,
