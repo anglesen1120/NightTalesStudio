@@ -1,18 +1,22 @@
+using System.Globalization;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Autopilot.Orchestration;
 using NightTales.Application.Features.Autopilot.Orchestration.Steps;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Gates;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Structure;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence;
@@ -47,7 +51,7 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         var planner = new RecordingPlanner();
         var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0, startAt: Now.AddHours(1));
 
-        var step = new PlanIdeaStep(db, planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
+        var step = new PlanIdeaStep(db, new NoChannelReader(), planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
 
         var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
 
@@ -62,7 +66,7 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         var planner = new RecordingPlanner();
         var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0, startAt: Now.AddHours(-4));
 
-        var step = new PlanIdeaStep(db, planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
+        var step = new PlanIdeaStep(db, new NoChannelReader(), planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
 
         var result = await step.HandleAsync(
             Context(run, series, clock.UtcNow, uploadAt: Now.AddHours(-1)),
@@ -80,7 +84,7 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         var planner = new RecordingPlanner();
         var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
 
-        var step = new PlanIdeaStep(db, planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
+        var step = new PlanIdeaStep(db, new NoChannelReader(), planner, new NoPrices(), new NoIdeaCosts(), new NoBudget(), new NoLedger(), NullLogger<PlanIdeaStep>.Instance);
 
         var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
 
@@ -163,6 +167,208 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         gate.Calls.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task PlanIdeaStep_ChannelNotActive_PausesBeforeAnySpend()
+    {
+        var planner = new RecordingPlanner();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        var step = new PlanIdeaStep(
+            db,
+            new ScriptedChannelReader(ChannelConnectionStatus.Expired, Platform.YouTube),
+            planner,
+            new NoPrices(),
+            new NoIdeaCosts(),
+            new NoBudget(),
+            new NoLedger(),
+            NullLogger<PlanIdeaStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // Plan §3.6 row 6 and the task file's failure table: the run pauses before the first paid dispatch, so a
+        // connection the owner still has to reconnect costs the slot nothing. The series is not paused (T4's
+        // trigger 6 owns that).
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(AutopilotStepCodes.ChannelNotActive);
+        run.State.ShouldBe(AutopilotRunState.Paused);
+        run.PauseReason.ShouldBe(AutopilotPauseReason.ChannelNotActive);
+        run.Outcome.ShouldBe(AutopilotRunOutcome.Paused);
+        run.Attempt.ShouldBe(0);
+
+        planner.Calls.ShouldBe(0, "no idea is bought through a channel the slot cannot publish on");
+        (await db.GenerationRuns.CountAsync(row => row.SeriesId == series.Id, CancellationToken.None))
+            .ShouldBe(0, "no generation row is committed, so nothing was reserved or paid");
+    }
+
+    [Fact]
+    public async Task PlanIdeaStep_ChannelUnsupported_PausesBeforeAnySpend()
+    {
+        var planner = new RecordingPlanner();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        var step = new PlanIdeaStep(
+            db,
+            // `Platform` has YouTube only today: the value 07 adds is what this case stands for.
+            new ScriptedChannelReader(ChannelConnectionStatus.Active, (Platform)1),
+            planner,
+            new NoPrices(),
+            new NoIdeaCosts(),
+            new NoBudget(),
+            new NoLedger(),
+            NullLogger<PlanIdeaStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // Plan §3.6 row 6b: TikTok Direct Post cannot honour a cadence slot (07 CR-5), so the run holds its slot
+        // before the reservation instead of paying for three steps and stopping at the publication.
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(AutopilotStepCodes.ChannelUnsupported);
+        run.State.ShouldBe(AutopilotRunState.Paused);
+        run.PauseReason.ShouldBe(AutopilotPauseReason.ChannelUnsupported);
+
+        planner.Calls.ShouldBe(0, "an unsupported platform never buys an idea");
+        (await db.GenerationRuns.CountAsync(row => row.SeriesId == series.Id, CancellationToken.None))
+            .ShouldBe(0, "no generation row is committed, so nothing was reserved or paid");
+    }
+
+    [Fact]
+    public async Task Run_StoryGenerationFailedPlatform_Attempt1_Regenerates()
+    {
+        var (run, series, db, clock) = await WorldAsync(
+            AutopilotRunState.StoryGenerating,
+            AutopilotRunStep.Story,
+            attempt: 1,
+            episodeStatus: EpisodeStatus.Draft);
+
+        await FailStoryAttemptAsync(db, run, AutopilotRunStep.Story, ErrorCodes.StoryGenerationFailed);
+
+        var sender = new RecordingSender();
+        var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // Plan §3.6: a platform failure spends the one attempt and the regeneration is the next tick's `…:story2`
+        // dispatch, so this branch sends nothing and buys nothing.
+        result.Kind.ShouldBe(StepResultKind.Advanced);
+        run.State.ShouldBe(AutopilotRunState.StoryGenerating);
+        run.Attempt.ShouldBe(2);
+        run.Step.ShouldBe(AutopilotRunStep.Story, "only a dispatch names a step, and nothing was dispatched here");
+        sender.Sent.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Run_StoryGenerationFailedPlatform_Moderated_Fails()
+    {
+        var (run, series, db, clock) = await WorldAsync(
+            AutopilotRunState.StoryGenerating,
+            AutopilotRunStep.Story,
+            attempt: 1,
+            episodeStatus: EpisodeStatus.Draft);
+
+        // QA-1: the attempt-1 row is `…:story`, not `…:story2`. Reading the wrong key hid this code and paid twice.
+        await FailStoryAttemptAsync(db, run, AutopilotRunStep.Story, ErrorCodes.StoryModerated);
+
+        var sender = new RecordingSender();
+        var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // Plan §3.5 row 209: `story_moderated` ends the run whatever the attempt, because a retry would buy a
+        // second flag (plan §3.6).
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(ErrorCodes.StoryModerated);
+        run.State.ShouldBe(AutopilotRunState.Failed);
+        run.Attempt.ShouldBe(1, "moderation is never retried in the same slot");
+        sender.Sent.ShouldBeEmpty("a moderated story must not buy a second generation");
+    }
+
+    [Fact]
+    public async Task Run_StoryGenerationFailedPlatform_SpendCap_Pauses()
+    {
+        // Attempt 2 with no `…:story2` row is the regeneration: the one dispatch this step can still make.
+        var (run, series, db, clock) = await WorldAsync(
+            AutopilotRunState.StoryGenerating,
+            AutopilotRunStep.Story,
+            attempt: 2,
+            episodeStatus: EpisodeStatus.Draft);
+
+        var sender = new RefusingSender(ErrorCodes.SpendCapReached);
+        var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // The task file's failure table ("budget refusal at any paid dispatch"): the step answers `failed` with
+        // `spend_cap_reached` and nothing is dispatched again; the series pause is T4's trigger 2.
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(ErrorCodes.SpendCapReached);
+        run.State.ShouldBe(AutopilotRunState.Failed);
+        run.Outcome.ShouldBe(AutopilotRunOutcome.Failed);
+        sender.Sent.Count.ShouldBe(1, "the refused dispatch is the only call, and it bought nothing");
+        (await db.GenerationRuns.CountAsync(row => row.SeriesId == series.Id, CancellationToken.None))
+            .ShouldBe(0, "a refused dispatch commits no row");
+    }
+
+    /// <summary>
+    /// Writes the accepted authorization row and the series' pointer to it — the two rows 02.8.3-T3 owns. The idea
+    /// step reads the pointer off the series it was handed, so the entity is attached and updated in place rather
+    /// than re-read.
+    /// </summary>
+    /// <param name="series">The run's series, as the context carries it.</param>
+    /// <param name="db">The step's context.</param>
+    /// <returns>The authorization id.</returns>
+    private async Task<Guid> AuthorizeAsync(Series series, AppDbContext db)
+    {
+        var id = Guid.CreateVersion7();
+        var stamp = Now.ToString("O", CultureInfo.InvariantCulture);
+        var hash = new string('a', 64);
+
+        await Database.ExecuteAsync(
+            "INSERT INTO series_autopilot_authorizations (id, user_id, series_id, version, text_version, text_hash, "
+            + "topic, channel_connection_id, cadence, privacy_status, accepted_at, created_at, updated_at) "
+            + $"VALUES ('{id}', '{UserId}', '{series.Id}', 1, 'ai.v1', '{hash}', 'ghost', NULL, 'weekly', "
+            + $"'public', '{stamp}', '{stamp}', '{stamp}')",
+            CancellationToken.None);
+
+        db.Attach(series);
+        db.Entry(series).Property(row => row.CurrentAutopilotAuthorizationId).CurrentValue = id;
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        return id;
+    }
+
+    /// <summary>
+    /// The failed story row 02.2.2 leaves behind: the row of the step it names fails with its code and the episode
+    /// returns to draft, which is the pair <see cref="GenerateStoryStep"/> reads as the attempt's outcome.
+    /// </summary>
+    /// <param name="db">The step's context.</param>
+    /// <param name="run">The run the row is keyed to.</param>
+    /// <param name="step">The attempt's step (<see cref="AutopilotRunStep.Story"/> or <see cref="AutopilotRunStep.Story2"/>).</param>
+    /// <param name="code">The failure code the row carries.</param>
+    private static async Task FailStoryAttemptAsync(AppDbContext db, AutopilotRun run, string step, string code)
+    {
+        var row = GenerationRun.Queue(
+            run.UserId,
+            run.SeriesId,
+            run.EpisodeId,
+            GenerationKind.Story,
+            GenerationTrigger.Autopilot,
+            AutopilotIdempotencyKeys.For(run, step),
+            EpisodeStatus.Draft,
+            inputFactSheetId: null,
+            reservationId: Guid.CreateVersion7(),
+            worstCaseUsd: 0.20m,
+            now: Now);
+
+        row.IsError.ShouldBeFalse();
+
+        row.Value.Fail(code, detail: null, countsTowardLimit: true, Now);
+
+        db.GenerationRuns.Add(row.Value);
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
     /// <summary>One series, its run in <paramref name="state"/>, an optional episode, and an open context.</summary>
     private async Task<(AutopilotRun Run, Series Series, AppDbContext Db, FixedClock Clock)> WorldAsync(
         AutopilotRunState state,
@@ -172,6 +378,16 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         EpisodeStatus? episodeStatus = null)
     {
         var clock = new FixedClock(Now);
+
+        // `series.user_id` is a foreign key onto the Identity table, so the owner exists first; a test
+        // that builds a second world in the same class database reuses the row rather than colliding.
+        var owners = await Database.QueryStringsAsync($"SELECT count(*)::text FROM users WHERE id = '{UserId}'");
+
+        if (owners[0] == "0")
+        {
+            await new UserBuilder(Database, new TestCurrentUser { Id = UserId }).CreateAsync(UserId);
+        }
+
         var seriesBuilder = new SeriesBuilder(Database, new TestCurrentUser { Id = UserId }, clock);
         var series = await seriesBuilder.CreateAsync(UserId, autopilotEnabled: true);
 
@@ -318,6 +534,53 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
 
         public ValueTask<ErrorOr<VideoGateOutcome>> EvaluateVideoAsync(Guid runId, CancellationToken ct) =>
             throw new NotSupportedException("the fiction story steps never evaluate a video.");
+    }
+
+    /// <summary>
+    /// The port the idea step's earlier guards answer before it: every member throws, because the channel is only
+    /// read by the branch that is about to spend, and a test of a guard ahead of it must not reach a read at all.
+    /// </summary>
+    private sealed class NoChannelReader : IAutopilotStepReader
+    {
+        public ValueTask<AutopilotChannelSnapshot?> FindChannelAsync(Guid? authorizationId, CancellationToken ct) =>
+            throw new NotSupportedException("this case never reaches the channel guard.");
+
+        public ValueTask<AutopilotRenderEpisode?> FindEpisodeAsync(Guid episodeId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads an episode.");
+
+        public ValueTask<AutopilotPublicationSnapshot?> FindPublicationAsync(Guid publicationId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads a publication.");
+
+        public ValueTask<AutopilotActivePublication?> FindActivePublicationAsync(Guid episodeId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads an active publication.");
+
+        public ValueTask<int> CountPrivateLockedRunsAsync(Guid seriesId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never counts locked-private runs.");
+    }
+
+    /// <summary>
+    /// The channel the idea step's guard reads: one fixed snapshot, no database. Every other read of the port throws,
+    /// because the idea step decides on the channel only and a hidden second read would be a defect.
+    /// </summary>
+    /// <param name="status">The connection status the guard sees.</param>
+    /// <param name="platform">The platform the guard sees.</param>
+    private sealed class ScriptedChannelReader(ChannelConnectionStatus status, Platform platform) : IAutopilotStepReader
+    {
+        public ValueTask<AutopilotChannelSnapshot?> FindChannelAsync(Guid? authorizationId, CancellationToken ct) =>
+            ValueTask.FromResult<AutopilotChannelSnapshot?>(
+                new AutopilotChannelSnapshot(Guid.CreateVersion7(), platform, status));
+
+        public ValueTask<AutopilotRenderEpisode?> FindEpisodeAsync(Guid episodeId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads an episode.");
+
+        public ValueTask<AutopilotPublicationSnapshot?> FindPublicationAsync(Guid publicationId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads a publication.");
+
+        public ValueTask<AutopilotActivePublication?> FindActivePublicationAsync(Guid episodeId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads an active publication.");
+
+        public ValueTask<int> CountPrivateLockedRunsAsync(Guid seriesId, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never counts locked-private runs.");
     }
 
     private sealed class NoPrices : IPriceCatalog

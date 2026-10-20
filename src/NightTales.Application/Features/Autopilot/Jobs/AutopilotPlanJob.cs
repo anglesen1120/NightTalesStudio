@@ -87,7 +87,7 @@ public sealed partial class AutopilotPlanJob(
     }
 
     [LoggerMessage(
-        EventId = 6527,
+        EventId = 6558,
         Level = LogLevel.Debug,
         Message = "autopilot_plan_disabled at={At}")]
     private partial void LogDisabled(DateTimeOffset at);

@@ -360,25 +360,25 @@ public sealed partial class AutopilotSlotPlanner(
     private partial void LogSeriesScanTruncated(int series);
 
     [LoggerMessage(
-        EventId = 6523,
+        EventId = 6536,
         Level = LogLevel.Warning,
         Message = "autopilot_plan_settings_invalid seriesId={SeriesId} code={Code}")]
     private partial void LogSettingsInvalid(Guid seriesId, string code);
 
     [LoggerMessage(
-        EventId = 6524,
+        EventId = 6537,
         Level = LogLevel.Warning,
         Message = "autopilot_plan_series_failed seriesId={SeriesId} exceptionType={ExceptionType}")]
     private partial void LogSeriesFailed(Guid seriesId, string exceptionType);
 
     [LoggerMessage(
-        EventId = 6525,
+        EventId = 6538,
         Level = LogLevel.Information,
         Message = "autopilot_plan_already_planned seriesId={SeriesId}")]
     private partial void LogAlreadyPlanned(Guid seriesId);
 
     [LoggerMessage(
-        EventId = 6526,
+        EventId = 6539,
         Level = LogLevel.Information,
         Message = "autopilot_plan_completed series={Series} created={Created}")]
     private partial void LogCompleted(int series, int created);

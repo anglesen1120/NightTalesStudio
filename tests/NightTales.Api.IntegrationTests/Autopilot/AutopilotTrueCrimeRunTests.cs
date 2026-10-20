@@ -468,17 +468,6 @@ public sealed class AutopilotTrueCrimeRunTests(TestDatabase database) : Integrat
         await db.SaveChangesAsync(Ct);
     }
 
-    /// <summary>
-    /// The run's authorization names the channel it publishes through: the harness's seed leaves the column the
-    /// nullable placeholder it is (S66-7), and the publication step resolves the channel from the snapshot
-    /// (02.8.3-T2 writes it through the consent route).
-    /// </summary>
-    private static Task BindAuthorizationChannelAsync(AutopilotTickHarness harness, SeededSeries world) =>
-        harness.Database.ExecuteAsync(
-            "UPDATE series_autopilot_authorizations SET channel_connection_id = "
-            + $"'{world.ChannelConnectionId}' WHERE id = '{world.AuthorizationId}'",
-            Ct);
-
     /// <summary>The slot's publication-create instant, from the shipped options the Worker reads (§3.4).</summary>
     private static DateTimeOffset PublicationCreateAt(AutopilotTickHarness harness, AutopilotSettings settings)
     {

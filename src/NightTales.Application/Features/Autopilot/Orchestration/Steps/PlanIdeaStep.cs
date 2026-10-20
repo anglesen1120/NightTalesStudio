@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Generation;
 
@@ -49,11 +50,19 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// it answers Retry and spends nothing.
 /// </para>
 /// <para>
+/// <b>The channel is checked before the first credit.</b> Plan §3.6 rows 6 and 6b refuse a slot whose authorization
+/// names no channel, a platform that cannot schedule a publication, or a connection that is not <c>active</c> — and
+/// they refuse it <em>here</em>, before the reservation and the paid call, so a connection the owner has to fix
+/// costs the slot nothing. The planner still creates the run (the owner may fix the channel before the slot); only
+/// the run pauses, because the series pause is 02.8.3-T4's trigger 6.
+/// </para>
+/// <para>
 /// The text the planner returns is never logged (D19): the log lines carry run, series and idea ids and codes only.
 /// </para>
 /// </remarks>
 public sealed partial class PlanIdeaStep(
     IAppDbContext db,
+    IAutopilotStepReader reader,
     IIdeaPlanner planner,
     IPriceCatalog prices,
     IIdeaCostEstimator ideaCosts,
@@ -118,7 +127,60 @@ public sealed partial class PlanIdeaStep(
             return await AdoptAsync(context, committed, authorizationId.Value, ct).ConfigureAwait(false);
         }
 
+        if (await CheckChannelAsync(context, authorizationId.Value, ct).ConfigureAwait(false) is { } refusal)
+        {
+            return refusal;
+        }
+
         return await PayAsync(context, authorizationId.Value, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies plan §3.6 rows 6 and 6b to the authorization's channel before anything is reserved: an unreadable or
+    /// missing channel, a platform that cannot schedule, and a connection that is not <c>active</c> each pause the
+    /// run with the matching reason (the task file's failure table: the run pauses, the series does not — T4 owns
+    /// trigger 6).
+    /// </summary>
+    /// <param name="context">The run, its series and the tick's clock reading.</param>
+    /// <param name="authorizationId">The series' current authorization (already resolved, never revoked).</param>
+    /// <param name="ct">Cancels the read.</param>
+    /// <returns><see langword="null"/> when the channel may be published through, the stopped result otherwise.</returns>
+    private async ValueTask<StepResult?> CheckChannelAsync(
+        AutopilotStepContext context,
+        Guid authorizationId,
+        CancellationToken ct)
+    {
+        var run = context.Run;
+        var channel = await reader.FindChannelAsync(authorizationId, ct).ConfigureAwait(false);
+
+        (AutopilotPauseReason Reason, string Code)? refusal = channel switch
+        {
+            // A pre-channel authorization (S66-7 leaves the column nullable) or a connection outside this scope:
+            // nothing names a channel the slot could publish through, and 02.8.3-T3 is what writes it.
+            null => (AutopilotPauseReason.ChannelNotActive, AutopilotStepCodes.ChannelNotActive),
+
+            // TikTok Direct Post has no scheduling parameter (07 CR-5), so no cadence slot can be honoured on it.
+            { Platform: not NightTales.Domain.Publishing.Platform.YouTube } => (
+                AutopilotPauseReason.ChannelUnsupported,
+                AutopilotStepCodes.ChannelUnsupported),
+
+            { Status: not ChannelConnectionStatus.Active } => (
+                AutopilotPauseReason.ChannelNotActive,
+                AutopilotStepCodes.ChannelNotActive),
+
+            _ => null,
+        };
+
+        if (refusal is not { } stop)
+        {
+            return null;
+        }
+
+        run.Pause(stop.Reason, context.Now);
+
+        LogChannelUnusable(run.Id, stop.Code);
+
+        return StepResult.Stopped(stop.Code);
     }
 
     /// <summary>
@@ -358,6 +420,12 @@ public sealed partial class PlanIdeaStep(
 
         return new StepResult(StepResultKind.Idle, AutopilotStepSupport.IdeaInFlightCode);
     }
+
+    [LoggerMessage(
+        EventId = 6559,
+        Level = LogLevel.Warning,
+        Message = "autopilot_idea_channel_unusable runId={RunId} code={Code}")]
+    private partial void LogChannelUnusable(Guid runId, string code);
 
     [LoggerMessage(
         EventId = 6540,

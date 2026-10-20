@@ -236,7 +236,7 @@ public sealed class AutopilotTickHarness : IAsyncDisposable
             autopilotSettings: SettingsJson(settings),
             ct: ct);
 
-        var authorizationId = authorize ? await InsertAuthorizationAsync(userId, series.Id, topic, ct) : (Guid?)null;
+        var authorizationId = authorize ? await InsertAuthorizationAsync(userId, series.Id, channel, topic, ct) : (Guid?)null;
 
         await UpdateSeriesAsync(
             series.Id,
@@ -428,10 +428,16 @@ public sealed class AutopilotTickHarness : IAsyncDisposable
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Inserts the accepted authorization row the plan job snapshots onto a run.</summary>
+    /// <summary>
+    /// Inserts the accepted authorization row the plan job snapshots onto a run. The row names the series' channel,
+    /// as plan §3.7 has an authorization snapshot it: <c>PlanIdeaStep</c> refuses a slot whose channel is missing
+    /// before it reserves anything (plan §3.6 rows 6 and 6b), so a world that never binds one could not get past
+    /// its first paid step.
+    /// </summary>
     private async Task<Guid> InsertAuthorizationAsync(
         Guid userId,
         Guid seriesId,
+        Guid channelConnectionId,
         Topic topic,
         CancellationToken ct)
     {
@@ -440,9 +446,9 @@ public sealed class AutopilotTickHarness : IAsyncDisposable
 
         await Database.ExecuteAsync(
             "INSERT INTO series_autopilot_authorizations (id, user_id, series_id, version, text_version, "
-            + "text_hash, topic, cadence, privacy_status, accepted_at, created_at, updated_at) "
+            + "text_hash, topic, channel_connection_id, cadence, privacy_status, accepted_at, created_at, updated_at) "
             + $"VALUES ('{id}', '{userId}', '{seriesId}', 1, 'ai.v1', '{TestTextHash}', '{(topic == Topic.TrueCrime ? "true_crime" : "ghost")}', "
-            + $"'weekly', 'public', '{stamp}', '{stamp}', '{stamp}')",
+            + $"'{channelConnectionId}', 'weekly', 'public', '{stamp}', '{stamp}', '{stamp}')",
             ct);
 
         return id;

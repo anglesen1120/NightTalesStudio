@@ -414,13 +414,13 @@ public sealed partial class AutopilotRunOrchestrator(
     private partial void LogDueRunThrew(Guid runId, string exceptionType);
 
     [LoggerMessage(
-        EventId = 6521,
+        EventId = 6534,
         Level = LogLevel.Warning,
         Message = "autopilot_run_step_threw runId={RunId} exceptionType={ExceptionType}")]
     private partial void LogStepThrew(Guid runId, string exceptionType);
 
     [LoggerMessage(
-        EventId = 6522,
+        EventId = 6535,
         Level = LogLevel.Information,
         Message = "autopilot_tick_completed due={Due} advanced={Advanced}")]
     private partial void LogDueCompleted(int due, int advanced);

@@ -104,7 +104,6 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
             owner,
             AutopilotTickHarness.Settings(daysOfWeek: [DayOfWeek.Thursday]),
             ct: Ct);
-        await BindAuthorizationChannelAsync(harness, world);
 
         // The planner writes the slot's run: the worked example's instants, byte for byte.
         await harness.TickAsync(Ct);
@@ -578,7 +577,6 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
 
         var owner = await harness.CreateOwnerAsync(Ct);
         var world = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
-        await BindAuthorizationChannelAsync(harness, world);
         var episodeId = await harness.CreateEpisodeAsync(owner, world.SeriesId, EpisodeStatus.VideoReview, Ct);
 
         var run = await harness.CreateRunAsync(
@@ -630,16 +628,6 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
         services.RemoveAll<IAutoApprovalGate>();
         services.AddSingleton<IAutoApprovalGate>(gate);
     }
-
-    /// <summary>
-    /// The run's authorization names the channel it publishes through: the harness's seed leaves the column the
-    /// nullable placeholder it is (S66-7), and the publication step resolves the channel from the snapshot.
-    /// </summary>
-    private static Task BindAuthorizationChannelAsync(AutopilotTickHarness harness, SeededSeries world) =>
-        harness.Database.ExecuteAsync(
-            "UPDATE series_autopilot_authorizations SET channel_connection_id = "
-            + $"'{world.ChannelConnectionId}' WHERE id = '{world.AuthorizationId}'",
-            Ct);
 
     /// <summary>
     /// The story writer's landing: the version the job saves plus the transition

@@ -28,9 +28,12 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <para>
 /// <b>Attempts.</b> Attempt 1 is spent by the state that requested the story (<see cref="CreateEpisodeStep"/>), so
 /// this step only ever dispatches <c>…:story2</c>: once, after the gate failed attempt 1 and
-/// <see cref="AutopilotRun.ConsumeStoryAttempt"/> reached <see cref="AutopilotRun.MaxStoryAttempts"/>. The dispatch
-/// is detected by its own idempotency-keyed row, not by the <c>step</c> column, because the column never names a
-/// step before it ran: a replay therefore finds the row and waits instead of paying twice.
+/// <see cref="AutopilotRun.ConsumeStoryAttempt"/> reached <see cref="AutopilotRun.MaxStoryAttempts"/>. The row it
+/// reads is the one of the attempt the run is on — <c>…:story</c> while <see cref="AutopilotRun.Attempt"/> is 1,
+/// <c>…:story2</c> after that — because the code of the attempt's failure is what decides between a moderation end
+/// and a platform retry. The dispatch is detected by its own idempotency-keyed row, not by the <c>step</c> column,
+/// because the column never names a step before it ran: a replay therefore finds the row and waits instead of
+/// paying twice.
 /// </para>
 /// <para>
 /// <b>Failure mapping</b> (task file §Failure handling): <c>story_moderated</c> never retries — the slot ends
@@ -83,7 +86,7 @@ public sealed partial class GenerateStoryStep(
         }
 
         var dispatched = await AutopilotStepSupport
-            .FindGenerationRunAsync(db, run, GenerationKind.Story, AutopilotRunStep.Story2, ct)
+            .FindGenerationRunAsync(db, run, GenerationKind.Story, AttemptStep(run), ct)
             .ConfigureAwait(false);
 
         if (run.Attempt >= AutopilotRun.MaxStoryAttempts && dispatched is null)
@@ -114,6 +117,15 @@ public sealed partial class GenerateStoryStep(
             _ => Fail(context, ErrorCodes.EpisodeInvalidState),
         };
     }
+
+    /// <summary>
+    /// The idempotency step of the attempt the run is on (plan §3.5 rows 208–210): attempt 1's story is dispatched by
+    /// <see cref="CreateEpisodeStep"/> under <c>…:story</c>, and only the single regeneration uses <c>…:story2</c>.
+    /// </summary>
+    /// <param name="run">The tracked run.</param>
+    /// <returns>The step whose row carries this attempt's outcome.</returns>
+    private static string AttemptStep(AutopilotRun run) =>
+        run.Attempt >= AutopilotRun.MaxStoryAttempts ? AutopilotRunStep.Story2 : AutopilotRunStep.Story;
 
     /// <summary>Dispatches the run's single regeneration, the key <c>…:story2</c>, once.</summary>
     private async ValueTask<StepResult> RegenerateAsync(
