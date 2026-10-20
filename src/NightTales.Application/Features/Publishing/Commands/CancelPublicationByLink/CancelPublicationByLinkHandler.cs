@@ -82,13 +82,6 @@ public sealed partial class CancelPublicationByLinkHandler(
     private const string AuditAction = "publishing.cancelled";
 
     /// <summary>
-    /// The <c>data.actor</c> value of this route (D17's frozen spelling: <c>user</c> for the app,
-    /// <c>system:link</c> here, <c>system:disconnect</c> in 06.4.1-T1). It is spelled here as well as read
-    /// through <see cref="CancelAuditKeys"/> because that key's value set is owned by the sibling command.
-    /// </summary>
-    private const string ActorSystemLink = "system:link";
-
-    /// <summary>
     /// The refusal the route answers for <em>every</em> failed attempt: one code, one description, no metadata —
     /// so the four acceptance bodies are the same bytes (09 §4's no-state-leak rule).
     /// </summary>
@@ -154,16 +147,20 @@ public sealed partial class CancelPublicationByLinkHandler(
             return Refuse("status", publication.Id);
         }
 
-        // The status the row leaves, read before the transition overwrites it (the only history the row keeps).
-        var previousStatus = PublicationWire.Status(publication.Status);
         var now = clock.UtcNow;
 
-        // Step 5: the aggregate owns the state machine. The guard above makes this the only arm reachable, and a
-        // refusal here is a concurrent change, which is the same generic answer.
-        if (publication.Cancel(now).IsError)
+        // Step 5: the shared cancel step (06.2.6-T1, reused by 06.4.1-T1's disconnect) reads the status the row
+        // leaves and asks the aggregate for the transition; this route names itself `system:link` (STATUS S72-4).
+        // The guard above makes the aggregate's accepting arm the only one reachable, and a refusal here is a
+        // concurrent change, which is the same generic answer.
+        var cancelled = PublicationCancelStep.Cancel(publication, now, CancelAuditKeys.ActorLink);
+
+        if (cancelled.IsError)
         {
             return Refuse("state", publication.Id);
         }
+
+        var outcome = cancelled.Value;
 
         // Step 6: the quota unit the row still holds, if any, through the one shared release: an autopilot row in
         // `awaiting_consent` normally holds none, but the invariant is the helper's, not this route's. A ledger
@@ -191,7 +188,7 @@ public sealed partial class CancelPublicationByLinkHandler(
                     Visibility: Visibility.User,
                     EntityType: CancelAuditKeys.EntityType,
                     EntityId: publication.Id,
-                    DataJson: JsonSerializer.Serialize(Summary(publication, previousStatus), DataSerializer),
+                    DataJson: JsonSerializer.Serialize(Summary(outcome), DataSerializer),
                     Ip: null,
                     UserAgent: null,
                     ActorLabel: null,
@@ -199,7 +196,7 @@ public sealed partial class CancelPublicationByLinkHandler(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        LogCancelled(publication.Id, publication.EpisodeId, previousStatus);
+        LogCancelled(outcome.PublicationId, outcome.EpisodeId, outcome.PreviousStatus);
 
         return Result.Success;
     }
@@ -208,15 +205,14 @@ public sealed partial class CancelPublicationByLinkHandler(
     /// The audit <c>data</c> of a link cancellation: the ids, the status the row left and the actor label — the
     /// four frozen keys of the sibling command, with this route's actor value.
     /// </summary>
-    /// <param name="publication">The row this request cancelled.</param>
-    /// <param name="previousStatus">The wire status it left, read before the transition.</param>
-    private static Dictionary<string, object> Summary(Publication publication, string previousStatus) =>
+    /// <param name="outcome">What the shared cancel step reported for the row this request cancelled.</param>
+    private static Dictionary<string, object> Summary(PublicationCancelledOutcome outcome) =>
         new(StringComparer.Ordinal)
         {
-            [CancelAuditKeys.PublicationIdKey] = publication.Id.ToString("D", CultureInfo.InvariantCulture),
-            [CancelAuditKeys.EpisodeIdKey] = publication.EpisodeId.ToString("D", CultureInfo.InvariantCulture),
-            [CancelAuditKeys.PreviousStatusKey] = previousStatus,
-            [CancelAuditKeys.ActorKey] = ActorSystemLink,
+            [CancelAuditKeys.PublicationIdKey] = outcome.PublicationId.ToString("D", CultureInfo.InvariantCulture),
+            [CancelAuditKeys.EpisodeIdKey] = outcome.EpisodeId.ToString("D", CultureInfo.InvariantCulture),
+            [CancelAuditKeys.PreviousStatusKey] = outcome.PreviousStatus,
+            [CancelAuditKeys.ActorKey] = outcome.Actor,
         };
 
     /// <summary>

@@ -45,6 +45,27 @@ public sealed record RecordedGoogleCall(
 }
 
 /// <summary>
+/// One revocation request (<c>POST /revoke</c>), recorded for 06.4.1-T1's disconnect: the method, the path with its
+/// raw query string, the <c>Content-Type</c> and the parsed form. The query is kept <em>with</em> the path so a test
+/// can assert the token travelled in the form body and never in the URL (Google's revoke form post takes it in the
+/// body only, and a token in a URL would reach a proxy log).
+/// </summary>
+/// <param name="Method">The HTTP method, as sent.</param>
+/// <param name="PathAndQuery">The path and its raw query string, exactly as they arrived (e.g. <c>/revoke</c>).</param>
+/// <param name="ContentType">The request's <c>Content-Type</c> header, or null when it carried none.</param>
+/// <param name="Form">The form values of an <c>application/x-www-form-urlencoded</c> post; empty otherwise.</param>
+public sealed record RevokeRequest(
+    string Method,
+    string PathAndQuery,
+    string? ContentType,
+    IReadOnlyDictionary<string, string> Form)
+{
+    /// <summary>One form value, or null.</summary>
+    public string? FormValue(string name) =>
+        Form.TryGetValue(name, out var value) ? value : null;
+}
+
+/// <summary>
 /// A hand-written Google stand-in (README D19), Kestrel on an ephemeral loopback port: the authorization
 /// endpoint that records the query and issues one-shot codes, the token endpoint (authorization code
 /// with PKCE S256 verification, and refresh), revocation, <c>channels.list?part=snippet&amp;mine=true</c>,
@@ -57,7 +78,9 @@ public sealed record RecordedGoogleCall(
 /// No mocking library and no live Google: the host is pointed at this listener through the
 /// <c>YouTube:*</c> endpoints, which is why <c>GoogleYouTubeClient</c> takes every base URL from
 /// options. Every request is recorded in <see cref="Calls"/>, so an assertion can name the client id a
-/// request carried and count the exchanges.
+/// request carried and count the exchanges. The revoke route additionally records each call's method, raw
+/// path and query, <c>Content-Type</c> and parsed form in <see cref="RevokeRequests"/>, and its answer is switched
+/// through <see cref="FakeGoogleOptions.RevokeStatusCode"/>.
 /// </para>
 /// <para>
 /// A code is single-use: the authorization endpoint stores it, the token endpoint removes it, so a replay
@@ -120,6 +143,7 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     private readonly ConcurrentQueue<RecordedGoogleCall> _calls = new();
     private readonly ConcurrentDictionary<string, PendingAuthorization> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _revoked = new(StringComparer.Ordinal);
+    private readonly ConcurrentQueue<RevokeRequest> _revokeRequests = new();
     private readonly List<string> _issuedAccessTokens = [];
     private readonly ConcurrentDictionary<string, FakeUploadSession> _uploadSessions = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<FakeUploadChunk> _chunks = new();
@@ -129,6 +153,7 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     private int _sessions;
     private int _sessionCreateCalls;
     private int _chunkRequests;
+    private int _revokeCalls;
     private int _probeCalls;
     private int _videoListCalls;
     private int _serverErrorsRemaining;
@@ -221,6 +246,21 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     public int RefreshCalls => Calls.Count(call =>
         call.Is("POST", TokenPath)
         && string.Equals(call.FormValue("grant_type"), "refresh_token", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Every request the revocation route received, in arrival order, with its method, the path and raw query it
+    /// addressed, its <c>Content-Type</c> and its parsed form — so a test can assert that the disconnect sent
+    /// exactly one revoke, with the token in the form body and nothing in the URL (06.4.1-T1). A retried revoke is
+    /// one more entry, which is what makes the retry count assertable.
+    /// </summary>
+    public IReadOnlyList<RevokeRequest> RevokeRequests => [.. _revokeRequests];
+
+    /// <summary>
+    /// How many requests the revocation route received — the "exactly one revoke" count. It counts arrivals, not
+    /// successes, so under a configured failure answer (<see cref="FakeGoogleOptions.RevokeStatusCode"/>) every entry
+    /// above the first is a retry.
+    /// </summary>
+    public int RevokeCount => Volatile.Read(ref _revokeCalls);
 
     /// <summary>The video id of the last completed session, or null while nothing has completed.</summary>
     public string? LastVideoId => Volatile.Read(ref _lastVideoId);
@@ -587,16 +627,53 @@ public sealed class FakeGoogleServer : IAsyncDisposable
         await WriteJsonAsync(context, StatusCodes.Status200OK, body).ConfigureAwait(false);
     }
 
-    /// <summary>Revocation: 200, and a later <c>channels.list</c> with that token is 401.</summary>
+    /// <summary>
+    /// Revocation: 200, and a later <c>channels.list</c> with that token is 401. The request is recorded in
+    /// <see cref="RevokeRequests"/> first, whatever the answer will be, so a test can count the attempts, name the
+    /// form field the token travelled in and prove the URL carried none. <see cref="FakeGoogleOptions.RevokeStatusCode"/>
+    /// picks the answer and its body: <c>200</c> (the default) is the success this route has always answered and
+    /// revokes the token, a <c>4xx</c> is Google's already-revoked <c>{"error":"invalid_token"}</c>, anything else is
+    /// a server-shaped failure (<c>500</c> for the retry-then-<c>googleRevoke = "failed"</c> case). A configured
+    /// failure leaves the token usable, so "a revoke that failed did not revoke" is assertable.
+    /// </summary>
+    /// <param name="context">The request.</param>
+    /// <param name="form">The parsed form; the token travels in <c>token</c>.</param>
     private async Task RevokeAsync(HttpContext context, IReadOnlyDictionary<string, string> form)
     {
-        var token = form.GetValueOrDefault("token");
-        if (!string.IsNullOrWhiteSpace(token))
+        Interlocked.Increment(ref _revokeCalls);
+        _revokeRequests.Enqueue(new RevokeRequest(
+            context.Request.Method,
+            $"{context.Request.Path.Value}{context.Request.QueryString.Value}",
+            context.Request.ContentType,
+            form));
+
+        var status = (int)Options.RevokeStatusCode;
+
+        if (status == StatusCodes.Status200OK)
         {
-            _revoked[token] = 0;
+            var token = form.GetValueOrDefault("token");
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                _revoked[token] = 0;
+            }
+
+            await WriteJsonAsync(context, StatusCodes.Status200OK, new { success = true }).ConfigureAwait(false);
+
+            return;
         }
 
-        await WriteJsonAsync(context, StatusCodes.Status200OK, new { success = true }).ConfigureAwait(false);
+        if (status is >= 400 and < 500)
+        {
+            await WriteJsonAsync(context, status, new { error = "invalid_token" }).ConfigureAwait(false);
+
+            return;
+        }
+
+        await WriteJsonAsync(
+                context,
+                status,
+                new { error = new { code = status, message = "canary revoke failure" } })
+            .ConfigureAwait(false);
     }
 
     /// <summary>The configured channel, Google's 401 for a revoked or unknown token, or a configured status.</summary>

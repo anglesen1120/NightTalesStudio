@@ -31,6 +31,11 @@ public static class YouTubeServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<YouTubeOptions>, YouTubeOptionsValidator>());
 
         services.TryAddScoped<IQuotaLedger, YouTubeQuotaLedger>();
+
+        // 06.4.1-T1: the disconnect's Google-revoke retry ladder runs its backoff through TimeProvider, so a test swaps
+        // one manual provider in and never waits the ladder's 5.25 s of wall clock. `TryAddSingleton` keeps the
+        // `TimeProvider.System` another feature registered (the render clients') when that registration ran first.
+        services.TryAddSingleton(TimeProvider.System);
         // Application cannot reference Microsoft.Extensions.Options, so the ETA handler takes the plain value; the scoped
         // lifetime re-reads the monitor per request, so a configuration reload is seen on the next call.
         services.TryAddScoped(provider => provider.GetRequiredService<IOptionsMonitor<YouTubeOptions>>().CurrentValue);

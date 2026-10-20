@@ -106,7 +106,7 @@ public sealed partial class CancelPublicationHandler(
 
         // Step 4: the aggregate owns the state machine. `uploading`, `processing`, `published` and `failed` are
         // refused with the 409 `publication_invalid_state` — the row keeps its status and nothing is written.
-        var cancelled = publication.Cancel(clock.UtcNow);
+        var cancelled = PublicationCancelStep.Cancel(publication, clock.UtcNow, CancelAuditKeys.ActorUser);
 
         if (cancelled.IsError)
         {
@@ -128,7 +128,7 @@ public sealed partial class CancelPublicationHandler(
         // Step 6: the audit row's values (the pipeline's AuditBehavior writes the row on the success path only) and
         // the id-only log line. The save and the commit are the unit of work's, which is where the outbox
         // interceptor stores `publication_updated.v1` with status `cancelled` beside the row (D13).
-        command.Outcome = new PublicationCancelledOutcome(publication.Id, publication.EpisodeId, previousStatus);
+        command.Outcome = cancelled.Value;
 
         LogCancelled(publication.Id, publication.EpisodeId, previousStatus);
 

@@ -9,6 +9,7 @@ using NightTales.Application.Publishing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Publishing;
+using NightTales.Infrastructure.Publishing;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -444,6 +445,7 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
             authorizationId);
 
         var handler = new CreatePublicationHandler(
+            new ChannelConnectionLocker(context),
             context,
             new YouTubeOptions { AuditStatus = auditStatus },
             clock,

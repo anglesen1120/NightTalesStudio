@@ -11,7 +11,8 @@ namespace NightTales.Application.Features.Compliance.Deletion;
 /// <summary>
 /// <see cref="IDeletionRequests"/>: validates through the domain factory, checks target ownership, inserts with
 /// <c>ON CONFLICT DO NOTHING</c> and re-reads the open row by the same four columns inside the caller's tenant
-/// scope (13 README YR13), so a second revoke returns the first row and never extends the clock.
+/// scope (13 README YR13), so a second revoke returns the first row and never extends the clock. It also answers the
+/// cross-state existence read a repeat needs before it creates anything (06.4.1-T1 D4).
 /// </summary>
 public sealed class DeletionRequests(
     IAppDbContext database,
@@ -84,4 +85,23 @@ public sealed class DeletionRequests(
 
         return Error.Conflict(code: ErrorCodes.ConcurrencyConflict, description: "The deletion request changed while it was created; retry.");
     }
+
+    /// <inheritdoc />
+    public Task<bool> ExistsAsync(
+        Guid userId,
+        DeletionScope scope,
+        Guid? targetId,
+        DeletionReason reason,
+        CancellationToken cancellationToken) =>
+        // The tenant filter carries the same "a caller only sees its own user" rule as the re-read of CreateAsync, so
+        // a foreign userId simply answers false here. Read-only: the row's status is deliberately not filtered, because
+        // the caller asks whether the duty exists at all (a completed row means the purge already ran).
+        database.DeletionRequests
+            .AsNoTracking()
+            .AnyAsync(
+                request => request.UserId == userId
+                    && request.Scope == scope
+                    && request.TargetId == targetId
+                    && request.Reason == reason,
+                cancellationToken);
 }

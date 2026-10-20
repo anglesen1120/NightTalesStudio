@@ -70,10 +70,11 @@ public enum ChannelConnectionStatus
 /// method and the state only.
 /// </para>
 /// <para>
-/// <see cref="Connect"/> and <see cref="Reconnect"/> additionally raise <see cref="ChannelConnectionChanged"/>,
-/// the event the interceptor stores as <c>channel_connection_changed.v1</c> beside the row in the same unit of
-/// work (06 README D13); ids and the status only, never a token or a title. The status transitions land their
-/// own raise in the commits that introduce their callers.
+/// <see cref="Connect"/>, <see cref="Reconnect"/> and <see cref="Revoke"/> additionally raise
+/// <see cref="ChannelConnectionChanged"/>, the event the interceptor stores as <c>channel_connection_changed.v1</c>
+/// beside the row in the same unit of work (06 README D13); ids and the status only, never a token or a title.
+/// Those three are the only raisers: <see cref="MarkExpired"/>, <see cref="MarkError"/>, <see cref="MarkRefreshed"/>,
+/// <see cref="RefreshFromApi"/> and <see cref="PurgeYouTubeData"/> write no event of their own.
 /// </para>
 /// <para>
 /// The row carries no <c>xmin</c> row version and no <c>updated_at</c> bookkeeping: 06 README D15 needs no
@@ -375,6 +376,12 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
         RefreshTokenEnc = null;
         TokenExpiresAt = now;
         RevokedAt = now;
+
+        // Same D13 obligation as Connect and Reconnect (06.4.1-T1 §Design step 8): a disconnect is a state change, so
+        // it publishes its own `channel_connection_changed.v1` row (status revoked) in the caller's unit of work. The
+        // aggregate is the only place that can raise it — AggregateRoot.Raise is protected and there is no outbox
+        // writer port — and OutboxSaveChangesInterceptor turns it into the outbox row on save.
+        Raise(new ChannelConnectionChanged(Id, UserId, Status, now));
     }
 
     /// <summary>
