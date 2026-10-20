@@ -177,6 +177,132 @@ public sealed class AutopilotGateOptionsTests
         AutopilotGateOptionsValidator.Validate(Configured()).ShouldBeEmpty();
     }
 
+    [Fact]
+    public void Resolve_ModerationAndRealWorldSectionsReachTheProfile()
+    {
+        var options = new AutopilotGateOptions
+        {
+            Profiles =
+            {
+                [AutopilotGateOptions.DefaultProfileName] = new AutopilotGateProfileSection
+                {
+                    Moderation = new ModerationThresholdsSection
+                    {
+                        BlockedCategories = ["sexual/minors"],
+                        MaxScore = new Dictionary<string, double>(StringComparer.Ordinal) { ["violence"] = 0.4 },
+                    },
+                    RealWorld = new RealWorldSection
+                    {
+                        RequireIncidentCoOccurrence = false,
+                        IncidentWords = ["án mạng"],
+                    },
+                },
+            },
+        };
+
+        var resolved = options.Resolve(profileRef: null);
+
+        resolved.Moderation.BlockedCategories.ShouldBe(["sexual/minors"]);
+        resolved.Moderation.MaxScore["violence"].ShouldBe(0.4, "a named ceiling replaces the inherited one");
+        resolved.Moderation.MaxScore["hate"].ShouldBe(0.3, "an unnamed ceiling still inherits");
+        resolved.RealWorld.RequireIncidentCoOccurrence.ShouldBeFalse();
+        resolved.RealWorld.IncidentWords.ShouldBe(["án mạng"]);
+        resolved.Story.ShouldBe(StoryGateThresholds.Defaults);
+        AutopilotGateOptionsValidator.Validate(options).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ProfileSection_OnlyContentGateKeys_IsNotEmpty()
+    {
+        new AutopilotGateProfileSection().IsEmpty.ShouldBeTrue();
+        new AutopilotGateProfileSection { Moderation = new ModerationThresholdsSection() }
+            .IsEmpty.ShouldBeFalse("a profile that names only the moderation block is a deliberate overlay");
+        new AutopilotGateProfileSection { RealWorld = new RealWorldSection() }
+            .IsEmpty.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Validate_BlankBlockedCategory_IsRefused()
+    {
+        AutopilotGateOptionsValidator.Validate(WithModeration(new ModerationThresholdsSection
+        {
+            BlockedCategories = ["sexual/minors", " "],
+        }))
+            .ShouldContain(problem => problem.Contains("BlockedCategories", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    public void Validate_CategoryScoreOutsideZeroToOne_IsRefused(double score)
+    {
+        AutopilotGateOptionsValidator.Validate(WithModeration(new ModerationThresholdsSection
+        {
+            MaxScore = new Dictionary<string, double>(StringComparer.Ordinal) { ["violence"] = score },
+        }))
+            .ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public void Validate_BlankMaxScoreCategory_IsRefused()
+    {
+        AutopilotGateOptionsValidator.Validate(WithModeration(new ModerationThresholdsSection
+        {
+            MaxScore = new Dictionary<string, double>(StringComparer.Ordinal) { ["  "] = 0.5 },
+        }))
+            .ShouldContain(problem => problem.Contains("MaxScore", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_ResolvedProfileWithoutBlockedCategories_IsRefused()
+    {
+        // An empty list is a value, not an absent key: the profile then blocks nothing and only the ceilings
+        // decide, which is not a configuration the shipped gate may run with.
+        AutopilotGateOptionsValidator.Validate(WithModeration(new ModerationThresholdsSection
+        {
+            BlockedCategories = [],
+        }))
+            .ShouldContain(problem => problem.Contains("blocked category", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_BlankIncidentWord_IsRefused()
+    {
+        AutopilotGateOptionsValidator.Validate(WithRealWorld(new RealWorldSection
+        {
+            IncidentWords = ["án mạng", ""],
+        }))
+            .ShouldContain(problem => problem.Contains("IncidentWords", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RealWorldWithoutIncidentWords_IsAccepted()
+    {
+        // With the co-occurrence rule off the words are unused, so an empty list is a decision, not a typo.
+        AutopilotGateOptionsValidator.Validate(WithRealWorld(new RealWorldSection
+        {
+            RequireIncidentCoOccurrence = false,
+            IncidentWords = [],
+        }))
+            .ShouldBeEmpty();
+    }
+
+    private static AutopilotGateOptions WithModeration(ModerationThresholdsSection moderation) => new()
+    {
+        Profiles =
+        {
+            [AutopilotGateOptions.DefaultProfileName] = new AutopilotGateProfileSection { Moderation = moderation },
+        },
+    };
+
+    private static AutopilotGateOptions WithRealWorld(RealWorldSection realWorld) => new()
+    {
+        Profiles =
+        {
+            [AutopilotGateOptions.DefaultProfileName] = new AutopilotGateProfileSection { RealWorld = realWorld },
+        },
+    };
+
     private static AutopilotGateOptions Configured() => new()
     {
         Profiles =

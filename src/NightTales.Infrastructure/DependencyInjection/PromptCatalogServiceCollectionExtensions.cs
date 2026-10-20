@@ -9,7 +9,8 @@ namespace NightTales.Infrastructure.DependencyInjection;
 
 /// <summary>
 /// Registers the 02 prompt catalog (02.2.3-T1, 02 README D5): the embedded resource source, the
-/// singleton catalog and the start-up gate that loads it.
+/// singleton catalog, the start-up gate that loads it, and the real-world framing lexicon of the content
+/// gate (02.8.2-T2).
 /// </summary>
 /// <remarks>
 /// Called by both composition roots — the Worker's <c>AddWorkerServices</c> and the Api's
@@ -29,6 +30,13 @@ public static class PromptCatalogServiceCollectionExtensions
         services.AddSingleton<IPromptResourceSource, EmbeddedPromptResourceSource>();
         services.AddSingleton<IPromptCatalog, PromptCatalog>();
         services.AddSingleton<IHostedService, PromptCatalogStartupValidator>();
+
+        // 02.8.2-T2: the real-world framing lexicon over the same tree, a singleton because it is read-only
+        // data parsed once. Registered as a hosted service after the catalog's gate so both languages parse
+        // during start-up: a release that ships an empty lexicon aborts the boot, never the first gate (D5).
+        services.AddSingleton<RealWorldLexiconProvider>();
+        services.AddSingleton<IRealWorldLexicon>(provider => provider.GetRequiredService<RealWorldLexiconProvider>());
+        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RealWorldLexiconProvider>());
 
         // 02.6.1-T1 S4: the assembler enforces the same data-object budget the cost estimator bounds the input with.
         services.AddSingleton(provider => new PromptDataBudget(

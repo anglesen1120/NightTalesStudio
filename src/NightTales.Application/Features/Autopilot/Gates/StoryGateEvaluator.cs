@@ -3,14 +3,20 @@ using System.Text.Json;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Similarity;
+using NightTales.Application.Abstractions.Stories;
+using NightTales.Application.Abstractions.Text;
+using NightTales.Domain.Catalog;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Gates;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Similarity;
 
 namespace NightTales.Application.Features.Autopilot.Gates;
@@ -23,18 +29,31 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Reads only, and never a paid call.</b> The audit report, the stored content, the stored similarity score and
-/// the series' approved fact sheet are all that the checks read; the one outbound call is the free
-/// <c>autopilot_gate</c> moderation check, and only when the draft-time verdict is missing, stale or unavailable
-/// (02.8.2-T1 decision 1). The past-episode score of check 10 is recomputed over the series' own history, because
-/// nothing stores it.
+/// <b>Reads only, and never a paid call.</b> The audit report, the stored content, the stored similarity score, the
+/// series' approved fact sheet and its style template are all that the checks read; the one outbound call is the
+/// free <c>autopilot_gate</c> moderation check of check 7, which 02.8.2-T2 runs over the current narration, the
+/// metadata and the expanded scene prompts on every evaluation — the draft-time verdict of check 6 never stands in
+/// for it, because that check never saw a scene prompt. The past-episode score of check 10 is recomputed over the
+/// series' own history, because nothing stores it.
+/// </para>
+/// <para>
+/// <b>The free call is metered, and it is the only write outside the verdict.</b> The moderator records its
+/// zero-cost <c>usage_records</c> row (<c>operation = moderation</c>, D12/D14) from
+/// <see cref="Abstractions.Moderation.ModerationScope"/>, so this class pushes the scope of the evaluated episode's
+/// own story generation run around the call. An autopilot run carries no reservation and no generation-run id of
+/// its own, and a scope built from invented ids would write a reference that resolves to nothing, so a version
+/// whose story run cannot be read is moderated un-metered (the port says so in its own log) — never with a made-up
+/// run.
 /// </para>
 /// <para>
 /// <b>Fail closed, never a pass on unknown data.</b> A missing run, a run without an episode, an episode without a
 /// series, an episode without a current version and a live pass whose episode is not in <c>story_review</c> are
 /// answered with an <see cref="ErrorOr{T}"/> error and no verdict at all. An unreadable corpus and an unresolvable
 /// D4 band are errors too: "no pass on unknown" (plan §3.2). Every member the gate *could* read but found absent is
-/// a verdict failure with its own detail code, which leaves the episode in <c>story_review</c> for the owner.
+/// a verdict failure with its own detail code, which leaves the episode in <c>story_review</c> for the owner. The
+/// two 02.8.2-T2 checks fail closed on their own unknowns too: a style template row that is gone, a content
+/// document with no text and a gate that answered an error all fail check 7 with a closed detail code (never a
+/// pass, and never an exception to the tick), and unreadable claims or unreadable content fail check 8.
 /// </para>
 /// <para>
 /// <b>The true-crime hold outranks everything and approves nothing</b> (plan §3.1 checks 14–15, §8): a true-crime
@@ -67,7 +86,9 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <param name="factory">Maps the stored row, its audit report and the series into the gate's input (fail closed).</param>
 /// <param name="recorder">Writes the verdict, the audit row and the owner notice in one transaction.</param>
 /// <param name="approvals">Sends the user's own approve command on a live pass, as a system actor.</param>
-/// <param name="moderator">The free <c>autopilot_gate</c> moderation check of check 7, used only when the stored verdict is unusable.</param>
+/// <param name="contentGate">The 02.8.2-T2 content gate: check 7 over the narration, the metadata and the scene prompts.</param>
+/// <param name="scenePrompts">Expands the story's keywords through the series' style template for the gate.</param>
+/// <param name="realWorld">The 02.8.2-T2 detector over the current content and the review model's claims (check 8).</param>
 /// <param name="options">The bound <c>Autopilot:Gates</c> section (mode, profiles).</param>
 /// <param name="similarityCorpus">The past episodes of the series, scored for check 10.</param>
 /// <param name="similaritySettings">The <c>Similarity</c> section: the shingle window and the scorable minimum.</param>
@@ -80,7 +101,9 @@ public sealed partial class StoryGateEvaluator(
     StoryGateInputFactory factory,
     GateOutcomeRecorder recorder,
     AutopilotApprovalService approvals,
-    IContentModerator moderator,
+    IAutopilotContentGate contentGate,
+    ScenePromptExpander scenePrompts,
+    IRealWorldSignalService realWorld,
     AutopilotGateOptions options,
     ISimilarityCorpusProvider similarityCorpus,
     SimilaritySettings similaritySettings,
@@ -288,9 +311,15 @@ public sealed partial class StoryGateEvaluator(
             }
         }
 
-        var moderation = await ResolveModerationAsync(runId, episodeId, story, ct).ConfigureAwait(false);
-        var input = StoryGateInputFactory.Compose(story, pastEpisodeSimilarity, moderation.Outcome, attempt);
-        var result = StoryGateRules.Evaluate(input, options.Resolve(thresholdRef));
+        // 02.8.2-T2: check 7 always checks the current content itself, and check 8 detects over the same text plus
+        // the claims the reviews made about it. Both are ports that cannot throw for an outage: the gate turns one
+        // into a flagged verdict and the detector answers "unknown" with null, which the Domain rule fails closed.
+        var profile = options.Resolve(thresholdRef);
+        var moderation = await ResolveModerationAsync(run, episodeId, series, version.Id, version.Keywords, story, profile, ct)
+            .ConfigureAwait(false);
+        var realWorldSignal = realWorld.Detect(story.Content, series.Language, story.RealWorldClaims, profile.RealWorld);
+        var input = StoryGateInputFactory.Compose(story, pastEpisodeSimilarity, moderation.Outcome, realWorldSignal, attempt);
+        var result = StoryGateRules.Evaluate(input, profile);
 
         var replay = episode.ApprovedStoryVersionId == version.Id;
 
@@ -313,10 +342,12 @@ public sealed partial class StoryGateEvaluator(
             SourceSimilarity: story.SourceSimilarity,
             PastEpisodeSimilarity: pastEpisodeSimilarity,
             CorpusMax: corpusMax,
-            RealWorldHit: story.RealWorld?.Hit ?? false,
-            RealWorldKinds: RealWorldKinds(story.RealWorld),
+            RealWorldHit: realWorldSignal?.Hit ?? false,
+            RealWorldKinds: RealWorldKinds(realWorldSignal),
+            RealWorldSegments: RealWorldSegments(realWorldSignal),
             ModerationFlagged: moderation.Outcome.Flagged,
             ModerationCategories: moderation.Categories,
+            ModerationSegments: moderation.Segments,
             ModerationUnavailableDetail: moderation.Outcome.UnavailableDetail,
             ModerationCheckedAt: moderation.CheckedAt,
             EpisodeStatusAtEvaluation: WireName(episode.Status));
@@ -467,56 +498,114 @@ public sealed partial class StoryGateEvaluator(
         return approved.Value.FactSheetId;
     }
 
-    // Check 7 (02.8.2-T1 decision 1): the draft-time verdict when the stored block is a complete, current one;
-    // otherwise the free moderation check over the narration and the metadata, exactly as D12 scopes the stage. A
-    // moderator that cannot be reached flags the check and carries `moderator_unavailable`, so it never passes on an
-    // unknown (plan §7), and an unreadable draft (no text at all) is flagged the same way rather than checked clean
-    // over nothing.
+    // Check 7 (02.8.2-T2, plan §3.1): the content gate over the current narration, the metadata and the expanded
+    // scene prompts, with the profile's per-category thresholds. The draft-time verdict of check 6 is never reused
+    // here: it never saw a scene prompt, and T2's gate is the one verdict the run records (plan §3.3). Every way
+    // this can fail answers a flagged outcome with a closed detail code — a missing content document, a style
+    // template row that is gone, and an error from the gate itself are all "the owner must look", never a pass and
+    // never an exception to the tick.
     private async ValueTask<ResolvedModeration> ResolveModerationAsync(
-        Guid runId,
+        AutopilotRun run,
         Guid episodeId,
+        NightTales.Domain.Series.Series series,
+        Guid versionId,
+        IReadOnlyList<string> keywords,
         StoryGateInputFactory.StoryGateReading story,
+        AutopilotGateProfile profile,
         CancellationToken ct)
     {
-        if (story.Moderation.Usable)
+        if (story.Content is not { } content)
         {
-            return new ResolvedModeration(
-                new ModerationGateOutcome(story.Moderation.Flagged, null),
-                story.Moderation.Categories,
-                story.Moderation.CheckedAt);
+            LogModerationContentMissing(run.Id, episodeId);
+
+            return new ResolvedModeration(ContentGateOutcomes.FailClosed(GateDetailCodes.FieldAbsent), [], [], clock.UtcNow);
         }
 
-        if (story.ModerationTexts.Count == 0)
+        var style = await db.StyleTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(template => template.Id == series.StyleTemplateId, ct)
+            .ConfigureAwait(false);
+        if (style is null)
         {
-            LogModerationTextMissing(runId, episodeId);
+            // 03.1.1-T1's rows are seeded platform data: a series that names one which is gone cannot have its
+            // scene prompts expanded, so there is nothing honest to moderate (plan §"Failure handling").
+            LogStyleTemplateMissing(run.Id, episodeId, series.StyleTemplateId);
+
+            return new ResolvedModeration(ContentGateOutcomes.FailClosed(GateDetailCodes.FieldAbsent), [], [], clock.UtcNow);
+        }
+
+        var request = new AutopilotContentGateRequest(
+            run.UserId,
+            episodeId,
+            versionId,
+            series.Language,
+            StoryTextSegments.From(content),
+            scenePrompts.Expand(style, keywords),
+            style.Name,
+            profile);
+
+        var metering = await MeteringContextAsync(run, episodeId, versionId, story.PriceVersion, ct).ConfigureAwait(false);
+        if (metering is null)
+        {
+            LogUnmeteredModeration(run.Id, episodeId);
+        }
+
+        using (metering is null ? null : ModerationScope.Push(metering))
+        {
+            var verdict = await contentGate.CheckAsync(request, ct).ConfigureAwait(false);
+            if (verdict.IsError)
+            {
+                LogContentGateFailed(run.Id, episodeId, verdict.FirstError.Code);
+
+                return new ResolvedModeration(ContentGateOutcomes.FailClosed(verdict.FirstError), [], [], clock.UtcNow);
+            }
+
+            var value = verdict.Value;
 
             return new ResolvedModeration(
-                new ModerationGateOutcome(true, GateDetailCodes.FieldAbsent),
-                [],
+                ContentGateOutcomes.From(value),
+                value.Flagged ? value.Categories : [],
+                value.FlaggedSegments,
                 clock.UtcNow);
         }
+    }
 
-        try
+    // The scope of the free call. The moderator writes its zero-cost usage row from the ambient run (D12/D14), and an
+    // autopilot run carries neither a reservation nor a generation-run id; the scope is therefore the generation run
+    // that wrote the evaluated version (else the episode's newest story run), chosen so every reference the row
+    // stores - reservation, generation run, owner - resolves to a real row, because `usage_records.generation_run_id`
+    // is a foreign key. A run that cannot be found, or one that carries no reservation, leaves the check unmetered:
+    // it still runs, and only its bookkeeping row is missing (CR-1 applies to the reverse direction).
+    private async ValueTask<RunContext?> MeteringContextAsync(
+        AutopilotRun run,
+        Guid episodeId,
+        Guid versionId,
+        string priceVersion,
+        CancellationToken ct)
+    {
+        var generationRun = await db.GenerationRuns
+            .AsNoTracking()
+            .Where(candidate => candidate.EpisodeId == episodeId && candidate.Kind == GenerationKind.Story)
+            .OrderBy(candidate => candidate.ResultStoryVersionId == versionId ? 0 : 1)
+            .ThenByDescending(candidate => candidate.QueuedAt)
+            .Select(candidate => new { candidate.Id, candidate.Trigger, candidate.Attempt, candidate.ReservationId })
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
+
+        if (generationRun?.ReservationId is not { } reservation)
         {
-            var result = await moderator
-                .CheckAsync(story.ModerationTexts, ModerationStage.AutopilotGate, ct)
-                .ConfigureAwait(false);
-
-            return new ResolvedModeration(
-                new ModerationGateOutcome(result.Flagged, null),
-                result.Categories,
-                clock.UtcNow);
+            return null;
         }
-        catch (ModerationUnavailableException)
-        {
-            ct.ThrowIfCancellationRequested();
-            LogModeratorUnavailable(runId, episodeId);
 
-            return new ResolvedModeration(
-                new ModerationGateOutcome(true, GateDetailCodes.ModeratorUnavailable),
-                [],
-                clock.UtcNow);
-        }
+        return new RunContext(
+            generationRun.Id,
+            run.UserId,
+            run.SeriesId,
+            episodeId,
+            new ReservationId(reservation),
+            generationRun.Trigger,
+            Math.Max(1, generationRun.Attempt),
+            priceVersion);
     }
 
     /// <summary>
@@ -549,12 +638,23 @@ public sealed partial class StoryGateEvaluator(
             && string.Equals(check.Id, StoryGateCheckIds.ModerationGate, StringComparison.Ordinal)
             && string.Equals(check.Detail, GateDetailCodes.ModeratorUnavailable, StringComparison.Ordinal));
 
-    // The kinds of the persisted model claims, once each: the payload carries ids and kinds, never the claim's own
-    // wording (02.8.2-T1 decision 1, D19/D22).
+    // The kinds that fired, once each: the payload carries kinds and ids, never the matched phrase or the excerpt
+    // (D19/D22, 02.8.2-T2 plan §3.4).
     private static IReadOnlyList<string> RealWorldKinds(RealWorldSignal? signal) =>
         signal is null
             ? []
             : [.. signal.Hits.Select(hit => WireName(hit.Kind)).Distinct(StringComparer.Ordinal)];
+
+    // Where the signals fired, once each and in hit order: the D22 ids the owner jumps to in the editor (10.5.10).
+    // A claim whose address does not name a segment of this version carries no id and is not listed; the hit itself
+    // is still counted in RealWorldKinds, so the verdict never loses it.
+    private static IReadOnlyList<string> RealWorldSegments(RealWorldSignal? signal) =>
+        signal is null
+            ? []
+            : [.. signal.Hits
+                .Select(hit => hit.Segment)
+                .Where(segment => !string.IsNullOrWhiteSpace(segment))
+                .Distinct(StringComparer.Ordinal)];
 
     /// <summary>The wire name <c>gate_results</c> stores for an enum member: its snake_case form (plan §3.4).</summary>
     /// <param name="value">The enum member.</param>
@@ -590,11 +690,13 @@ public sealed partial class StoryGateEvaluator(
 
     /// <summary>One resolved check-7 verdict, with what <c>gate_results</c> records about it.</summary>
     /// <param name="Outcome">The verdict the Domain rule reads.</param>
-    /// <param name="Categories">The flagged categories (stored or fresh); empty when nothing was flagged.</param>
-    /// <param name="CheckedAt">When the verdict was produced, or null when the stored block did not record it.</param>
+    /// <param name="Categories">The flagged categories; empty when nothing was flagged.</param>
+    /// <param name="Segments">The D22 ids the flag was attributed to, plus <c>scene:&lt;i&gt;</c> for a scene prompt; ids only.</param>
+    /// <param name="CheckedAt">When the verdict was produced.</param>
     private sealed record ResolvedModeration(
         ModerationGateOutcome Outcome,
         IReadOnlyList<string> Categories,
+        IReadOnlyList<string> Segments,
         DateTimeOffset? CheckedAt);
 
     [LoggerMessage(
@@ -690,8 +792,8 @@ public sealed partial class StoryGateEvaluator(
     [LoggerMessage(
         EventId = 6475,
         Level = LogLevel.Warning,
-        Message = "The story gate of autopilot run {RunId} could not use the moderator for episode {EpisodeId}; the moderation check fails closed and the owner is asked.")]
-    private partial void LogModeratorUnavailable(Guid runId, Guid episodeId);
+        Message = "The content gate of autopilot run {RunId} could not check episode {EpisodeId} ({ErrorCode}); check 7 fails closed and the owner is asked.")]
+    private partial void LogContentGateFailed(Guid runId, Guid episodeId, string errorCode);
 
     [LoggerMessage(
         EventId = 6476,
@@ -702,14 +804,26 @@ public sealed partial class StoryGateEvaluator(
     [LoggerMessage(
         EventId = 6477,
         Level = LogLevel.Warning,
-        Message = "The story gate of autopilot run {RunId} could not read the stored moderation verdict of episode {EpisodeId}; the free check runs instead.")]
-    private partial void LogModerationTextMissing(Guid runId, Guid episodeId);
+        Message = "The story gate of autopilot run {RunId} could not read the content document of episode {EpisodeId}; check 7 and check 8 fail closed.")]
+    private partial void LogModerationContentMissing(Guid runId, Guid episodeId);
 
     [LoggerMessage(
         EventId = 6478,
         Level = LogLevel.Warning,
         Message = "The story gate of autopilot run {RunId} could not read its input for episode {EpisodeId} ({ErrorCode}); no verdict was recorded.")]
     private partial void LogUnreadable(Guid runId, Guid episodeId, string errorCode);
+
+    [LoggerMessage(
+        EventId = 6509,
+        Level = LogLevel.Warning,
+        Message = "The story gate of autopilot run {RunId} cannot expand the scene prompts of episode {EpisodeId}: style template {StyleTemplateId} does not exist; check 7 fails closed.")]
+    private partial void LogStyleTemplateMissing(Guid runId, Guid episodeId, Guid styleTemplateId);
+
+    [LoggerMessage(
+        EventId = 6510,
+        Level = LogLevel.Warning,
+        Message = "The story gate of autopilot run {RunId} moderates episode {EpisodeId} outside a run scope; the free call is not metered.")]
+    private partial void LogUnmeteredModeration(Guid runId, Guid episodeId);
 
     [LoggerMessage(
         EventId = 6479,

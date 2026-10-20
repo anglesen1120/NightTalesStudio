@@ -67,7 +67,50 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
         document["video"]!["checks"]!.AsArray().Count.ShouldBe(1);
         document["similarity"]!["corpus_max"]!.GetValue<int>().ShouldBe(50);
         document["real_world"]!["hit"]!.GetValue<bool>().ShouldBeFalse();
+        document["real_world"]!.AsObject().ContainsKey("segments").ShouldBeFalse("a clean story keeps the plan shape");
+        document["real_world"]!["signals"]!.AsArray().ShouldBeEmpty();
         document["moderation"]!["flagged"]!.GetValue<bool>().ShouldBeFalse();
+        document["moderation"]!.AsObject().ContainsKey("segments").ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// 02.8.2-T2 (plan §3.4, D19/D22): a hit stores the signal kinds and the D22 ids it fired on, never a matched
+    /// phrase or an excerpt, and the moderation block adds the ids the flag was attributed to, <c>scene:&lt;i&gt;</c>
+    /// included — ids only.
+    /// </summary>
+    [Fact]
+    public async Task GateResultWriter_RecordsSegmentIdsOnly()
+    {
+        var world = await SeedAsync();
+        await using var db = Open(world, out var clock);
+        var writer = new GateResultWriter(db, clock);
+
+        var story = await writer.WriteStoryAsync(
+            world.RunId,
+            Story(attempt: 1, pass: false),
+            Evidence(flagged: true) with
+            {
+                RealWorldHit = true,
+                RealWorldKinds = ["framing_lexicon"],
+                RealWorldSegments = ["p:1", "meta"],
+                ModerationSegments = ["title", "scene:0"],
+            },
+            GateMode.DryRun,
+            "default",
+            Ct);
+        story.IsError.ShouldBeFalse();
+
+        await db.SaveChangesAsync(Ct);
+
+        var document = await StoredAsync(world.RunId);
+
+        document["real_world"]!["hit"]!.GetValue<bool>().ShouldBeTrue();
+        document["real_world"]!["signals"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldBe(["framing_lexicon"]);
+        document["real_world"]!["segments"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldBe(["p:1", "meta"]);
+        document["moderation"]!["segments"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldBe(["title", "scene:0"]);
     }
 
     [Fact]
@@ -316,14 +359,17 @@ public sealed class GateResultWriterTests(TestDatabase database) : IntegrationTe
 
     private static GateStoryEvidence Evidence(
         IReadOnlyList<string>? categories = null,
-        string? unavailableDetail = null) => new(
+        string? unavailableDetail = null,
+        bool flagged = false) => new(
         SourceSimilarity: 0.021m,
         PastEpisodeSimilarity: 0.044m,
         CorpusMax: 50,
         RealWorldHit: false,
         RealWorldKinds: [],
-        ModerationFlagged: false,
+        RealWorldSegments: [],
+        ModerationFlagged: flagged,
         ModerationCategories: categories ?? [],
+        ModerationSegments: [],
         ModerationUnavailableDetail: unavailableDetail,
         ModerationCheckedAt: null,
         EpisodeStatusAtEvaluation: "story_review");

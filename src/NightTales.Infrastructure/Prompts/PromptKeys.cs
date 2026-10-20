@@ -36,6 +36,16 @@ internal static class PromptKeys
     /// <returns>For example <c>shared/attestation.ta.v1.vi.md</c>.</returns>
     internal static string Attestation(Language language) => $"shared/attestation.ta.v1.{Spelling(language)}.md";
 
+    /// <summary>
+    /// The real-world framing lexicon of the content gate (02.8.2-T2): one phrase per line, <c>#</c>
+    /// comment lines allowed. Its marker follows the language like the two rule blocks, because the
+    /// file is data the detector reads, never a block a preset substitutes (02 README D6/D5).
+    /// </summary>
+    /// <param name="language">The content language.</param>
+    /// <returns>For example <c>shared/real-world-framing.en.v1.txt</c>.</returns>
+    internal static string RealWorldFraming(Language language) =>
+        $"shared/real-world-framing.{Spelling(language)}.v1.txt";
+
     private const string SchemaDirectory = "schemas/";
 
     /// <summary>The snake_case spelling of a topic, the form its preset's file name uses.</summary>

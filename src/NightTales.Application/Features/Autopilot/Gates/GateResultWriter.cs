@@ -332,11 +332,20 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
             signals.Add(JsonValue.Create(kind));
         }
 
-        return new JsonObject
+        var block = new JsonObject
         {
             ["hit"] = JsonValue.Create(evidence.RealWorldHit),
             ["signals"] = signals,
         };
+
+        // Additive (02.8.2-T2): where the signals fired, as the D22 ids the editor jumps to. Omitted when empty, so
+        // a clean story keeps exactly the plan's `{"hit": false, "signals": []}` shape.
+        if (evidence.RealWorldSegments.Count > 0)
+        {
+            block["segments"] = Strings(Storable(evidence.RealWorldSegments));
+        }
+
+        return block;
     }
 
     private static JsonObject ModerationBlock(GateStoryEvidence evidence)
@@ -346,6 +355,13 @@ public sealed class GateResultWriter(IAppDbContext db, IClock clock)
             ["flagged"] = JsonValue.Create(evidence.ModerationFlagged),
             ["categories"] = Strings(Storable(evidence.ModerationCategories)),
         };
+
+        // Additive (02.8.2-T2): the ids the flag was attributed to, `scene:<i>` included. Ids only, and omitted on a
+        // pass, so the plan's `{"flagged": false, "categories": []}` shape survives.
+        if (evidence.ModerationSegments.Count > 0)
+        {
+            block["segments"] = Strings(Storable(evidence.ModerationSegments));
+        }
 
         if (evidence.ModerationUnavailableDetail is { } detail)
         {
