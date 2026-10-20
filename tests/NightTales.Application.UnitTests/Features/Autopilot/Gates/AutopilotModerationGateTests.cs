@@ -425,7 +425,7 @@ public sealed class AutopilotModerationGateTests
         char.IsLowSurrogate(text[chunks[0].Length + 1]).ShouldBeTrue("the pair stays together");
         chunks[1].ShouldContain("\U0001F600\uFE0F", Case.Sensitive, "the cluster stays whole in one piece");
         chunks.ShouldAllBe(
-            chunk => !char.IsHighSurrogate(chunk[^1]) && !char.IsLowSurrogate(chunk[0]) && !IsCombiningMark(chunk[0]));
+            chunk => !char.IsHighSurrogate(chunk[chunk.Length - 1]) && !char.IsLowSurrogate(chunk[0]) && !IsCombiningMark(chunk[0]));
     }
 
     private static string Lengths(IReadOnlyList<string> chunks) =>
