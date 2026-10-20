@@ -40,7 +40,9 @@ namespace NightTales.Domain.Publishing;
 /// consent text that was shown, which is why <see cref="Consent"/> compares it and refuses a stale one (D7).
 /// <see cref="StartUpload"/> refuses a row without <see cref="ConsentAt"/> (D9 defence in depth) and is a no-op
 /// "resume" while the row is already <c>uploading</c> (YR18), so the lost-response retry of F02 reaches the
-/// probe/resume step instead of failing the job.
+/// probe/resume step instead of failing the job. <see cref="IsUserConsentedAs"/> is the read that lets the
+/// consent route answer a retried request with the answer it already gave (F04); it writes nothing, which is why
+/// <see cref="Consent"/> keeps refusing every row that is no longer <c>awaiting_consent</c>.
 /// </para>
 /// <para>
 /// <b>Events.</b> <see cref="Create"/>, <see cref="Consent"/>, <see cref="ConsentFromAuthorization"/> and
@@ -372,6 +374,53 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// Whether this row already carries exactly the consent a repeated request would write: it is
+    /// <see cref="PublicationStatus.Scheduled"/>, consented by the owner (<c>consent_source = user</c>) under
+    /// <paramref name="textVersion"/> (06 README D7).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the read the consent handler answers a retried request with. A client whose response was lost
+    /// (F04's lost-response retry) resends the same body with the <em>pre-consent</em> <c>If-Match</c>, which no
+    /// longer names the row's <c>xmin</c> — so the handler asks this question <em>before</em> it compares the
+    /// ETag, and answers the same DTO/ETag it would have answered the first time, writing nothing: no second
+    /// <c>audit_log</c> row, no second <c>publication_updated.v1</c>, no episode change.
+    /// </para>
+    /// <para>
+    /// It is deliberately narrow, because it is what turns a 409 into a success: an <c>autopilot</c>-consented row
+    /// is <em>not</em> "already consented by the owner" — D7 says the two consent paths are never silently merged,
+    /// and 06.2.2-T4's "approve now" is the path that decides otherwise — and a different text version is a stale
+    /// client that must refetch the consent text. Both fall through to the normal path.
+    /// </para>
+    /// <para>
+    /// <b>The window ends when the upload starts.</b> The idempotent answer holds only while the row is
+    /// <see cref="PublicationStatus.Scheduled"/>: once the Worker moves it to
+    /// <see cref="PublicationStatus.Uploading"/> or later, the repeat is no longer answered here, and the status depends
+    /// on the tag the retry carried. A lost-response retry still sends the <em>pre-consent</em> <c>If-Match</c>, which
+    /// names no version of the row any more, so the handler's ETag comparison answers <c>412 publication_conflict</c>.
+    /// Only a retry that carries the row's <em>current</em> tag reaches <see cref="Consent"/> and gets
+    /// <c>409 publication_invalid_state</c> from there. Neither is a lost first consent — the row already carries it —
+    /// so 06.2.2-T4 documents the client handling: it refetches the publication and treats the post-consent row as the
+    /// success it is looking for.
+    /// </para>
+    /// <para>
+    /// A read only: it writes nothing and raises no event, so the no-op answer is indistinguishable from the first
+    /// answer on the row's own evidence. <see cref="Consent"/> itself is unchanged and still refuses any row that is
+    /// no longer <c>awaiting_consent</c> — the shortcut lives in the handler, which is the only caller that has an
+    /// ETag to compare.
+    /// </para>
+    /// </remarks>
+    /// <param name="textVersion">The version the retried request consented to (<c>pc.v1</c>), compared ordinally.</param>
+    /// <returns>
+    /// <see langword="true"/> when this row is already the row that request would produce, so the command can answer
+    /// 200 without a write.
+    /// </returns>
+    public bool IsUserConsentedAs(string textVersion) =>
+        Status == PublicationStatus.Scheduled
+        && string.Equals(ConsentSource, ConsentSourceType.User.ToWire(), StringComparison.Ordinal)
+        && string.Equals(ConsentTextVersion, textVersion, StringComparison.Ordinal);
 
     /// <summary>
     /// Cancels the publication (06 README D7): only <see cref="PublicationStatus.AwaitingConsent"/> and
