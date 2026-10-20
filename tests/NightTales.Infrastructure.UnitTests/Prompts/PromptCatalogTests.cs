@@ -26,6 +26,8 @@ public sealed class PromptCatalogTests
     private const string SpiritualViPreset = "story/spiritual.vi.v1.md";
     private const string TrueCrimeEnPreset = "story/true_crime.en.v1.md";
     private const string AttestationVi = "shared/attestation.ta.v1.vi.md";
+    private const string RealWorldFramingEn = "shared/real-world-framing.en.v1.txt";
+    private const string RealWorldFramingVi = "shared/real-world-framing.vi.v1.txt";
     private const string StorySchema = "schemas/story.v1.json";
     private const string WriterSystemPrompt = "system/writer.v1.md";
 
@@ -53,6 +55,10 @@ public sealed class PromptCatalogTests
         catalog.GetShared(PromptFile.Overused, Language.En).ShouldNotBeNullOrWhiteSpace();
         catalog.GetShared(PromptFile.KeywordRules, Language.Vi).ShouldNotBeNullOrWhiteSpace();
         catalog.GetShared(PromptFile.StructureVocab, Language.Vi).ShouldContain("schema_version");
+        // 02.8.2-T2: both framing lexicons ship tracked, so the content gate's detector has data to match.
+        catalog.Files.ShouldContainKey(RealWorldFramingEn);
+        catalog.Files.ShouldContainKey(RealWorldFramingVi);
+        catalog.Files[RealWorldFramingEn].Version.ShouldBe("v1");
         // 02.3.3-T1: both attestation clause texts ship with the manifest version the gate compares a
         // tick against, and the two languages carry different wording of the same version.
         catalog.GetAttestation(Language.Vi).Version.ShouldBe("ta.v1");
@@ -563,6 +569,24 @@ public sealed class PromptCatalogTests
         failure.Message.ShouldContain("missing required file 'shared/ear-rules.en.v1.md'");
         failure.Message.ShouldContain(
             "embedded runtime file 'shared.ear-rules.en.v1.md' is not tracked by the manifest");
+    }
+
+    /// <summary>
+    /// Acceptance check 5 (02.8.2-T2): a release that drops the en framing lexicon from the manifest fails
+    /// the boot by file name — both as a required file and as an embedded file no entry tracks — so the
+    /// content gate can never start with a lexicon that detects nothing.
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_RealWorldFramingLexiconMissing_ThrowsAtStartup()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, RealWorldFramingEn);
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain($"missing required file '{RealWorldFramingEn}'");
+        failure.Message.ShouldContain(
+            "embedded runtime file 'shared.real-world-framing.en.v1.txt' is not tracked by the manifest");
     }
 
     /// <summary>GetSchema refuses a blank or untracked name; lookups never reach for the file system.</summary>

@@ -34,7 +34,10 @@ public static class OwnerActionReasons
     /// <summary>The gate passed but the mode requires the owner's own approval before anything is approved.</summary>
     public const string OwnerApprovalRequired = "owner_approval_required";
 
-    /// <summary>The draft-time moderation block is missing and the moderator could not be reached (fail closed).</summary>
+    /// <summary>
+    /// The content gate could not run, or the moderator could not be reached, so check 7 failed closed with
+    /// <see cref="NightTales.Domain.Stories.Gates.GateDetailCodes.ModeratorUnavailable"/>.
+    /// </summary>
     public const string ModeratorUnavailable = "moderator_unavailable";
 
     /// <summary>Every code this feature may put in a notice, in copy-key order.</summary>

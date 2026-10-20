@@ -39,6 +39,27 @@ internal static class GateRunSeed
     /// <summary>The marker inside the story body: it must never appear in a verdict, an audit row or a payload.</summary>
     internal const string StoryMarker = "zzlanternmarkerzz";
 
+    /// <summary>The marker inside the story title: 02.8.2-T2 D19 sweep over the title.</summary>
+    internal const string TitleMarker = "zzgatetitlemarkerzz";
+
+    /// <summary>The marker inside the story description (part of the <c>meta</c> segment).</summary>
+    internal const string DescriptionMarker = "zzgatedescriptionmarkerzz";
+
+    /// <summary>The marker inside one story tag (part of the <c>meta</c> segment).</summary>
+    internal const string TagMarker = "zzgatetagmarkerzz";
+
+    /// <summary>The marker inside a body paragraph, where <see cref="StoryMarker"/> sits by default.</summary>
+    internal const string ParagraphMarker = "zzgateparagraphmarkerzz";
+
+    /// <summary>The marker inside the story keywords, so it reaches the expanded scene prompt.</summary>
+    internal const string KeywordMarker = "zzgatekeywordmarkerzz";
+
+    /// <summary>
+    /// The framing phrase of <c>prompts/shared/real-world-framing.vi.v1.txt</c> the real-world check must hit on
+    /// (02 README F31, task §Tests).
+    /// </summary>
+    internal const string FramingPhrase = "dựa trên sự kiện có thật";
+
     /// <summary>The marker inside the episode brief, the D19-banned field nearest the gate's reads.</summary>
     internal const string SourceUrlText = "https://example.invalid/gate-source-leak";
 
@@ -115,18 +136,70 @@ internal static class GateRunSeed
     internal static string Brief => $"A gate probe episode about {SourceUrlText}";
 
     /// <summary>The story draft every seed stores: a 212-token body inside the short × vi band.</summary>
-    internal static StoryContentV1 Draft() => new(
+    internal static StoryContentV1 Draft() => Build(
+        StoryMarker,
         "The lantern on the pier",
-        new StorySegmentV1(StoryMarker + " " + Words(25, 0, MainLexicon), ["lantern keeper on the pier"], [], null),
+        "A quiet story about a forgotten lantern.",
+        ["supernatural"],
+        [HarbourKeyword]);
+
+    /// <summary>
+    /// The scene keyword of <c>p:0</c>: a 3-to-12-word English phrase, because the approve path lints every segment
+    /// keyword the story carries (<c>RenderKeywordLinter</c>, 02 D3 rules) before it approves anything, and a
+    /// one-word keyword such as <c>ghost</c> fails R1. Every content gate test names this phrase when it builds the
+    /// scene prompt of the seeded keyword.
+    /// </summary>
+    internal const string HarbourKeyword = "quiet night by the harbour";
+
+    /// <summary>
+    /// The same 212-token body with a distinct marker in every D19-banned field — title, a paragraph, the
+    /// description, a tag and the keyword that reaches the expanded scene prompt — so one log capture can prove none
+    /// of them travelled anywhere but <c>moderation_events.excerpt</c> (02.8.2-T2 Acceptance 7).
+    /// </summary>
+    internal static StoryContentV1 MarkerDraft() => Build(
+        ParagraphMarker,
+        TitleMarker,
+        DescriptionMarker,
+        [TagMarker],
+        [KeywordMarker]);
+
+    /// <summary>
+    /// The same body with the vi framing phrase inside <c>p:1</c> (02 README F31): check 8 must hit on the narration
+    /// alone, with the review model's <c>real_world_claims[]</c> empty. Five more tokens stay inside the band.
+    /// </summary>
+    internal static StoryContentV1 RealWorldDraft() => Build(
+        StoryMarker,
+        "The lantern on the pier",
+        "A quiet story about a forgotten lantern.",
+        ["supernatural"],
+        [HarbourKeyword],
+        withFramingPhrase: true);
+
+    private static StoryContentV1 Build(
+        string hookLead,
+        string title,
+        string description,
+        IReadOnlyList<string> tags,
+        IReadOnlyList<string> keywords,
+        bool withFramingPhrase = false) => new(
+        title,
+        new StorySegmentV1(hookLead + " " + Words(25, 0, MainLexicon), ["lantern keeper on the pier"], [], null),
         [
-            new StorySegmentV1(Words(60, 3, MainLexicon), ["quiet night by the harbour"], [], "setup"),
-            new StorySegmentV1(Words(62, 11, MainLexicon), ["old wooden pier at dawn"], [], null),
+            // The scene-prompt keywords live on a segment, not in the tags: the derived keywords column — the
+            // gate's only keyword source — is the hook ++ paragraphs ++ ending keyword lists (D3). Each one is a
+            // phrase the approve path's keyword lint accepts (3 to 12 words), so the seeded world can be approved.
+            new StorySegmentV1(Words(60, 3, MainLexicon), keywords, [], "setup"),
+            new StorySegmentV1(
+                Words(62, 11, MainLexicon) + (withFramingPhrase ? " " + FramingPhrase : string.Empty),
+                ["old wooden pier at dawn"],
+                [],
+                null),
             new StorySegmentV1(Words(48, 19, MainLexicon), ["empty path along the water"], [], null),
         ],
         new StorySegmentV1(Words(16, 27, MainLexicon), ["cold morning by the water"], [], null),
-        "A quiet story about a forgotten lantern.",
-        ["ghost", "night"],
-        ["supernatural"],
+        description,
+        tags,
+        [],
         new StoryStructureV1("ghost", "pier", "a light", "the keeper", "first_person"));
 
     /// <summary>Writes the active price version with the D4 defaults, once per database.</summary>
@@ -184,6 +257,7 @@ internal static class GateRunSeed
     /// <param name="auditReport">The stored <c>audit_report</c>; <see cref="CleanAudit"/> unless a test varies it.</param>
     /// <param name="similarityScore">The stored source similarity; 0.02 clears the default 0.05 ceiling.</param>
     /// <param name="withPastEpisode">Seeds the series' past episode, so check 10 is scorable.</param>
+    /// <param name="draft">The story content both versions store; <see cref="Draft"/> unless a test varies it.</param>
     /// <param name="ct">The caller's cancellation token.</param>
     internal static async Task<GateWorld> SeedRunAsync(
         TestDatabase database,
@@ -192,6 +266,7 @@ internal static class GateRunSeed
         string? auditReport = null,
         decimal? similarityScore = 0.02m,
         bool withPastEpisode = true,
+        StoryContentV1? draft = null,
         CancellationToken ct = default)
     {
         await SeedPriceVersionAsync(database, ct);
@@ -220,10 +295,11 @@ internal static class GateRunSeed
                 $"UPDATE episodes SET current_story_version_id = '{pastVersion}' WHERE id = '{past.Id}'", ct);
         }
 
+        var story = draft ?? Draft();
         var versionId = await AddVersionAsync(
-            database, user.Id, episode.Id, version: 1, Draft(), Start, ct, auditReport ?? CleanAudit(), similarityScore);
+            database, user.Id, episode.Id, version: 1, story, Start, ct, auditReport ?? CleanAudit(), similarityScore);
         var secondVersionId = await AddVersionAsync(
-            database, user.Id, episode.Id, version: 2, Draft(), Start.AddMinutes(30), ct, auditReport ?? CleanAudit(), similarityScore);
+            database, user.Id, episode.Id, version: 2, story, Start.AddMinutes(30), ct, auditReport ?? CleanAudit(), similarityScore);
 
         await database.ExecuteAsync(
             $"UPDATE episodes SET current_story_version_id = '{versionId}' WHERE id = '{episode.Id}'", ct);
@@ -279,6 +355,19 @@ internal static class GateRunSeed
     /// <summary>The ISO-8601 instant the seed SQL literals carry.</summary>
     internal static string Instant(DateTimeOffset instant) =>
         instant.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The <c>style_templates.template</c> of the series the seed created (03 README D1, read by
+    /// <c>ScenePromptExpander</c>): the seed's series is built through <c>SeriesBuilder</c>, which inserts the row, so
+    /// every scenario reaching check 7 finds it.
+    /// </summary>
+    /// <param name="database">The class's own database.</param>
+    /// <param name="seriesId">The series whose template the gate reads.</param>
+    /// <returns>The template text.</returns>
+    internal static string StyleTemplateText(TestDatabase database, Guid seriesId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"SELECT t.template FROM style_templates t JOIN series s ON s.style_template_id = t.id WHERE s.id = '{seriesId}'");
 
     private static async Task<Guid> AddVersionAsync(
         TestDatabase database,

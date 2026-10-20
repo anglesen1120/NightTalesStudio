@@ -147,8 +147,10 @@ public sealed class AutopilotApprovalServiceTests
         CorpusMax: 0,
         RealWorldHit: false,
         RealWorldKinds: [],
+        RealWorldSegments: [],
         ModerationFlagged: false,
         ModerationCategories: [],
+        ModerationSegments: [],
         ModerationUnavailableDetail: null,
         ModerationCheckedAt: null,
         EpisodeStatusAtEvaluation: "story_review");
