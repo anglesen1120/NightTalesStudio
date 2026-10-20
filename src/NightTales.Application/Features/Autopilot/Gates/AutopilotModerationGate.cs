@@ -47,7 +47,9 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <c>moderation_events</c> row is written per failing unit — a narrowed segment, a single-segment chunk, or a
 /// packed chunk that could not be narrowed — under one shared deadline, de-duplicated by segment set and
 /// categories, so overlapping pieces of one oversized segment never record the same evidence twice. An outage
-/// during that second pass keeps the fail-closed verdict and the rows it could attribute.
+/// during that second pass keeps the fail-closed verdict and the rows it could attribute; when it cuts the pass
+/// short before a single segment of the failing chunk was blamed, the chunk itself is attributed, because the
+/// gate already knew that whole text failed and the owner still needs the address and the evidence.
 /// </para>
 /// <para>
 /// <b>Fail closed, never silent.</b> A moderator outage is a flagged verdict with
@@ -248,6 +250,11 @@ public sealed partial class AutopilotModerationGate(
     /// segments that fail on their own — and the whole chunk when none of them does, because the flag then belongs
     /// to the combination (a packed chunk's evidence is its opening characters and every segment id it holds).
     /// </summary>
+    /// <remarks>
+    /// A chunk is passed in only because its own re-check already failed, so the chunk as a whole is a known failing
+    /// unit: an outage that stops the pass before one segment was blamed keeps that verdict as the attribution,
+    /// never an empty list (DL-1). Once anything of it was blamed, only those units stand.
+    /// </remarks>
     /// <param name="req">The request, for the outage log's ids.</param>
     /// <param name="chunk">The failing chunk.</param>
     /// <param name="categories">The categories its verdict failed on.</param>
@@ -261,7 +268,7 @@ public sealed partial class AutopilotModerationGate(
     {
         if (chunk.Parts.Count <= 1)
         {
-            return ([new Failure(chunk.Text, chunk.SegmentIds, categories)], false);
+            return ([WholeChunk(chunk, categories)], false);
         }
 
         var failures = new List<Failure>();
@@ -277,6 +284,13 @@ public sealed partial class AutopilotModerationGate(
             }
             catch (ModerationUnavailableException)
             {
+                if (failures.Count == 0)
+                {
+                    // Nothing of the chunk was blamed yet, and the chunk's verdict did fail: the chunk is the
+                    // attribution unit, so the outage costs the narrowing, not the evidence.
+                    failures.Add(WholeChunk(chunk, categories));
+                }
+
                 return (failures, true);
             }
 
@@ -294,8 +308,18 @@ public sealed partial class AutopilotModerationGate(
             return (failures, false);
         }
 
-        return ([new Failure(chunk.Text, chunk.SegmentIds, categories)], false);
+        return ([WholeChunk(chunk, categories)], false);
     }
+
+    /// <summary>
+    /// The chunk as one failing unit: every distinct address it holds and the categories its own verdict failed on,
+    /// with the chunk's text as the excerpt source (the domain cuts it to the row's limit).
+    /// </summary>
+    /// <param name="chunk">The failing chunk.</param>
+    /// <param name="categories">The categories its verdict failed on.</param>
+    /// <returns>The failure that names the whole chunk.</returns>
+    private static Failure WholeChunk(Chunk chunk, IReadOnlyList<string> categories) =>
+        new(chunk.Text, chunk.SegmentIds, categories);
 
     /// <summary>
     /// Whether a verdict fails the profile's thresholds (02.8.2-T2 decision 5, all fail closed): a blocked or

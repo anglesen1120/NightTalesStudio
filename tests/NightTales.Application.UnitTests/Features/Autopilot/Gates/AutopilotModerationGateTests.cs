@@ -652,6 +652,95 @@ public sealed class AutopilotModerationGateTests
         events.Items.Count.ShouldBe(1, "the units attributed before the outage keep their row");
     }
 
+    /// <summary>
+    /// A single chunk's verdict is the union verdict, and that chunk already failed: an outage at the very first
+    /// segment of the narrowing pass must not leave the failure unattributed (DL-1). The packed chunk itself is the
+    /// failing unit — every address it holds, its own failing categories, and its opening characters as the excerpt.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_UnavailableAtTheFirstNarrowedSegment_AttributesTheWholeChunk()
+    {
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the union call, which is the only chunk's verdict
+            .Unavailable(); // title: the outage stops the narrowing before any segment was blamed
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics);
+        var first = "First paragraph. " + new string('a', 200);
+        var second = "Second paragraph. " + new string('b', 200);
+        var packed = $"Title\n\nHook\n\n{first}\n\n{second}\n\nEnding";
+        packed.Length.ShouldBeGreaterThan(
+            ModerationEvent.ExcerptMaxLength,
+            "the packed chunk is longer than one excerpt, so the row's cut is observable");
+
+        var verdict = await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create("Title", "Hook", [first, second], "Ending", null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        verdict.Flagged.ShouldBeTrue("an attribution outage does not undo the fail-closed verdict");
+        verdict.UnavailableDetail.ShouldBeNull();
+        verdict.FlaggedSegments.ShouldBe(
+            ["title", "hook", "p:0", "p:1", "ending"],
+            "the packed chunk is the failing unit, so every address it holds is named");
+        moderator.Checks.Count.ShouldBe(2, "the union call and the first segment re-check, then the outage");
+        var row = events.Items.ShouldHaveSingleItem("the chunk the gate already knew failed keeps its evidence");
+        row.Categories.ShouldBe(["hate"]);
+        row.OwnText.ShouldBe(packed, "the gate attributes the whole packed chunk; the domain cuts it to the row's excerpt");
+        ModerationEvent
+            .Record(
+                UserId,
+                ModerationSource.OpenaiText,
+                ModerationStage.AutopilotGate.ToString(),
+                row.Categories,
+                DateTimeOffset.UnixEpoch,
+                EpisodeId,
+                row.OwnText)
+            .Excerpt.ShouldBe(
+                packed[..ModerationEvent.ExcerptMaxLength],
+                "the stored excerpt is the first 300 characters of the packed chunk");
+    }
+
+    /// <summary>
+    /// The multi-chunk path reaches the same conclusion: the chunk-by-chunk pass already failed the packed narration
+    /// text, so an outage at its first narrowed segment attributes that chunk as one unit instead of dropping it
+    /// (DL-1).
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_UnavailableAtTheFirstNarrowedSegmentOfAPackedChunk_AttributesTheChunk()
+    {
+        using var metrics = new ContentGateMetrics();
+        // Request() carries three texts, so the gate asks chunk by chunk; the packed narration fails, then the
+        // moderator goes down before one of its segments could be blamed.
+        var moderator = new ScriptedModerator()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the union call
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the packed narration text
+            .Unavailable(); // title: the outage stops the narrowing before any segment was blamed
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics);
+
+        var verdict = await CheckAsync(
+            gate,
+            Request(title: "Title", hook: "Hook", paragraphs: ["Para one.", "Para two."], ending: "Ending"));
+
+        verdict.Flagged.ShouldBeTrue("the union verdict failed; an attribution outage does not undo it");
+        verdict.UnavailableDetail.ShouldBeNull();
+        verdict.FlaggedSegments.ShouldBe(
+            ["title", "hook", "p:0", "p:1", "ending"],
+            "the packed narration chunk is the failing unit, so every address it holds is named");
+        moderator.Checks.Count.ShouldBe(3, "the union, the packed narration chunk, then the first segment re-check");
+        var row = events.Items.ShouldHaveSingleItem("the chunk the gate already knew failed keeps its evidence");
+        row.Categories.ShouldBe(["hate"]);
+        row.OwnText.ShouldBe(
+            "Title\n\nHook\n\nPara one.\n\nPara two.\n\nEnding",
+            "the row's excerpt is the packed chunk, i.e. its first characters up to the domain's limit");
+    }
+
     [Fact]
     public async Task AutopilotModerationGate_Cancelled_Propagates()
     {
