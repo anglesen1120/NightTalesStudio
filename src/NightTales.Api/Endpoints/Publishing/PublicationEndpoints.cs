@@ -8,6 +8,7 @@ using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
 using NightTales.Api.RateLimiting;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Publishing.Commands.CancelPublication;
 using NightTales.Application.Features.Publishing.Commands.ConsentPublication;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Features.Publishing.Queries.GetConsentText;
@@ -15,43 +16,45 @@ using NightTales.Application.Features.Publishing.Queries.GetConsentText;
 namespace NightTales.Api.Endpoints.Publishing;
 
 /// <summary>
-/// The publication routes of 06.2.2-T1 (06 README D7, 10 CR-17): <c>POST /api/v1/publications/{id}/consent</c>
-/// records the owner's consent on an <c>awaiting_consent</c> row, and <c>GET /api/v1/publications/consent-text</c>
-/// serves the <c>pc.v1</c> text the consent dialogue displays.
+/// The publication routes of 06.2.2-T1 and 06.2.6-T1 (06 README D7, 10 CR-17): <c>POST
+/// /api/v1/publications/{id}/consent</c> records the owner's consent on an <c>awaiting_consent</c> row, <c>DELETE
+/// /api/v1/publications/{id}</c> cancels a row that has not started uploading, and <c>GET
+/// /api/v1/publications/consent-text</c> serves the <c>pc.v1</c> text the consent dialogue displays.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The file is deliberately not <see cref="EpisodePublicationEndpoints"/> (the episode's collection of 06.2.1-T1)
-/// and not <see cref="PublishingEndpoints"/> (the <c>/api/v1/channels</c> routes of 06.1.2): both routes here hang
+/// and not <see cref="PublishingEndpoints"/> (the <c>/api/v1/channels</c> routes of 06.1.2): every route here hangs
 /// under the publication resource itself, at <c>/api/v1/publications</c>, which is neither of those groups nor the
 /// episode one, so it gets its own group and its own file.
 /// </para>
 /// <para>
-/// Both routes are thin (09.1.2-T1): bind, send one message through the D4 pipeline, answer. The idempotent repeat,
-/// the <c>If-Match</c> comparison, the text-version rule, the episode transition and the audit/outbox rows belong to
-/// the command handler; the <c>ETag</c> and the <c>Cache-Control</c> header belong here, because a handler has no
-/// <c>HttpResponse</c> (09 README D14).
+/// Every route is thin (09.1.2-T1): bind, send one message through the D4 pipeline, answer. The idempotent repeat,
+/// the <c>If-Match</c> comparison, the text-version rule, the episode transition, the quota release and the
+/// audit/outbox rows belong to the command handler; the <c>ETag</c> and the <c>Cache-Control</c> header belong here,
+/// because a handler has no <c>HttpResponse</c> (09 README D14).
 /// </para>
 /// <para>
-/// Both routes are behind <c>RequireFeature("youtube_publish")</c> (06 README D9), attached first so an authenticated
+/// Every route is behind <c>RequireFeature("youtube_publish")</c> (06 README D9), attached first so an authenticated
 /// caller with the flag off answers 404 <c>feature_disabled</c> before the handler runs. Authorization is middleware
-/// and runs before every endpoint filter, so an anonymous caller answers 401 first — including on the consent route,
-/// where it precedes the 428 the <c>If-Match</c> filter would answer.
+/// and runs before every endpoint filter, so an anonymous caller answers 401 first — including on the two write
+/// routes, where it precedes the 428 the <c>If-Match</c> filter would answer.
 /// </para>
 /// <para>
-/// <b>Route order.</b> <c>consent-text</c> is a literal segment of the same group as the <c>{id:guid}</c> route; the
-/// <c>guid</c> constraint is what keeps the two apart — <c>consent-text</c> is not a guid, so it never binds as an
-/// <c>{id}</c>, and the two routes can be declared in either order.
+/// <b>Route order.</b> <c>consent-text</c> is a literal segment of the same group as the <c>{id:guid}</c> routes; the
+/// <c>guid</c> constraint is what keeps them apart — <c>consent-text</c> is not a guid, so it never binds as an
+/// <c>{id}</c>, and the routes can be declared in either order.
 /// </para>
 /// <para>
-/// The consent route carries <c>RequireIfMatch()</c> (428 <c>if_match_required</c>) and the <c>auth</c> rate-limit
-/// policy, because it writes and is called by the SPA with a session; it carries no <c>Idempotency-Key</c> — §5.4's key
-/// is for paid or platform-spending POSTs and this one neither spends nor calls out. The text route is a read and
-/// carries neither.
+/// The consent route and the cancel route carry <c>RequireIfMatch()</c> (428 <c>if_match_required</c>) and the
+/// <c>auth</c> rate-limit policy, because they write and are called by the SPA with a session; neither carries an
+/// <c>Idempotency-Key</c> — §5.4's key is for paid or platform-spending POSTs and these neither spend nor call out
+/// (the cancel frees a quota unit instead). The text route is a read and carries neither.
 /// </para>
 /// <para>
-/// The <c>{id}</c> is a <em>publication</em> id, so <see cref="EpisodeIdRouteParameter"/> is deliberately not
-/// declared on it: the request-log enricher would otherwise label the request with a publication id as an episode id.
+/// The <c>{id}</c> is a <em>publication</em> id on both routes, so <see cref="EpisodeIdRouteParameter"/> is
+/// deliberately not declared on it: the request-log enricher would otherwise label the request with a publication id
+/// as an episode id.
 /// </para>
 /// </remarks>
 public static class PublicationEndpoints
@@ -61,6 +64,9 @@ public static class PublicationEndpoints
 
     /// <summary>The consent route, relative to <see cref="GroupPrefix"/>.</summary>
     public const string ConsentRoute = "/{id:guid}/consent";
+
+    /// <summary>The cancel route of 06.2.6-T1, relative to <see cref="GroupPrefix"/>.</summary>
+    public const string CancelRoute = "/{id:guid}";
 
     /// <summary>The consent-text route, relative to <see cref="GroupPrefix"/>.</summary>
     public const string ConsentTextRoute = "/consent-text";
@@ -94,7 +100,7 @@ public static class PublicationEndpoints
 
         var publications = routes.MapGroup(GroupPrefix);
 
-        // 09.9.4-T1 (BD12): the versioned API group carries the non-credentialed CORS policy, and both routes are
+        // 09.9.4-T1 (BD12): the versioned API group carries the non-credentialed CORS policy, and every route here is
         // called by the SPA with a bearer token, so their preflights need it too.
         publications.RequireCors(SecurityHeadersExtensions.SpaCorsPolicy);
 
@@ -105,6 +111,19 @@ public static class PublicationEndpoints
             .RequireRateLimiting(RateLimitPolicies.Auth)
             .Produces<PublicationDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+            .ProducesProblem(StatusCodes.Status428PreconditionRequired)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        publications.MapDelete(CancelRoute, CancelAsync)
+            .RequireFeature(FeatureKey)
+            .RequireAuthorization()
+            .RequireIfMatch()
+            .RequireRateLimiting(RateLimitPolicies.Auth)
+            .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
@@ -171,6 +190,60 @@ public static class PublicationEndpoints
         return await result
             .ToHttpResult(http, (publication, token) => etags.PublicationAsync(publication.Id, token))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <c>DELETE /api/v1/publications/{id}</c>: 204 when the publication was cancelled, or when it was already
+    /// cancelled (the lost-response repeat), or the documented 401/404/409/412/428.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// No body and no <c>ETag</c> on the success answer: a cancelled row is terminal, so there is no next version a
+    /// client could use as its <c>If-Match</c>, and the row it would read next is gone from the episode's active
+    /// publication. A 412 <c>publication_conflict</c> does carry the row's <em>current</em> tag in the header,
+    /// exactly as the consent route does (09.1.4-T1's pattern), so the client can show the changed row or retry
+    /// without a second read. No other failure sets a tag: a 404 or a 409 must never hand a client something to
+    /// cache.
+    /// </para>
+    /// <para>
+    /// The 409 <c>publication_invalid_state</c> means the upload has started (<c>uploading</c>/<c>processing</c>,
+    /// or the row is already <c>published</c>/<c>failed</c>): the body carries the generic description only, with
+    /// no action list, because the client refetches the row and shows the "finish it in YouTube Studio" copy from
+    /// its own catalogue.
+    /// </para>
+    /// </remarks>
+    /// <param name="id">The publication, from the route; another owner's publication is a 404 (09 README D10).</param>
+    /// <param name="ifMatch">The required <c>If-Match</c> header value; the filter answered 428 when absent.</param>
+    /// <param name="sender">The Mediator sender.</param>
+    /// <param name="etags">The post-commit reader that supplies the current tag of a 412.</param>
+    /// <param name="http">The request, for the problem details and the <c>ETag</c> header.</param>
+    /// <param name="ct">The request cancellation token.</param>
+    private static async Task<IResult> CancelAsync(
+        Guid id,
+        [FromHeader(Name = RequireIfMatchFilter.HeaderName)] string? ifMatch,
+        ISender sender,
+        PostCommitETagReader etags,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        // RequireIfMatchFilter has already answered 428 `if_match_required` for an absent or blank header, so the
+        // binder's null here is the "filter is not on this route" case only.
+        var result = await sender
+            .Send(new CancelPublicationCommand(id, ifMatch ?? string.Empty), ct)
+            .ConfigureAwait(false);
+
+        if (result.IsError)
+        {
+            if (string.Equals(result.FirstError.Code, ErrorCodes.PublicationConflict, StringComparison.Ordinal)
+                && await etags.PublicationAsync(id, http.RequestAborted).ConfigureAwait(false) is { } current)
+            {
+                http.Response.Headers.ETag = current;
+            }
+
+            return ProblemDetailsWriter.ToProblem(result.Errors, http);
+        }
+
+        return result.ToNoContentResult(http);
     }
 
     /// <summary>
