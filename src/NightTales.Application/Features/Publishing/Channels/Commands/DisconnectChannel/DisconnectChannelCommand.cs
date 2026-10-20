@@ -16,8 +16,11 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.Disconnec
 /// <remarks>
 /// <para>
 /// <b>Idempotent by contract (R3/S65-1).</b> Disconnecting an already <c>revoked</c> connection answers 204 again and
-/// schedules the deletion request again (the engine's create is itself idempotent); nothing else happens — no Google
-/// call, no second state change, no second outbox row, no audit row.
+/// writes nothing else — no Google call, no second state change, no second outbox row, no audit row. The deletion
+/// request is the one write the repeat may still make, and only when none is on record: the handler asks
+/// <c>IDeletionRequests.ExistsAsync</c> first and calls the engine's idempotent create only when no
+/// <c>in_app_revoke</c> row for that connection exists in <em>any</em> state, because the engine's open-row dedupe
+/// cannot see a request it already completed.
 /// </para>
 /// <para>
 /// <b>No If-Match and no idempotency key (D15).</b> The route carries neither: a disconnect is the owner's own

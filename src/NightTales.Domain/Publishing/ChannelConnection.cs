@@ -70,10 +70,11 @@ public enum ChannelConnectionStatus
 /// method and the state only.
 /// </para>
 /// <para>
-/// <see cref="Connect"/> and <see cref="Reconnect"/> additionally raise <see cref="ChannelConnectionChanged"/>,
-/// the event the interceptor stores as <c>channel_connection_changed.v1</c> beside the row in the same unit of
-/// work (06 README D13); ids and the status only, never a token or a title. The status transitions land their
-/// own raise in the commits that introduce their callers.
+/// <see cref="Connect"/>, <see cref="Reconnect"/> and <see cref="Revoke"/> additionally raise
+/// <see cref="ChannelConnectionChanged"/>, the event the interceptor stores as <c>channel_connection_changed.v1</c>
+/// beside the row in the same unit of work (06 README D13); ids and the status only, never a token or a title.
+/// Those three are the only raisers: <see cref="MarkExpired"/>, <see cref="MarkError"/>, <see cref="MarkRefreshed"/>,
+/// <see cref="RefreshFromApi"/> and <see cref="PurgeYouTubeData"/> write no event of their own.
 /// </para>
 /// <para>
 /// The row carries no <c>xmin</c> row version and no <c>updated_at</c> bookkeeping: 06 README D15 needs no

@@ -31,13 +31,15 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.Disconnec
 /// </para>
 /// <para>
 /// <b>The revoke never fails the request (R10).</b> A transport failure or a 5xx gets three attempts in total, with a
-/// 250 ms / 1 s backoff plus 0-20 % jitter <em>between</em> them through <see cref="TimeProvider"/> (the seam a test
-/// swaps for a manual provider, so no test waits the ladder in wall clock, and no sleep is spent after the last
-/// failure); after that, and for every non-retryable
-/// answer, <c>youtube_channel_revoke_failed_total</c> is incremented and the disconnect continues — the local tokens
-/// are wiped and the deletion is scheduled whatever Google answered, because the owner asked for the disconnect to
-/// happen. A token Google reports as already revoked (<c>400 invalid_token</c>) is a success, not a failure: the grant
-/// is dead, which is what the call wanted.
+/// 250 ms / 1 s backoff plus 0-20 % jitter <em>between</em> them through <see cref="TimeProvider"/> (a seam, so a test
+/// that wants one can inject a fake provider; a test left on the default <c>TimeProvider.System</c> does pay the real
+/// backoff of 1.25 s, up to 1.5 s with jitter, and no sleep is spent after the last failure); after that, for every
+/// non-retryable answer and for a client that throws instead of answering, <c>youtube_channel_revoke_failed_total</c>
+/// is incremented once and the disconnect continues — the local tokens are wiped and the deletion is scheduled
+/// whatever Google answered, because the owner asked for the disconnect to happen. A cancelled request is the one
+/// exception to that: it propagates rather than being recorded as a failed revoke, since the caller is gone. A token
+/// Google reports as already revoked (<c>400 invalid_token</c>) is a success, not a failure: the grant is dead, which
+/// is what the call wanted.
 /// </para>
 /// <para>
 /// <b>The cascade reuses the cancel's own step.</b> Every <c>awaiting_consent</c>/<c>scheduled</c> row of the channel
@@ -251,7 +253,11 @@ public sealed partial class DisconnectChannelHandler(
     /// <summary>
     /// Calls Google's revoke with the plan's retry ladder: only a transport failure or a 5xx
     /// (<see cref="ErrorCodes.ServiceUnavailable"/>) is retried, three times at most. Every other answer — including
-    /// <c>400 invalid_token</c>, which the client reports as an already-revoked outcome — is final.
+    /// <c>400 invalid_token</c>, which the client reports as an already-revoked outcome — is final, and so is a
+    /// client that throws a non-cancellation exception instead of answering: that is not the transient class, so it
+    /// gets no retry and only the exception's type name is reported (never its message or the token). Cancellation is
+    /// never turned into a failed attempt: an <see cref="OperationCanceledException"/>, and any exception thrown while
+    /// the caller's own token is cancelled, propagates to the pipeline instead.
     /// </summary>
     /// <param name="token">The plaintext token to revoke.</param>
     /// <param name="cancellationToken">Cancels the call and the backoff.</param>
@@ -265,7 +271,25 @@ public sealed partial class DisconnectChannelHandler(
     {
         for (var attempt = 1; ; attempt++)
         {
-            var result = await youtube.RevokeAsync(token, cancellationToken).ConfigureAwait(false);
+            ErrorOr<RevokeOutcome> result;
+
+            try
+            {
+                result = await youtube.RevokeAsync(token, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                // The port answers an ErrorOr, but an implausible answer can still throw (a corrupt /revoke body,
+                // a malformed RevokeEndpoint, a request exception the client did not map). Letting it escape would
+                // roll the unit of work back and keep the tokens, which D15 forbids: the wipe happens whatever
+                // Google answers. It is not the transient `service_unavailable` class, so it is final with no retry,
+                // and only the exception's type name leaves this method — a message could echo the token.
+                // The filter keeps both cancellation shapes out: an OperationCanceledException always propagates, and
+                // so does anything thrown while the caller's own token is cancelled (an aborted request can surface
+                // as an HttpRequestException) — the caller is gone, so there is nothing to wipe for, exactly the
+                // condition GoogleYouTubeClient.PostFormAsync uses to rethrow instead of logging unreachable.
+                return (null, attempt, ex.GetType().Name);
+            }
 
             if (!result.IsError)
             {
@@ -279,8 +303,8 @@ public sealed partial class DisconnectChannelHandler(
                 return (null, attempt, error.Code);
             }
 
-            // The delay goes through TimeProvider, so a test swaps the clock-managed provider and never waits: the
-            // ladder's whole 5.25 s is virtual (06.4.1-T1 task §Testing).
+            // The delay goes through the injected TimeProvider, so a test that needs one can inject a fake provider and
+            // skip the wait; a test left on the default TimeProvider.System pays the real backoff (06.4.1-T1 §Testing).
             await Task.Delay(Jittered(RetryDelays[attempt - 1]), time, cancellationToken).ConfigureAwait(false);
         }
     }

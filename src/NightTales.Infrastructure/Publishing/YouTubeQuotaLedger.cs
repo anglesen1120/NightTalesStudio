@@ -133,6 +133,8 @@ public sealed partial class YouTubeQuotaLedger(
         var days = reservations
             .GroupBy(reservation => (reservation.Platform, reservation.Day))
             .Select(group => (group.Key.Platform, group.Key.Day, Units: group.Count()))
+            .OrderBy(day => day.Platform, StringComparer.Ordinal)
+            .ThenBy(day => day.Day)
             .ToList();
 
         foreach (var day in days)

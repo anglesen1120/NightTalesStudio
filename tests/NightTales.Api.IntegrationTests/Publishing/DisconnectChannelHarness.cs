@@ -155,11 +155,18 @@ internal sealed class DisconnectChannelHarness : IAsyncDisposable
     /// <param name="ct">Cancels the setup.</param>
     /// <param name="flagOn">Whether <c>youtube_publish</c> is on; false is the 404 <c>feature_disabled</c> case.</param>
     /// <param name="googleOptions">The fake's switches, for the revoke answer.</param>
+    /// <param name="services">
+    /// An extra registration pass over this host's own container, applied after every registration the factory
+    /// makes (so one test can replace a port without touching another test's host); null keeps the production
+    /// graph. It replaces nothing by itself: a caller that needs another implementation removes the production
+    /// one first (<c>RemoveAll&lt;T&gt;</c>) and then registers its own.
+    /// </param>
     internal static async Task<DisconnectChannelHarness> StartAsync(
         TestDatabase database,
         CancellationToken ct,
         bool flagOn = true,
-        FakeGoogleOptions? googleOptions = null)
+        FakeGoogleOptions? googleOptions = null,
+        Action<IServiceCollection>? services = null)
     {
         ArgumentNullException.ThrowIfNull(database);
 
@@ -179,6 +186,11 @@ internal sealed class DisconnectChannelHarness : IAsyncDisposable
         var factory = new ApiFactory(database, clock)
             .WithFakeGoogle(google)
             .WithLoggerProvider(logs);
+
+        if (services is not null)
+        {
+            factory = factory.WithServices(services);
+        }
 
         return new DisconnectChannelHarness(database, clock, google, factory, logs);
     }
