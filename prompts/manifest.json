@@ -81,6 +81,14 @@
       "version": "v1",
       "sha256": "45d4d659c9e4ccca9431412d195dc8690a1b6d6acc39f4f0181b347db5124e1e"
     },
+    "shared/real-world-framing.en.v1.txt": {
+      "version": "v1",
+      "sha256": "0c2e745c8e67a2f702c6b71e3657501a2c171f8e015eb971f89c4ef20c637fd1"
+    },
+    "shared/real-world-framing.vi.v1.txt": {
+      "version": "v1",
+      "sha256": "8e7c14ca61c781904f111fb45d2bfcb7374a5b1e7654e2d6625ebd126e308a0d"
+    },
     "shared/structure-vocab.v1.json": {
       "version": "v1",
       "sha256": "aa8579d97f0a513e23a07f97ed91fd2d03856dc81f93bf9231b5f95fe8d95a77"

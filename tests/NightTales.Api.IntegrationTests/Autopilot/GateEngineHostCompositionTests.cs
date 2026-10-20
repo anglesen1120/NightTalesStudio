@@ -3,11 +3,14 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.VideoReview;
 using NightTales.Domain.Assets;
+using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
@@ -199,6 +202,14 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
         var gate = provider.GetRequiredService<IAutoApprovalGate>();
         gate.ShouldBeOfType<AutoApprovalGate>("the facade 02.8.3-T1 depends on");
 
+        // 02.8.2-T2: checks 7 and 8 of the story gate are their own services, and both hosts must compose them.
+        provider.GetRequiredService<IAutopilotContentGate>()
+            .ShouldBeOfType<AutopilotModerationGate>("check 7: one content gate over narration, metadata and scene prompts");
+        provider.GetRequiredService<IRealWorldSignalService>()
+            .ShouldBeOfType<RealWorldSignalService>("check 8: the real-world detector's assembled inputs");
+        provider.GetRequiredService<IRealWorldLexicon>().PhrasesFor(Language.Vi)
+            .ShouldNotBeEmpty("the vi lexicon ships with the catalog; an empty one would pass every story (D5)");
+
         var options = provider.GetRequiredService<AutopilotGateOptions>();
         options.DryRun.ShouldBe(AutopilotGateOptions.DefaultDryRun, "a host that says nothing about the gates never auto-approves");
         options.Mode.ShouldBe(GateMode.DryRun);
@@ -207,8 +218,12 @@ public sealed class GateEngineHostCompositionTests(TestDatabase database) : Inte
         var defaultProfile = options.Resolve(null);
         defaultProfile.Story.MinMeanReviewScore.ShouldBeGreaterThan(0);
         defaultProfile.Video.LoudnessMaxLufs.ShouldBeGreaterThan(defaultProfile.Video.LoudnessMinLufs);
+        defaultProfile.Moderation.BlockedCategories.ShouldNotBeEmpty("check 7 fails closed on a blocked category");
+        defaultProfile.Moderation.MaxScore.ShouldNotBeEmpty("the per-category ceilings are the shipped defaults");
         options.Resolve("no-such-profile").Story.MinMeanReviewScore.ShouldBe(defaultProfile.Story.MinMeanReviewScore);
         options.Resolve("no-such-profile").Video.DurationTolerance.ShouldBe(defaultProfile.Video.DurationTolerance);
+        options.Resolve("no-such-profile").Moderation.MaxScore.ShouldBe(defaultProfile.Moderation.MaxScore);
+        defaultProfile.RealWorld.IncidentWords.ShouldNotBeEmpty("check 8's dated-incident rule reads these");
 
         // The approval the gate sends re-stamps retention, so the handler's options must be bound in the same graph.
         var retention = provider.GetRequiredService<AssetRetentionOptions>();

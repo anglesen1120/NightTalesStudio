@@ -84,7 +84,7 @@ public sealed class StoryGateInputFactoryTests
         reading.Value.Audit.Issues.ShouldBeNull("the issues could not be read, so check 4 fails closed");
         reading.Value.Audit.ModerationFlagged.ShouldBeNull();
         reading.Value.Audit.RevisionApplied.ShouldBe(revisionApplied);
-        reading.Value.RealWorld.ShouldBeNull("unknown, which check 8 fails closed on");
+        reading.Value.RealWorldClaims.ShouldBeNull("unknown, which check 8 fails closed on");
 
         var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
 
@@ -278,27 +278,38 @@ public sealed class StoryGateInputFactoryTests
     }
 
     /// <summary>
-    /// Check 8 (02.8.2-T1 decision 1): the persisted model claims become one hit per claim with their kind, and the
+    /// Check 8 (02.8.2-T2): the persisted model claims leave the factory as their D22 addresses only, and the
     /// claim's own wording never leaves <c>audit_report</c>.
     /// </summary>
     [Fact]
-    public async Task StoryGateInputFactory_RealWorldClaims_BecomeKindOnlyHits()
+    public async Task StoryGateInputFactory_RealWorldClaims_AreExposedBySegment()
     {
         var reading = await ReadAsync(row: new Row
         {
             AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[{"segment":"p:2","text":"a real named event"},{"segment":"title","text":"a dated incident"}]},"local":{"issues":[]},"revision":{"applied":false}}""",
         });
 
-        var signal = reading.Value.RealWorld.ShouldNotBeNull();
-        signal.Hit.ShouldBeTrue();
-        signal.Hits.Count.ShouldBe(2);
-        signal.Hits.ShouldAllBe(hit => hit.Kind == RealWorldSignalKind.ModelClaim);
-        signal.Hits.Select(hit => hit.Segment).ShouldBe(["p:2", "title"]);
-        signal.Hits.ShouldAllBe(hit => hit.MatchedPhrase == string.Empty && hit.Evidence == string.Empty);
+        reading.Value.RealWorldClaims.ShouldNotBeNull().Select(claim => claim.Segment).ShouldBe(["p:2", "title"]);
 
         var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
 
         result.Failures.ShouldContain(StoryGateCheckIds.RealWorldSignal);
+    }
+
+    /// <summary>
+    /// 02.8.2-T2 decision: a revision stores its own review, so the claims of a complete
+    /// <c>revision.review_after</c> are unioned with <c>model_review</c> — an extra owner review is a cost, a missed
+    /// claim is a hole. The same segment claimed twice is one claim.
+    /// </summary>
+    [Fact]
+    public async Task StoryGateInputFactory_RealWorldClaims_AreUnionedWithACompleteRevisionReview()
+    {
+        var reading = await ReadAsync(row: new Row
+        {
+            AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[{"segment":"p:1"}]},"local":{"issues":[],"issues_complete":true},"revision":{"applied":true,"review_after":{"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[],"real_world_claims":[{"segment":"p:1"},{"segment":"ending"}]}}}""",
+        });
+
+        reading.Value.RealWorldClaims.ShouldNotBeNull().Select(claim => claim.Segment).ShouldBe(["p:1", "ending"]);
     }
 
     /// <summary>
@@ -314,7 +325,7 @@ public sealed class StoryGateInputFactoryTests
             AuditReport = """{"model_review":{"stale":false,"scores":{"hook":4,"pacing":4,"atmosphere":4,"natural_language":4,"originality":4,"factual_care":4,"length_fit":4},"issues":[]},"local":{"issues":[]},"revision":{"applied":false}}""",
         });
 
-        reading.Value.RealWorld.ShouldBeNull("there is no member to read");
+        reading.Value.RealWorldClaims.ShouldBeNull("there is no member to read");
 
         var result = StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults);
 
@@ -324,15 +335,13 @@ public sealed class StoryGateInputFactoryTests
         check.Detail.ShouldBe(GateDetailCodes.FieldAbsent);
     }
 
-    /// <summary>A review that stored an empty claims array did assert none: no hit, and check 8 passes.</summary>
+    /// <summary>A review that stored an empty claims array did assert none: no claim, and check 8 passes.</summary>
     [Fact]
-    public async Task StoryGateInputFactory_EmptyClaimsArray_IsNoHit()
+    public async Task StoryGateInputFactory_EmptyClaimsArray_IsNoClaim()
     {
         var reading = await ReadAsync(row: new Row());
 
-        var signal = reading.Value.RealWorld.ShouldNotBeNull();
-        signal.Hit.ShouldBeFalse();
-        signal.Hits.ShouldBeEmpty();
+        reading.Value.RealWorldClaims.ShouldNotBeNull().ShouldBeEmpty();
 
         StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults)
             .Failures.ShouldNotContain(StoryGateCheckIds.RealWorldSignal);
@@ -373,8 +382,6 @@ public sealed class StoryGateInputFactoryTests
         reading.Value.Audit.ModerationFlagged.ShouldBe(true);
         reading.Value.Moderation.Usable.ShouldBeTrue();
         reading.Value.Moderation.Flagged.ShouldBeTrue();
-        reading.Value.Moderation.Categories.ShouldBe(["sexual/minors"]);
-        reading.Value.Moderation.CheckedAt.ShouldBeNull("the stored verdict carries no checked_at");
 
         StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults)
             .Failures.ShouldContain(StoryGateCheckIds.ModerationDraft);
@@ -467,19 +474,21 @@ public sealed class StoryGateInputFactoryTests
     }
 
     /// <summary>
-    /// The text the gate moderates itself and the similarity projection both come from the stored content document:
-    /// narration, title, description and tags, and never a keyword (plan §3.1 checks 6–8).
+    /// The text the content gate moderates and the similarity projection both come from the stored content document:
+    /// narration, title, description and tags in D22 addressing, and never a keyword (plan §3.1 checks 6–8).
     /// </summary>
     [Fact]
-    public async Task StoryGateInputFactory_ModerationTextsAndStoryText_ComeFromTheContentDocument()
+    public async Task StoryGateInputFactory_ContentAndStoryText_ComeFromTheContentDocument()
     {
         var reading = await ReadAsync(row: new Row());
 
+        var segments = StoryTextSegments.From(reading.Value.Content);
+
         reading.Value.Version.ContentWarnings.ShouldBe(["atmosphere"]);
-        reading.Value.ModerationTexts.ShouldContain("The pier at dawn");
-        reading.Value.ModerationTexts.ShouldContain("A quiet story about an empty pier.");
-        reading.Value.ModerationTexts.ShouldContain("mist");
-        reading.Value.ModerationTexts.ShouldNotContain("quiet riverside morning", "a keyword is not part of the stage's text");
+        segments.Select(segment => segment.Id).ShouldContain("title");
+        segments.Select(segment => segment.Id).ShouldContain("p:0");
+        segments.ShouldContain(segment => segment.Id == "meta" && segment.Text.Contains("mist", StringComparison.Ordinal));
+        segments.ShouldNotContain(segment => segment.Text.Contains("quiet riverside morning", StringComparison.Ordinal));
         reading.Value.StoryText.ShouldNotBeNull();
     }
 
@@ -494,7 +503,7 @@ public sealed class StoryGateInputFactoryTests
         var reading = await ReadAsync(row: new Row { Content = "not a story.v1 document" });
 
         reading.Value.Version.ContentWarnings.ShouldBeEmpty();
-        reading.Value.ModerationTexts.ShouldBeEmpty();
+        reading.Value.Content.ShouldBeNull("unreadable, so the content gate and the detector both fail closed");
         reading.Value.StoryText.ShouldBeNull();
 
         StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults)
@@ -560,7 +569,7 @@ public sealed class StoryGateInputFactoryTests
     {
         var reading = await ReadAsync(row: new Row { SimilarityScore = 0.031m });
 
-        var input = StoryGateInputFactory.Compose(reading.Value, 0.044m, null, attempt: 2);
+        var input = StoryGateInputFactory.Compose(reading.Value, 0.044m, null, realWorld: null, attempt: 2);
 
         input.Similarity.CorpusMax.ShouldBe(50);
         input.Similarity.Sources.ShouldBe(0.031m);
@@ -569,8 +578,22 @@ public sealed class StoryGateInputFactoryTests
         input.Series.Topic.ShouldBe(Topic.Ghost);
     }
 
+    // The gate's own composition, without the ports: the claims the factory read go through the Domain detector
+    // over the stored content, exactly as RealWorldSignalService does, and an unreadable content document or
+    // unreadable claims stay unknown (null), which check 8 fails closed on.
     private static StoryGateInput Compose(StoryGateInputFactory.StoryGateReading reading) =>
-        StoryGateInputFactory.Compose(reading, pastEpisodeSimilarity: null, moderation: null, attempt: 1);
+        StoryGateInputFactory.Compose(
+            reading,
+            pastEpisodeSimilarity: null,
+            moderation: null,
+            realWorld: reading is { Content: { } content, RealWorldClaims: { } claims }
+                ? RealWorldSignalDetector.Detect(
+                    StoryTextSegments.From(content),
+                    [],
+                    claims,
+                    RealWorldOptions.Defaults)
+                : null,
+            attempt: 1);
 
     /// <summary>The single check with <paramref name="id"/>; a missing or duplicated id fails the calling test.</summary>
     private static GateCheck Check(StoryGateResult result, string id) =>

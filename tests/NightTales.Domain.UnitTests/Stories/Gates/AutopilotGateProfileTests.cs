@@ -103,4 +103,65 @@ public sealed class AutopilotGateProfileTests
         GateMode.Live.ToWire().ShouldBe("live");
         GateMode.DryRun.ToWire().ShouldBe("dry_run");
     }
+
+    [Fact]
+    public void Profile_Defaults_ModerationAndRealWorldMatchPlanSection33()
+    {
+        var moderation = AutopilotGateProfile.Defaults.Moderation;
+
+        moderation.BlockedCategories.ShouldBe(
+            ["sexual/minors", "self-harm/instructions", "illicit/violent", "hate/threatening"]);
+        moderation.MaxScore.Count.ShouldBe(7);
+        moderation.MaxScore["harassment"].ShouldBe(0.5);
+        moderation.MaxScore["hate"].ShouldBe(0.3);
+        moderation.MaxScore["illicit"].ShouldBe(0.5);
+        moderation.MaxScore["self-harm"].ShouldBe(0.3);
+        moderation.MaxScore["sexual"].ShouldBe(0.5);
+        moderation.MaxScore["violence"].ShouldBe(0.6);
+        moderation.MaxScore["violence/graphic"].ShouldBe(0.3);
+
+        var realWorld = AutopilotGateProfile.Defaults.RealWorld;
+        realWorld.RequireIncidentCoOccurrence.ShouldBeTrue("a lone year or date is not a signal");
+        realWorld.IncidentWords.Count.ShouldBe(23, "the twelve vi and eleven en words of the task file");
+        realWorld.IncidentWords.ShouldContain("vụ án");
+        realWorld.IncidentWords.ShouldContain("suicide");
+    }
+
+    [Fact]
+    public void Profile_Overlay_ModerationScoresMergeKeyByKey()
+    {
+        var tightened = AutopilotGateProfile.Defaults.Overlay(new AutopilotGateProfilePatch(
+            Moderation: new ModerationThresholdsPatch(
+                BlockedCategories: ["sexual/minors"],
+                MaxScore: new Dictionary<string, double>(StringComparer.Ordinal) { ["violence"] = 0.2 })));
+
+        tightened.Moderation.BlockedCategories.ShouldBe(["sexual/minors"]);
+        tightened.Moderation.MaxScore["violence"].ShouldBe(0.2, "a named entry replaces the inherited one");
+        tightened.Moderation.MaxScore["hate"].ShouldBe(0.3, "an entry the patch does not name inherits");
+        tightened.Moderation.MaxScore.Count.ShouldBe(7);
+        tightened.Story.ShouldBe(AutopilotGateProfile.Defaults.Story);
+        tightened.Video.ShouldBe(AutopilotGateProfile.Defaults.Video);
+        tightened.RealWorld.ShouldBe(AutopilotGateProfile.Defaults.RealWorld);
+    }
+
+    [Fact]
+    public void Profile_Overlay_RealWorldPatchReachesBothMembers()
+    {
+        var changed = AutopilotGateProfile.Defaults.Overlay(new AutopilotGateProfilePatch(
+            RealWorld: new RealWorldOptionsPatch(RequireIncidentCoOccurrence: false, IncidentWords: ["án mạng"])));
+
+        changed.RealWorld.RequireIncidentCoOccurrence.ShouldBeFalse();
+        changed.RealWorld.IncidentWords.ShouldBe(["án mạng"]);
+        changed.Moderation.ShouldBe(AutopilotGateProfile.Defaults.Moderation);
+    }
+
+    [Fact]
+    public void Profile_Overlay_EmptyIncidentWordListIsAValue()
+    {
+        var noWords = AutopilotGateProfile.Defaults.Overlay(new AutopilotGateProfilePatch(
+            RealWorld: new RealWorldOptionsPatch(IncidentWords: [])));
+
+        noWords.RealWorld.IncidentWords.ShouldBeEmpty();
+        noWords.RealWorld.RequireIncidentCoOccurrence.ShouldBeTrue("an unnamed key still inherits");
+    }
 }

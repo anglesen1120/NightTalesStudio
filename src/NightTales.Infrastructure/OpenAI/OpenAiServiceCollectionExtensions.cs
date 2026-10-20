@@ -219,6 +219,11 @@ public static class OpenAiServiceCollectionExtensions
             provider.GetRequiredService<IOptions<ModerationOptions>>().Value,
             provider.GetRequiredService<ResiliencePipelineProvider<string>>(),
             provider.GetRequiredService<ILogger<OpenAiContentModerator>>()));
+
+        // 02.8.2-T2: the content gate pre-splits every text to the same `MaxCharsPerChunk` the moderator splits to,
+        // so it keeps the chunk's D22 segment address. Application may not reference `IOptions`, so the bound
+        // value is handed over as a plain dependency, exactly as `AddAutopilotGatesOptions` does for its section.
+        services.TryAddScoped(provider => provider.GetRequiredService<IOptions<ModerationOptions>>().Value);
     }
 
     /// <summary>

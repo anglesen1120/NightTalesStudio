@@ -121,18 +121,15 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
     }
 
     /// <summary>
-    /// A story with no usable draft-time verdict is moderated by the gate itself; a moderator that is down fails
-    /// check <c>moderation_gate</c> closed, and the owner is told the moderator was unreachable.
+    /// Check 7 always runs the content gate (02.8.2-T2: the stored draft-time verdict no longer short-circuits it),
+    /// so a moderator that is down fails <c>moderation_gate</c> closed — even when the stored report carries a clean
+    /// block — and the owner is told the moderator was unreachable.
     /// </summary>
     [Fact]
     public async Task StoryGateEvaluator_ModeratorUnavailable_RecordsTheFailureAndNotifiesTheOwner()
     {
-        // The stored report carries no moderation block at all: the draft-time verdict is missing, so the gate
-        // calls the moderator itself (decision 1). That call is the one that fails.
-        var world = await GateRunSeed.SeedRunAsync(
-            Database,
-            ct: Ct,
-            auditReport: GateRunSeed.AuditReport(GateRunSeed.ReviewJson(5), moderation: null));
+        // The stored report carries a usable, clean moderation block: T1 read it instead of moderating, T2 must not.
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
         var moderator = new FakeContentModerator().EnqueueUnavailable(ModerationStage.AutopilotGate);
         using var factory = Factory(moderator: moderator);
 
@@ -142,7 +139,7 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
         evaluated.Value.Result.Pass.ShouldBeFalse();
         evaluated.Value.Reason.ShouldBe(GateStopReason.ModeratorUnavailable);
 
-        moderator.Calls.ShouldBeGreaterThan(0);
+        moderator.Calls.ShouldBe(1, "the gate moderates itself whatever the stored block says");
         moderator.Checks[0].Stage.ShouldBe(ModerationStage.AutopilotGate);
         // Check 7 is the one that fails; its stored detail (and the notice's reason) is moderator_unavailable.
         FailedCheckIds(world.RunId).ShouldContain(StoryGateCheckIds.ModerationGate);
@@ -154,6 +151,34 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
         NoticeFailureCodes(world).ShouldContain(StoryGateCheckIds.ModerationGate);
         AutoApproveAuditRows(world).ShouldBe(0);
         StoredStatus(world.EpisodeId).ShouldBe("story_review");
+    }
+
+    /// <summary>
+    /// A stored, clean draft-time moderation block no longer decides check 7: check 6 keeps reading it, and check 7
+    /// fails when the content gate's own verdict is flagged (02.8.2-T2: "the two checks are independent").
+    /// </summary>
+    [Fact]
+    public async Task StoryGateEvaluator_StoredCleanModeration_StillRunsTheContentGate()
+    {
+        var world = await GateRunSeed.SeedRunAsync(Database, ct: Ct);
+        var moderator = new FakeContentModerator().EnqueueFlagged(ModerationStage.AutopilotGate, "violence");
+        using var factory = Factory(moderator: moderator);
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeFalse(Describe(evaluated));
+        evaluated.Value.Result.Pass.ShouldBeFalse();
+        evaluated.Value.Reason.ShouldBe(GateStopReason.FailedChecks);
+
+        moderator.Calls.ShouldBeGreaterThan(1, "the batch call is the gate's own, then the attribution pass");
+        CheckPass(world.RunId, StoryGateCheckIds.ModerationDraft)
+            .ShouldBeTrue("check 6 still reads the stored draft-time verdict");
+        CheckPass(world.RunId, StoryGateCheckIds.ModerationGate)
+            .ShouldBeFalse("check 7 is the content gate's verdict, not the stored block's");
+        FailedCheckIds(world.RunId).ShouldBe([StoryGateCheckIds.ModerationGate]);
+
+        StoredStatus(world.EpisodeId).ShouldBe("story_review");
+        AutoApproveAuditRows(world).ShouldBe(0);
     }
 
     /// <summary>
@@ -408,6 +433,19 @@ public sealed class StoryGateEvaluatorTests(TestDatabase database) : Integration
     private bool StoryFlag(Guid runId, string key) =>
         string.Equals(
             SqlProbe.ScalarText(Database, $"SELECT gate_results -> 'story' ->> '{key}' FROM autopilot_runs WHERE id = '{runId}'"),
+            "true",
+            StringComparison.Ordinal);
+
+    /// <summary>Whether one check of the stored verdict passed (false when the id is absent too).</summary>
+    /// <param name="runId">The autopilot run.</param>
+    /// <param name="checkId">One of <see cref="StoryGateCheckIds"/>.</param>
+    /// <returns>The stored <c>pass</c> value.</returns>
+    private bool CheckPass(Guid runId, string checkId) =>
+        string.Equals(
+            SqlProbe.ScalarText(
+                Database,
+                "SELECT entry ->> 'pass' FROM autopilot_runs, jsonb_array_elements(gate_results -> 'story' -> 'checks') AS entry "
+                + $"WHERE id = '{runId}' AND entry ->> 'id' = '{checkId}'"),
             "true",
             StringComparison.Ordinal);
 

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NightTales.Application.Abstractions.Stories;
 
 namespace NightTales.Application.Features.Autopilot.Gates;
 
@@ -16,13 +17,16 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// </para>
 /// <para>
 /// <b>Lifetimes.</b> Every service is scoped like the read model and the transaction it works in, except
-/// <see cref="AutopilotGateMetrics"/>: one instrument per process, so a scrape never sees two series for one
-/// counter.
+/// <see cref="AutopilotGateMetrics"/> and <see cref="ContentGateMetrics"/>: one instrument per process, so a scrape
+/// never sees two series for one counter.
 /// </para>
 /// </remarks>
 public static class AutopilotGatesServiceCollectionExtensions
 {
-    /// <summary>Registers the evaluators, the writer, the recorder, the approval service and the instruments.</summary>
+    /// <summary>
+    /// Registers the evaluators, the writer, the recorder, the approval service, the content gate of 02.8.2-T2 and
+    /// the instruments.
+    /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same collection.</returns>
     public static IServiceCollection AddAutopilotGates(this IServiceCollection services)
@@ -42,6 +46,14 @@ public static class AutopilotGatesServiceCollectionExtensions
         services.TryAddScoped<GateOutcomeRecorder>();
         services.TryAddScoped<AutopilotApprovalService>();
         services.TryAddSingleton<AutopilotGateMetrics>();
+
+        // 02.8.2-T2: the content gate (check 7), the scene-prompt expansion it moderates and the real-world
+        // detector's Application half (check 8). Scoped like the evaluators, except the instrument, which is one per
+        // process beside the gate engine's own counters.
+        services.TryAddScoped<IAutopilotContentGate, AutopilotModerationGate>();
+        services.TryAddScoped<ScenePromptExpander>();
+        services.TryAddScoped<IRealWorldSignalService, RealWorldSignalService>();
+        services.TryAddSingleton<ContentGateMetrics>();
 
         return services;
     }
