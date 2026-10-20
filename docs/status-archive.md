@@ -1433,3 +1433,9 @@ Task Notes line replaced (06.1.2-T2 task file, Notes):
 ## Replaced by Session 66 close-out (06.2.1-T1, #253 merged), archived 2026-10-19
 
 - **Backend (Session 66, PR #253, 06.2.1-T1 open):** **06.2.1-T1** Publication aggregate: `Domain/Publishing/Publication` (state machine, `StartUpload` needs `consent_at`), `YouTubeMetadataRules` (byte-accurate title/description/tags, attribution append), `POST/GET /api/v1/episodes/{id}/publications` (flag `youtube_publish` stays OFF; 201 + `Location` + `ETag "pu-<xmin>"`), `GET /episodes/{id}` `publications` summary (+1 grouped query), outbox `publication_updated.v1`, audit `publishing.publication_created`; migration `20261018204807_06_Publications` (expand-only; 06 CR-23 adds the missing columns to 00 §6). Autopilot authorization is bound to the episode's series and the connection by the handler (the FK is single-column SET NULL; `TenantForeignKeyTests` carve-out = deferred owner review S66-6). Open items S66-1..S66-7 (§Open findings). Next (backend): coordinator assigns; 06.2.2-T1 consent is unblocked.
+
+## Replaced by Session 69 (06.2.2-T1 PR open), archived 2026-10-20
+
+Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 62 closed, #245 → `develop` `f584eb93`):** **06.2.3-T1** merged: `IYouTubeClient` upload half (`StartUploadAsync`, `ResumeUploadAsync`, `ProbeUploadAsync`, `GetVideosAsync`), typed `RefreshAsync` failures, `UploadStreamPositioning`, `UploadTotal.Resolve`, session-URI SSRF check, `upload_id` redaction, `FakeGoogleServer` upload surface. Owner decisions stay **[OPEN]** (deferred review, not ratified): §Open tasks rows `06.2.3-T1 …`. Next (backend): coordinator assigns; **06.2.3-T2** upload job is unblocked (its hand-overs are in the row `06.2.3-T1 hand-overs for 06.2.3-T2`).
