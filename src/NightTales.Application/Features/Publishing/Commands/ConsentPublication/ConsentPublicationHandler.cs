@@ -2,7 +2,6 @@ using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
@@ -37,17 +36,23 @@ namespace NightTales.Application.Features.Publishing.Commands.ConsentPublication
 /// code for the same reason.
 /// </para>
 /// <para>
-/// <b>Round trips.</b> Three: the publication with its connection's display name (one statement), the episode,
-/// and the save that writes the row, the episode and the outbox message. No external call is made.
+/// <b>Round trips.</b> Three on the success path: the publication with its connection's display name (one
+/// statement), the episode, and the save that writes the row, the episode and the outbox message. Only the
+/// lost-update catch adds a fourth, a single existence read that separates a deleted row (404) from a moved one
+/// (409). No external call is made.
 /// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the tenant filter is what turns "another owner's row" into a 404.</param>
-/// <param name="options">The <c>YouTube</c> section: the current consent-text version is read once per command (D11).</param>
+/// <param name="options">
+/// The bound <c>YouTube</c> section, handed over as the scoped snapshot of the host's
+/// <c>IOptionsMonitor&lt;YouTubeOptions&gt;.CurrentValue</c> (the composition root registers it; Application may not
+/// reference <c>Microsoft.Extensions.Options</c>). The current consent-text version is read once per command (D11).
+/// </param>
 /// <param name="clock">The scope's clock; one instant is read for the whole command.</param>
 /// <param name="logger">The id-only log lines of this path.</param>
 public sealed partial class ConsentPublicationHandler(
     IAppDbContext db,
-    IOptionsMonitor<YouTubeOptions> options,
+    YouTubeOptions options,
     IClock clock,
     ILogger<ConsentPublicationHandler> logger)
     : ICommandHandler<ConsentPublicationCommand, ErrorOr<PublicationDto>>
@@ -61,8 +66,9 @@ public sealed partial class ConsentPublicationHandler(
 
         var now = clock.UtcNow;
 
-        // D11/WT27: the version is read per command, so flipping `YouTube:ConsentTextVersion` is live.
-        var currentTextVersion = options.CurrentValue.ConsentTextVersion;
+        // D11/WT27: the host hands over the monitor's CurrentValue per scope, so flipping
+        // `YouTube:ConsentTextVersion` is live and the version is still read once per command.
+        var currentTextVersion = options.ConsentTextVersion;
 
         // Step 1: the row and the display name of its connection in one statement. The DTO carries the name
         // (06.2.1-T1's mapper takes it), and the tenant filter is what turns another owner's row into the same
@@ -140,6 +146,20 @@ public sealed partial class ConsentPublicationHandler(
         }
         catch (DbUpdateConcurrencyException)
         {
+            // The xmin token reports "0 rows" for two different events, so the catch alone cannot tell them apart.
+            // One cheap tenant-filtered read separates them: a row that vanished between the load and the save
+            // (account deletion cascade) is the same 404 the load path answers — never a 500, never a bogus 409 —
+            // while a row that is still there but moved is the documented 409 of a lost update.
+            var stillExists = await db.Publications
+                .AsNoTracking()
+                .AnyAsync(candidate => candidate.Id == command.PublicationId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!stillExists)
+            {
+                return Errors.NotFound();
+            }
+
             return Error.Conflict(
                 ErrorCodes.ConcurrencyConflict,
                 "The publication changed while the consent was being recorded; reload it and try again.");

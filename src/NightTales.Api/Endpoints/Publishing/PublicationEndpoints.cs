@@ -143,9 +143,10 @@ public static class PublicationEndpoints
         HttpContext http,
         CancellationToken ct)
     {
-        // The 428 filter has already proven the header is present and not blank, so the binder's null is the "filter
-        // is not on this route" case only; an empty value reaches ETags.Matches and answers 412 (the episode DELETE
-        // route's CR-1 rule for a present-but-empty value).
+        // RequireIfMatchFilter has already answered 428 `if_match_required` for an absent or blank header
+        // (src/NightTales.Api/Http/Filters/RequireIfMatchFilter.cs), so no empty value reaches ETags.Matches: the
+        // binder's null here is the "filter is not on this route" case only. A present tag that no longer names the
+        // row's current xmin is the 412 the handler answers with the row's current tag.
         var command = new ConsentPublicationCommand(id, request.ConsentTextVersion, ifMatch ?? string.Empty);
 
         var result = await sender.Send(command, ct).ConfigureAwait(false);

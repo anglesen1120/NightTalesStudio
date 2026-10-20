@@ -1,9 +1,9 @@
 using System.Globalization;
+using System.Text.Json;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Common;
 using NightTales.Application.Features.Publishing.Commands.ConsentPublication;
 using NightTales.Application.Features.Publishing.Dtos;
@@ -109,14 +109,23 @@ public sealed class ConsentPublicationHandlerTests(TestDatabase database) : Inte
         (await OutboxCountAsync(scene)).ShouldBe(1);
 
         // The one write of the whole test produced exactly one publication_updated.v1 carrying the scheduled
-        // status and ids only (D13/D17).
+        // status and ids only (D13/D17). The column is jsonb: PostgreSQL re-formats its keys and spacing, so the
+        // payload is parsed instead of substring-matched.
         var payload = await ScalarAsync(
             $"SELECT payload::text FROM outbox_messages WHERE type = 'publication_updated.v1' "
             + $"AND payload::text LIKE '%{scene.PublicationId:D}%'");
-        payload.ShouldContain("\"publicationId\":\"" + scene.PublicationId.ToString("D") + "\"");
-        payload.ShouldContain("\"episodeId\":\"" + scene.EpisodeId.ToString("D") + "\"");
-        payload.ShouldContain("\"userId\":\"" + scene.UserId.ToString("D") + "\"");
-        payload.ShouldContain("\"status\":\"scheduled\"");
+
+        using (var json = JsonDocument.Parse(payload))
+        {
+            var root = json.RootElement;
+
+            root.GetProperty("publicationId").GetGuid().ShouldBe(scene.PublicationId);
+            root.GetProperty("episodeId").GetGuid().ShouldBe(scene.EpisodeId);
+            root.GetProperty("userId").GetGuid().ShouldBe(scene.UserId);
+            root.GetProperty("status").GetString().ShouldBe("scheduled");
+        }
+
+        // Absence checks are safe on the raw text: none of the owner's strings may appear anywhere in the row.
         payload.ShouldNotContain(PublicationBuilder.DefaultTitle);
         payload.ShouldNotContain(PublicationBuilder.DefaultDescription);
         payload.ShouldNotContain(ChannelConnectionBuilder.DefaultDisplayName);
@@ -322,7 +331,7 @@ public sealed class ConsentPublicationHandlerTests(TestDatabase database) : Inte
 
         var handler = new ConsentPublicationHandler(
             context,
-            new FixedYouTubeOptions(currentVersion),
+            new YouTubeOptions { ConsentTextVersion = currentVersion },
             clock,
             logger ?? NullLogger<ConsentPublicationHandler>.Instance);
 
@@ -409,20 +418,5 @@ public sealed class ConsentPublicationHandlerTests(TestDatabase database) : Inte
 
             _messages.Add(formatter(state, exception));
         }
-    }
-
-    /// <summary>
-    /// A fixed options monitor: the handler reads <c>YouTube:ConsentTextVersion</c> once per command, and a test
-    /// that changes it changes the version the row must echo.
-    /// </summary>
-    private sealed class FixedYouTubeOptions(string textVersion) : IOptionsMonitor<YouTubeOptions>
-    {
-        private readonly YouTubeOptions _value = new() { ConsentTextVersion = textVersion };
-
-        public YouTubeOptions CurrentValue => _value;
-
-        public YouTubeOptions Get(string? name) => _value;
-
-        public IDisposable? OnChange(Action<YouTubeOptions, string?> listener) => null;
     }
 }
