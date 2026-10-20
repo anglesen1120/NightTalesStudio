@@ -407,6 +407,12 @@ try
     // are gated by the `youtube_publish` feature flag and are owner-only (foreign episode = 404).
     app.MapEpisodePublicationEndpoints();
 
+    // 06.2.2-T1 (06 README D7, 10 CR-17): the publication's own routes — POST /api/v1/publications/{id}/consent
+    // records the owner's consent (If-Match required, 200 with the post-commit `"pu-<xmin>"` ETag) and
+    // GET /api/v1/publications/consent-text serves the `pc.v1` text the dialogue shows. Both are flag-gated by
+    // `youtube_publish` and owner-only (a foreign publication is 404, never 403).
+    app.MapPublicationEndpoints();
+
     app.Run();
 }
 catch (Exception exception) when (exception is not HostAbortedException)
