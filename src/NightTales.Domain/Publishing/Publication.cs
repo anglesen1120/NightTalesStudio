@@ -427,10 +427,29 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// <see cref="PublicationStatus.Scheduled"/> may cancel, because once the upload runs there is a video to take
     /// down rather than a job to stop. Raises <see cref="PublicationUpdated"/> with the <c>cancelled</c> status.
     /// </summary>
-    /// <param name="now">The command's clock reading.</param>
-    /// <returns><c>Success</c>, or the 409 of a row that already left the two cancellable states.</returns>
+    /// <remarks>
+    /// <c>cancelled</c> is the idempotent answer (06.2.6-T1): a <c>DELETE</c> retried after a lost response finds
+    /// the row already cancelled and must answer the same success, so this method writes nothing on that path — no
+    /// status move, no <c>updated_at</c> bump, no second <see cref="PublicationUpdated"/>. The other callers are
+    /// 06.4.1-T1's disconnect (which cancels the rows of a disconnected channel) and 06.2.2-T2's cancel-by-link; the
+    /// upload job never calls this method, it refuses a row that is not <c>scheduled</c> in
+    /// <see cref="StartUpload"/>. The no-write property is what keeps a repeat from telling the outbox that anything
+    /// changed.
+    /// </remarks>
+    /// <param name="now">The command's clock reading; ignored when the row is already <c>cancelled</c>.</param>
+    /// <returns>
+    /// <c>Success</c> — including the repeat of a row already <c>cancelled</c> — or the 409 of a row that already
+    /// left the two cancellable states.
+    /// </returns>
     public ErrorOr<Success> Cancel(DateTimeOffset now)
     {
+        // The lost-response repeat: the row already holds exactly the state this call would write, so it is a
+        // success that writes nothing (no updated_at bump, no event) — the same shape StartUpload uses below.
+        if (Status == PublicationStatus.Cancelled)
+        {
+            return Result.Success;
+        }
+
         if (Status is not (PublicationStatus.AwaitingConsent or PublicationStatus.Scheduled))
         {
             return PublicationErrors.InvalidState();
