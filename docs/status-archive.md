@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume bullet (2026-10-20, replaced by the Session 71 Resume bullet)
+
+Replaced text (verbatim), the oldest delivered Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Web (Session 54 closed):** **10.5.3-T2** self-review issues panel + score table, "Automatically corrected once" badge, drift note and similarity highlights merged as #227 (`f9a37b26`, tip `d0f2f429`, code tip `3c7e66f4`, `feature/10.5.3-T2-s54`, from `develop` `cb491bbf`; web lane; FE only, no `web/openapi.json` change). Coordinator decision A (deferred owner review): counts and inline rows only from `qualityHints`; model-review issues only in the "why" panel because the server does not flatten them (new §Open tasks row `qualityHints-model-review-flatten`). Closes the `story-review.page.scss` budget row; the 4-GET gate read stays open. Local web gate exit 0 on `3c7e66f4`, T2 gates closed; CI refused: CI-01 (`build-test` jobs `117412350028`, `117412349894`, 0 steps, billing annotation), owner treats as pass. Accepted lows: §Open tasks `L1-S54`, `L2-S54`.
+
 ### Superseded Session 67 rows (2026-10-19, replaced when the Session 67 02.8.2-T1 PR opened)
 
 Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):
