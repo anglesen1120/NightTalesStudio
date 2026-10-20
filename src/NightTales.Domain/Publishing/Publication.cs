@@ -395,6 +395,17 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// client that must refetch the consent text. Both fall through to the normal path.
     /// </para>
     /// <para>
+    /// <b>The window ends when the upload starts.</b> The idempotent answer holds only while the row is
+    /// <see cref="PublicationStatus.Scheduled"/>: once the Worker moves it to
+    /// <see cref="PublicationStatus.Uploading"/> or later, the repeat is no longer answered here, and the status depends
+    /// on the tag the retry carried. A lost-response retry still sends the <em>pre-consent</em> <c>If-Match</c>, which
+    /// names no version of the row any more, so the handler's ETag comparison answers <c>412 publication_conflict</c>.
+    /// Only a retry that carries the row's <em>current</em> tag reaches <see cref="Consent"/> and gets
+    /// <c>409 publication_invalid_state</c> from there. Neither is a lost first consent — the row already carries it —
+    /// so 06.2.2-T4 documents the client handling: it refetches the publication and treats the post-consent row as the
+    /// success it is looking for.
+    /// </para>
+    /// <para>
     /// A read only: it writes nothing and raises no event, so the no-op answer is indistinguishable from the first
     /// answer on the row's own evidence. <see cref="Consent"/> itself is unchanged and still refuses any row that is
     /// no longer <c>awaiting_consent</c> — the shortcut lives in the handler, which is the only caller that has an

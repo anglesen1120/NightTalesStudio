@@ -17,13 +17,21 @@ namespace NightTales.Domain.Publishing;
 /// <b>Why the clamp.</b> D12's formula is <c>publishAt − PublishLeadMinutes</c>, but a publication whose
 /// <c>publishAt</c> is already inside the lead window — created before the window shrank, or re-read after a
 /// delay — must upload <em>now</em>, never in the past: a job scheduled for an instant that has already passed is
-/// either rejected by the scheduler or run immediately, and only the first is a surprise. The clamp makes the
-/// function total, so the caller never needs a second guard.
+/// either rejected by the scheduler or run immediately, and only the first is a surprise. The clamp removes a late
+/// instant, so it is not a guard the caller has to repeat.
 /// </para>
 /// <para>
 /// <b>What this class does not validate.</b> The range of <c>leadMinutes</c> (and of <c>publishAt</c>) is
 /// <c>YouTubeOptions</c>'/D6's rule, checked at create time; a negative lead time handed in here simply answers a
-/// later instant, and nothing in the Domain can decide that it is wrong.
+/// later instant, and nothing in the Domain can decide that it is wrong. The function is therefore not <em>total</em>:
+/// subtracting the lead time throws <see cref="ArgumentOutOfRangeException"/> when <c>publishAt</c> sits within the
+/// lead window of <see cref="DateTimeOffset.MinValue"/> — a range the callers validate before they ask, which is why
+/// no guard for it lives here. Converting the answer to UTC cannot throw: a
+/// <see cref="DateTimeOffset"/>'s UTC value is valid by construction.
+/// </para>
+/// <para>
+/// <b>Always UTC.</b> The answer is expressed at offset zero whatever offset <c>publishAt</c> or <c>now</c> carried, so
+/// every caller (and the persisted <c>next_attempt_at</c>) compares one instant rather than two local renderings of it.
 /// </para>
 /// <para>
 /// <b>Placement.</b> 06.2.2-T1's Outputs list this file under <c>src/NightTales.Domain/Channels/</c>, where nothing
@@ -41,16 +49,17 @@ public static class PublicationQueueTime
     /// <param name="publishAt">When the owner wants the video live, or <see langword="null"/> for "as soon as it is processed".</param>
     /// <param name="leadMinutes"><c>YouTubeOptions.PublishLeadMinutes</c>; the Domain never reads the option itself.</param>
     /// <param name="now">The caller's clock reading; the function never reads the clock.</param>
-    /// <returns>The UTC instant the upload is due, at or after <paramref name="now"/>.</returns>
+    /// <returns>The UTC instant the upload is due (offset zero), at or after <paramref name="now"/>.</returns>
     public static DateTimeOffset For(DateTimeOffset? publishAt, int leadMinutes, DateTimeOffset now)
     {
         if (publishAt is null)
         {
-            return now;
+            return now.ToUniversalTime();
         }
 
+        // DateTimeOffset comparisons are by instant, so a non-zero offset on either argument never changes the clamp.
         var due = publishAt.Value.AddMinutes(-leadMinutes);
 
-        return due > now ? due : now;
+        return (due > now ? due : now).ToUniversalTime();
     }
 }

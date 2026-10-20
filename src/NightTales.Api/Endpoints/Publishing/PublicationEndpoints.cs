@@ -72,9 +72,15 @@ public static class PublicationEndpoints
     public const string FeatureKey = YouTubeEtaEndpoints.FeatureKey;
 
     /// <summary>
-    /// The <c>Cache-Control</c> of the consent text (10 CR-17): private to the caller's browser for an hour, so the
-    /// dialogue opens instantly and a bump of <c>YouTube:ConsentTextVersion</c> is still seen within the hour by a
-    /// cache revalidation — a shared proxy never keeps it, because the route is authenticated.
+    /// The <c>Cache-Control</c> of the consent text (10 CR-17 mandates this exact value): private to the caller's
+    /// browser for an hour, so the dialogue opens instantly. <c>private, max-age=3600</c> carries no
+    /// <c>must-revalidate</c>/<c>no-cache</c>, so nothing revalidates inside the hour: a client that still holds a
+    /// cached text across a bump of <c>YouTube:ConsentTextVersion</c> echoes the version it cached, and the consent
+    /// POST — carrying the row's current <c>If-Match</c> — answers <c>400 consent_text_outdated</c>, fail-closed:
+    /// a consent is never recorded under the wrong text. The client must then refetch the text with a
+    /// cache-bypassing request, which is how the new version is seen — a plain reload is not enough, because it can
+    /// still be served the fresh-in-time cached response. A shared proxy never keeps it, because the route is
+    /// authenticated.
     /// </summary>
     public const string ConsentTextCacheControl = "private, max-age=3600";
 

@@ -31,6 +31,14 @@ namespace NightTales.Application.Features.Publishing.Queries.GetConsentText;
 /// <see cref="ConsentTextDto.Version"/> always names the version the consent command will accept, never a
 /// compiled-in constant.
 /// </para>
+/// <para>
+/// <b>The version is an option; the text is a file — so they ship together.</b> The version this handler answers is
+/// only the configured value; the words it answers are the embedded <c>pc.v1.&lt;locale&gt;.md</c> template, whose
+/// resource name carries no version of its own. Bumping <c>YouTube:ConsentTextVersion</c> therefore
+/// <em>requires</em> shipping the matching new template files in the same release: a bump without new texts would
+/// label the v1 text with the new version, and every consent recorded afterwards would name a version whose words
+/// the owner never saw. Tracked as an open item for the owner and the 13 compliance review.
+/// </para>
 /// </remarks>
 /// <param name="options">The bound <c>YouTube</c> section; only <see cref="YouTubeOptions.ConsentTextVersion"/> is read.</param>
 public sealed class GetConsentTextHandler(YouTubeOptions options)

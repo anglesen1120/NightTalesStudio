@@ -58,4 +58,32 @@ public sealed class PublicationQueueTimeTests
 
         PublicationQueueTime.For(publishAt, LeadMinutes, Now).ShouldBe(Now);
     }
+
+    [Fact]
+    public void For_NonZeroOffsetArguments_ReturnsTheSameInstantAtOffsetZero()
+    {
+        // Both callers of D12 may hand in a local rendering: the owner's `publishAt` arrives in whatever offset the
+        // client sent, and the Worker's clock carries the host's zone. The answer must be one instant expressed in
+        // UTC, so every comparison downstream (and the persisted `next_attempt_at`) speaks the same offset.
+        var publishAt = new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.FromHours(7));
+        var now = new DateTimeOffset(2026, 10, 19, 9, 0, 0, TimeSpan.FromHours(7));
+
+        var due = PublicationQueueTime.For(publishAt, LeadMinutes, now);
+
+        due.Offset.ShouldBe(TimeSpan.Zero);
+        due.ShouldBe(new DateTimeOffset(2026, 10, 20, 3, 0, 0, TimeSpan.Zero));
+        due.UtcDateTime.ShouldBe(publishAt.UtcDateTime.AddMinutes(-LeadMinutes));
+    }
+
+    [Fact]
+    public void For_PublishAtNullWithNonZeroOffsetNow_ReturnsNowAtOffsetZero()
+    {
+        // The "as soon as it is processed" branch converts too: `now` is the only answer, and it is still UTC.
+        var now = new DateTimeOffset(2026, 10, 19, 9, 0, 0, TimeSpan.FromHours(7));
+
+        var due = PublicationQueueTime.For(publishAt: null, LeadMinutes, now);
+
+        due.Offset.ShouldBe(TimeSpan.Zero);
+        due.ShouldBe(now.ToUniversalTime());
+    }
 }
