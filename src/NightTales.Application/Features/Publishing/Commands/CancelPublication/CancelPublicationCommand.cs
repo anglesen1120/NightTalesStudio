@@ -62,7 +62,9 @@ public sealed record CancelPublicationCommand(
                 [CancelAuditKeys.PublicationIdKey] = Outcome.PublicationId.ToString("D", CultureInfo.InvariantCulture),
                 [CancelAuditKeys.EpisodeIdKey] = Outcome.EpisodeId.ToString("D", CultureInfo.InvariantCulture),
                 [CancelAuditKeys.PreviousStatusKey] = Outcome.PreviousStatus,
-                [CancelAuditKeys.ActorKey] = CancelAuditKeys.ActorUser,
+                // The actor is the step's, not a hard-coded `user`: the disconnect reuses the same transition with its
+                // own value (D17, STATUS S72-4).
+                [CancelAuditKeys.ActorKey] = Outcome.Actor,
             });
 }
 
@@ -75,7 +77,15 @@ public sealed record CancelPublicationCommand(
 /// The status wire value the row left (<c>awaiting_consent</c> or <c>scheduled</c>), read before the transition —
 /// the only history the row keeps, because the state itself is overwritten.
 /// </param>
-public sealed record PublicationCancelledOutcome(Guid PublicationId, Guid EpisodeId, string PreviousStatus);
+/// <param name="Actor">
+/// Who cancelled, as the frozen <see cref="CancelAuditKeys.ActorKey"/> value: the owner through this route, or
+/// <c>system:disconnect</c> when 06.4.1-T1's disconnect cascades over the row (D17, STATUS S72-4).
+/// </param>
+public sealed record PublicationCancelledOutcome(
+    Guid PublicationId,
+    Guid EpisodeId,
+    string PreviousStatus,
+    string Actor);
 
 /// <summary>
 /// The frozen spellings of the cancelled-publication audit projection (09.3.6-T2 keeps the audit <c>data</c> keys
@@ -106,4 +116,10 @@ internal static class CancelAuditKeys
 
     /// <summary>The <see cref="ActorKey"/> value of this route: the owner cancelled in the app (D7).</summary>
     internal const string ActorUser = "user";
+
+    /// <summary>
+    /// The <see cref="ActorKey"/> value 06.4.1-T1's disconnect passes when it cancels every open publication of a
+    /// channel: nobody clicked cancel on these rows, the channel's disconnect did (D17, STATUS S72-4).
+    /// </summary>
+    internal const string ActorDisconnect = "system:disconnect";
 }

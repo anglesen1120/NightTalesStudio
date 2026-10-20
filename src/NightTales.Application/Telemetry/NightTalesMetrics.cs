@@ -58,6 +58,13 @@ public sealed class NightTalesMetrics : IDisposable
     /// <summary>The tag key of a fetch task error code.</summary>
     public const string FetchErrorCodeTag = "error_code";
 
+    /// <summary>
+    /// The counter of channel revokes Google refused or never answered (06.4.1-T1 §Design step 4, plan §Revocation):
+    /// an exhausted or non-retryable revoke. A disconnected channel whose grant outlived the wipe is the alert this
+    /// instrument raises.
+    /// </summary>
+    public const string YoutubeChannelRevokeFailedTotalName = "youtube_channel_revoke_failed_total";
+
     private readonly Meter _meter = new(MeterName);
     private readonly Histogram<double> _renderDuration;
     private readonly Counter<double> _openAiCost;
@@ -65,6 +72,7 @@ public sealed class NightTalesMetrics : IDisposable
     private double _youtubeQuotaUsed;
     private readonly Counter<long> _fetchTasks;
     private readonly Histogram<double> _fetchDuration;
+    private readonly Counter<long> _youtubeChannelRevokeFailed;
 
     /// <summary>Creates the instruments once; the host owns the single instance.</summary>
     public NightTalesMetrics()
@@ -100,6 +108,11 @@ public sealed class NightTalesMetrics : IDisposable
             FetchDurationSecondsName,
             unit: "s",
             description: "Lease-to-result duration of one fetch task.");
+
+        _youtubeChannelRevokeFailed = _meter.CreateCounter<long>(
+            YoutubeChannelRevokeFailedTotalName,
+            unit: "{revoke}",
+            description: "Channel disconnects whose Google revoke was refused or never answered (no tags: ids never reach a metric).");
     }
 
     /// <summary>The host's meter; a test attaches a listener to this exact instance.</summary>
@@ -149,6 +162,12 @@ public sealed class NightTalesMetrics : IDisposable
     /// <summary>Records one fetch's duration, measured from the lease (<c>leased_at</c>), never from <c>created_at</c>.</summary>
     /// <param name="seconds">The lease-to-result time, in seconds.</param>
     public void RecordFetchDuration(double seconds) => _fetchDuration.Record(seconds);
+
+    /// <summary>
+    /// Counts one disconnect whose Google revoke failed (06.4.1-T1 §Design step 4): a transport failure that outlived
+    /// the retry ladder, or a refusal that retrying cannot fix. The disconnect itself still succeeds.
+    /// </summary>
+    public void RecordYoutubeChannelRevokeFailed() => _youtubeChannelRevokeFailed.Add(1);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

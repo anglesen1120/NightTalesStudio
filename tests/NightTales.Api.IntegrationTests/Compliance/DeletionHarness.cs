@@ -99,6 +99,15 @@ internal sealed class DeletionHarness : IAsyncDisposable
             services.AddSingleton(probe);
             services.AddLogging(builder => builder.AddProvider(logs));
 
+            // The production channel check (06.4.1-T1) reads real connection rows; these tests drive the engine with
+            // fake channel targets, and the scope without a handler must stay unregistered for the loud-failure case.
+            foreach (var registered in services
+                         .Where(descriptor => descriptor.ImplementationType == typeof(ChannelDeletionTargetOwnership))
+                         .ToList())
+            {
+                services.Remove(registered);
+            }
+
             if (channelHandler)
             {
                 services.AddScoped<IDeletionTargetOwnership>(_ => new FakeDeletionTargetOwnership(DeletionScope.Channel));

@@ -49,6 +49,10 @@ public sealed class ChannelConnectionQaTests
 
         connection.RevokedAt.ShouldBe(revokedAt, "the refused second disconnect must not move the disconnect moment");
         connection.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+
+        // The refusal is before the aggregate raises anything: the connect's row and the first disconnect's row are
+        // the only two, so a retried disconnect can never publish a third `channel_connection_changed.v1`.
+        connection.DomainEvents.OfType<ChannelConnectionChanged>().Count().ShouldBe(2);
     }
 
     /// <summary>

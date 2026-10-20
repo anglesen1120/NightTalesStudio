@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next clause (2026-10-21, replaced when the Session 73 06.4.1-T1 PR opened)
+
+Replaced text (verbatim), the tail of the Session 72 backend Resume bullet:
+
+Next (backend): coordinator assigns (06.2.3-T2 upload job, 06.4.1-T1 disconnect).
+
+### Superseded Resume bullet (2026-10-21, replaced by the Session 73 06.4.1-T1 PR)
+
+Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 66 closed, merged #253 → `develop` `44129936`):** **06.2.1-T1** Publication aggregate: `Domain/Publishing/Publication` (state machine, `StartUpload` needs `consent_at`), `YouTubeMetadataRules` (byte-accurate title/description/tags, attribution append), `POST/GET /api/v1/episodes/{id}/publications` (flag `youtube_publish` stays OFF; 201 + `Location` + `ETag "pu-<xmin>"`), `GET /episodes/{id}` `publications` summary (+1 grouped query), outbox `publication_updated.v1`, audit `publishing.publication_created`; migration `20261018204807_06_Publications` (expand-only; 06 CR-23 adds the missing columns to 00 §6). Autopilot authorization is bound to the episode's series and the connection by the handler (the FK is single-column SET NULL; the `TenantForeignKeyTests` carve-out S66-6 is confirmed by owner 2026-10-19). Open items S66-1..S66-5, S66-7 (§Open findings; S66-6 confirmed by owner; S66-5 and 06 CR-23 stay deferred owner review). Next (backend): coordinator assigns.
+
 ### Superseded backend Next clause (2026-10-20, replaced when the Session 70 02.8.2-T2 PR opened)
 
 Replaced text (verbatim), the tail of the Session 67 backend Resume bullet:
