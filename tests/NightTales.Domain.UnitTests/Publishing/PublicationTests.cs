@@ -144,21 +144,28 @@ public sealed class PublicationTests
     }
 
     [Fact]
-    public void Consent_FromAwaitingConsent_SchedulesAndRaisesPublicationUpdated()
+    public void Consent_WritesThreeEvidenceFields()
     {
         var publication = Created();
         var at = Now.AddMinutes(5);
+        var eventCount = publication.DomainEvents.Count;
 
         var result = publication.Consent(TextVersion, TextVersion, at);
 
         result.IsError.ShouldBeFalse();
-        publication.Status.ShouldBe(PublicationStatus.Scheduled);
+
+        // 06 README D7: the three evidence fields of a consent are the instant, the version of the text that was
+        // shown (the audit row with both ids is the fourth record, and it is the handler's to write).
         publication.ConsentAt.ShouldBe(at);
         publication.ConsentTextVersion.ShouldBe(TextVersion);
         publication.ConsentSource.ShouldBe("user");
+        publication.Status.ShouldBe(PublicationStatus.Scheduled);
         publication.AutopilotAuthorizationId.ShouldBeNull("a manual consent never writes an authorization");
         publication.UpdatedAt.ShouldBe(at);
 
+        // Exactly one publication_updated.v1 for the consent: the outbox row is what 06.2.3-T2 schedules the upload
+        // from (YR3/D13), so a second one per consent would schedule the same job twice.
+        publication.DomainEvents.Count.ShouldBe(eventCount + 1);
         var raised = publication.DomainEvents.OfType<PublicationUpdated>().Last();
         raised.Status.ShouldBe(PublicationStatus.Scheduled);
         raised.OccurredAt.ShouldBe(at);
@@ -176,6 +183,56 @@ public sealed class PublicationTests
         result.FirstError.Code.ShouldBe(PublicationErrors.InvalidStateCode);
         publication.Status.ShouldBe(PublicationStatus.Scheduled);
         publication.ConsentAt.ShouldBe(Now.AddMinutes(5));
+    }
+
+    [Fact]
+    public void IsUserConsentedAs_AfterUserConsentWithTheSameVersion_IsTrue()
+    {
+        var publication = Consented();
+        var eventCount = publication.DomainEvents.Count;
+        var updatedAt = publication.UpdatedAt;
+
+        // F04's lost-response retry: the handler asks this before it compares the pre-consent If-Match, so the read
+        // must recognise the row the first request already produced.
+        publication.IsUserConsentedAs(TextVersion).ShouldBeTrue();
+
+        // A read: no second write and no second publication_updated.v1, which is what makes the no-op answer safe.
+        publication.DomainEvents.Count.ShouldBe(eventCount);
+        publication.UpdatedAt.ShouldBe(updatedAt);
+    }
+
+    [Fact]
+    public void IsUserConsentedAs_WithAnotherTextVersion_IsFalse()
+    {
+        var publication = Consented();
+
+        // D7: a client that rendered an older revision must refetch the text and re-show the dialogue, so neither an
+        // older version nor a differently-cased one is "the consent this request would write" (ordinal comparison).
+        publication.IsUserConsentedAs("pc.v0").ShouldBeFalse();
+        publication.IsUserConsentedAs("PC.V1").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsUserConsentedAs_OnAnAutopilotConsentedRow_IsFalse()
+    {
+        // D7: the owner's explicit consent on top of a machine consent is not silently merged — the repeat falls
+        // through to the normal path, where the row is no longer awaiting_consent.
+        var publication = ConsentedByAutopilot();
+
+        publication.IsUserConsentedAs(TextVersion).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsUserConsentedAs_WhileAwaitingConsent_IsFalse()
+    {
+        Created().IsUserConsentedAs(TextVersion).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsUserConsentedAs_OnceTheUploadStarted_IsFalse()
+    {
+        // Only `scheduled` counts: after the job claimed the row there is nothing left to answer idempotently.
+        Uploading().IsUserConsentedAs(TextVersion).ShouldBeFalse();
     }
 
     [Fact]
@@ -384,6 +441,18 @@ public sealed class PublicationTests
     {
         var publication = Created();
         publication.Consent(TextVersion, TextVersion, Now.AddMinutes(5)).IsError.ShouldBeFalse();
+
+        return publication;
+    }
+
+    /// <summary>
+    /// The row D8's job produces: an autopilot publication consented by its authorization, the state a user
+    /// "approve now" repeat must <em>not</em> be answered as a no-op (06 README D7).
+    /// </summary>
+    private static Publication ConsentedByAutopilot()
+    {
+        var publication = Create(autopilotAuthorizationId: AuthorizationId, vetoEndsAt: Now.AddHours(2));
+        publication.ConsentFromAuthorization(TextVersion, AuthorizationId, Now.AddHours(2)).IsError.ShouldBeFalse();
 
         return publication;
     }
