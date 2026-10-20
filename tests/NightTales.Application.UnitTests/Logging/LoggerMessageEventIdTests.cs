@@ -13,16 +13,19 @@ namespace NightTales.Application.UnitTests.Logging;
 /// two idea checkers — so a log query or an alert by event id matched two unrelated message sets.
 /// </summary>
 /// <remarks>
-/// The scan covers the features that share the 63xx block, Autopilot, SeriesBible and Rendering, because the two
-/// collisions this test was written for were between them (02.8.1-T2 F5 in the Autopilot/SeriesBible pair, and
-/// 09.6.3-T2 C1 where five new ingest ids duplicated five SeriesBible ones). The unrelated 6021/6022 collision in
-/// the Story feature pre-dates this branch, is outside this lane's scope, and is deliberately not renumbered here.
+/// The scan covers the features that share the 63xx-65xx block, Autopilot, Publishing, Rendering and SeriesBible,
+/// because the two collisions this test was written for were between them (02.8.1-T2 F5 in the
+/// Autopilot/SeriesBible pair, and 09.6.3-T2 C1 where five new ingest ids duplicated five SeriesBible ones).
+/// Publishing joined the scan with 06.2.6-T1, which added 6503-6505 (cancel) to the 6380-6389/6421-6429 block the
+/// channel and publication commands already spend. The unrelated 6021/6022 collision in the Story feature
+/// pre-dates this branch, is outside every scanned namespace, and is deliberately not renumbered here.
 /// </remarks>
 public sealed class LoggerMessageEventIdTests
 {
     private static readonly string[] ScannedNamespaces =
     [
         "NightTales.Application.Features.Autopilot",
+        "NightTales.Application.Features.Publishing",
         "NightTales.Application.Features.Rendering",
         "NightTales.Application.Features.SeriesBible",
     ];

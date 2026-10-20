@@ -299,6 +299,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     }
 
     /// <inheritdoc />
+    public Task LockPublicationForUpdateAsync(Guid publicationId, CancellationToken cancellationToken) =>
+        CurrentUserId is { } userId
+            ? Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM publications WHERE id = {publicationId} AND user_id = {userId} FOR NO KEY UPDATE",
+                cancellationToken)
+            : Task.CompletedTask;
+
+    /// <inheritdoc />
     public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>
         CurrentUserId is { } userId
             ? Database.ExecuteSqlInterpolatedAsync(
