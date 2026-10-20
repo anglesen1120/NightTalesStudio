@@ -49,18 +49,26 @@ public sealed class AutopilotOrchestratorTests(TestDatabase database) : Integrat
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var plannerCalls = 0;
         harness.Ideas.BeforeAnswer = async () =>
         {
-            entered.TrySetResult();
-            await release.Task.ConfigureAwait(false);
+            // Only the first call parks. A second planner call means the product paid twice — the case must fail on
+            // `CallCount`/`idea_in_flight`, never park both ticks on a release nobody sets.
+            if (Interlocked.Increment(ref plannerCalls) == 1)
+            {
+                entered.TrySetResult();
+                await release.Task.ConfigureAwait(false);
+            }
         };
 
         var first = Task.Run(() => harness.AdvanceAsync(run.Id, owner, TestContext.Current.CancellationToken), TestContext.Current.CancellationToken);
         await entered.Task.WaitAsync(BarrierTimeout, TestContext.Current.CancellationToken);
 
         // The first tick holds a committed `generation_runs` row while it pays: the second tick adopts it instead
-        // of paying again.
-        var second = await harness.AdvanceAsync(run.Id, owner, TestContext.Current.CancellationToken);
+        // of paying again. Bounded like every other wait here, so a stuck adopt fails the case instead of hanging it.
+        var second = await harness
+            .AdvanceAsync(run.Id, owner, TestContext.Current.CancellationToken)
+            .WaitAsync(BarrierTimeout, TestContext.Current.CancellationToken);
         second.IsError.ShouldBeFalse();
         second.Value.Kind.ShouldBe(StepResultKind.Idle);
         second.Value.Code.ShouldBe("idea_in_flight");
@@ -78,6 +86,59 @@ public sealed class AutopilotOrchestratorTests(TestDatabase database) : Integrat
         stored.State.ShouldBe(AutopilotRunState.IdeaPicked);
         stored.Step.ShouldBe(AutopilotRunStep.Idea);
         stored.IdeaId.ShouldNotBeNull();
+    }
+
+    /// <summary>
+    /// The fiction path of one slot: two ticks take the run from <c>planned</c> to <c>story_generating</c>, which
+    /// needs <c>create_episode</c> to activate <c>GenerateStoryCommandHandler</c> inside the Worker host.
+    /// </summary>
+    /// <remarks>
+    /// The regression this case locks down: the Worker composed no <c>IGenerationLimitGuard</c> (only the Api did), so
+    /// Mediator could not activate that handler and the autopilot's first story step threw
+    /// <c>Unable to resolve service for type 'IGenerationLimitGuard'</c> — logged as
+    /// <c>autopilot_run_step_failed … state=IdeaPicked</c> — leaving every slot stuck at <c>idea_picked</c>.
+    /// </remarks>
+    [Fact]
+    public async Task Orchestrator_PlannedFictionRun_DispatchesTheFirstStory()
+    {
+        await using var harness = await AutopilotTickHarness.StartAsync(
+            Database,
+            new FakeClock(Start),
+            ct: TestContext.Current.CancellationToken);
+        var owner = await harness.CreateOwnerAsync(TestContext.Current.CancellationToken);
+        var world = await harness.CreateAuthorizedSeriesAsync(
+            owner,
+            AutopilotTickHarness.Settings(daysOfWeek: [DayOfWeek.Thursday]),
+            ct: TestContext.Current.CancellationToken);
+
+        var run = await harness.CreateRunAsync(
+            owner,
+            world.SeriesId,
+            slotAt: Start.AddHours(36),
+            startAt: Start.AddHours(-12),
+            authorizationId: world.AuthorizationId,
+            ct: TestContext.Current.CancellationToken);
+
+        var picked = await harness.AdvanceAsync(run.Id, owner, TestContext.Current.CancellationToken);
+        picked.IsError.ShouldBeFalse();
+        picked.Value.Kind.ShouldBe(StepResultKind.Advanced);
+
+        var dispatched = await harness.AdvanceAsync(run.Id, owner, TestContext.Current.CancellationToken);
+        dispatched.IsError.ShouldBeFalse();
+        dispatched.Value.Kind.ShouldBe(StepResultKind.Advanced);
+
+        var stored = await harness.RunAsync(owner, run.Id, TestContext.Current.CancellationToken);
+        stored.State.ShouldBe(AutopilotRunState.StoryGenerating);
+        stored.Step.ShouldBe(AutopilotRunStep.Story);
+        stored.Attempt.ShouldBe(1);
+        stored.IdeaId.ShouldNotBeNull();
+        stored.EpisodeId.ShouldNotBeNull();
+
+        // One paid row per step key: the ideas call of the first tick and the story it queued (plan §3.3/D2).
+        var keys = await harness.GenerationRunKeysAsync(world.SeriesId, TestContext.Current.CancellationToken);
+        keys.Count.ShouldBe(2);
+        keys.ShouldContain(key => key.EndsWith($":{AutopilotRunStep.Idea}", StringComparison.Ordinal));
+        keys.ShouldContain(key => key.EndsWith($":{AutopilotRunStep.Story}", StringComparison.Ordinal));
     }
 
     [Fact]

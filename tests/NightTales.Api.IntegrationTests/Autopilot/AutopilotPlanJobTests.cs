@@ -79,7 +79,10 @@ public sealed class AutopilotPlanJobTests(TestDatabase database) : IntegrationTe
 
         await harness.TickAsync(TestContext.Current.CancellationToken);
         var planned = await harness.RunsAsync(owner, world.SeriesId, TestContext.Current.CancellationToken);
-        planned.Count.ShouldBe(1);
+
+        // A Thursday-only cadence is planned for `buffer_days + 7` local days (plan §3.2), which holds the next two
+        // Thursdays: the index, not the horizon, is what this case is about.
+        planned.Count.ShouldBe(2);
 
         var stamp = Start.ToString("O", CultureInfo.InvariantCulture);
         var duplicate =
@@ -134,14 +137,13 @@ public sealed class AutopilotPlanJobTests(TestDatabase database) : IntegrationTe
 
         await harness.TickAsync(TestContext.Current.CancellationToken);
 
-        var runs = (await harness.RunsAsync(owner, ct: TestContext.Current.CancellationToken))
-            .Concat(await harness.RunsAsync(owner, ct: TestContext.Current.CancellationToken))
-            .DistinctBy(run => run.Id)
-            .ToList();
+        var runs = await harness.RunsAsync(owner, ct: TestContext.Current.CancellationToken);
 
-        // Three local days in the horizon (buffer 2 + interval 1), one run each, all on one of the two series.
-        runs.Count.ShouldBe(3);
-        runs.Select(run => run.SlotAt.Date).Distinct().Count().ShouldBe(3);
+        // The horizon is `buffer_days + interval` local days and both ends are included (plan §3.2: "each local date
+        // in [now in tz, now + horizonDays]"), so three days of horizon from 10:00 local reach four 19:00 slots:
+        // Tue 20 … Fri 23. `daily_cap = 1` admits exactly one of them per local day, all on their first series.
+        runs.Count.ShouldBe(4);
+        runs.Select(run => run.SlotAt.Date).Distinct().Count().ShouldBe(4);
         runs.Select(run => run.SeriesId).Distinct().Count().ShouldBe(1);
         runs.ShouldAllBe(run => run.SeriesId == first.SeriesId || run.SeriesId == second.SeriesId);
     }
@@ -171,7 +173,11 @@ public sealed class AutopilotPlanJobTests(TestDatabase database) : IntegrationTe
 
         await harness.TickAsync(TestContext.Current.CancellationToken);
 
-        (await harness.RunsAsync(owner, live.SeriesId, TestContext.Current.CancellationToken)).Count.ShouldBe(1);
+        // A Thursday-only cadence spans `buffer_days + 7` local days (plan §3.2), so the live series holds the next
+        // two Thursdays — 19:00 Asia/Ho_Chi_Minh is 12:00Z — while the paused and the archived one hold nothing.
+        (await harness.RunsAsync(owner, live.SeriesId, TestContext.Current.CancellationToken))
+            .Select(run => run.SlotAt)
+            .ShouldBe([ThursdaySlot, ThursdaySlot.AddDays(7)]);
         (await harness.RunsAsync(owner, paused.SeriesId, TestContext.Current.CancellationToken)).ShouldBeEmpty();
         (await harness.RunsAsync(owner, archived.SeriesId, TestContext.Current.CancellationToken)).ShouldBeEmpty();
     }
@@ -196,9 +202,22 @@ public sealed class AutopilotPlanJobTests(TestDatabase database) : IntegrationTe
 
         await harness.TickAsync(TestContext.Current.CancellationToken);
 
-        (await harness.RunsAsync(owner, live.SeriesId, TestContext.Current.CancellationToken)).Count.ShouldBe(1);
+        // Same horizon as the paused case: a Thursday-only cadence plans the next two Thursdays.
+        (await harness.RunsAsync(owner, live.SeriesId, TestContext.Current.CancellationToken))
+            .Select(run => run.SlotAt)
+            .ShouldBe([ThursdaySlot, ThursdaySlot.AddDays(7)]);
         (await harness.RunsAsync(owner, disabled.SeriesId, TestContext.Current.CancellationToken)).ShouldBeEmpty();
-        (await harness.RunsAsync(owner, unauthorized.SeriesId, TestContext.Current.CancellationToken)).ShouldBeEmpty();
+
+        // No authorization is not a pause (plan §3.5 row `planned → awaiting_authorization`): the slots exist and
+        // wait for the owner's accept, so the series keeps its cadence instead of silently losing it.
+        var awaitingAuthorization = await harness.RunsAsync(
+            owner,
+            unauthorized.SeriesId,
+            TestContext.Current.CancellationToken);
+        awaitingAuthorization.Count.ShouldBe(2);
+        awaitingAuthorization.ShouldAllBe(run => run.State == AutopilotRunState.AwaitingAuthorization);
+        awaitingAuthorization.ShouldAllBe(
+            run => run.Step == AutopilotRunStep.Authorization && run.AuthorizationId == null);
     }
 
     [Fact]
@@ -258,7 +277,10 @@ public sealed class AutopilotPlanJobTests(TestDatabase database) : IntegrationTe
 
         var runs = await harness.RunsAsync(owner, world.SeriesId, TestContext.Current.CancellationToken);
         runs.Count.ShouldBe(1);
-        runs[0].SlotAt.ShouldBe(new DateTimeOffset(2027, 3, 14, 7, 30, 0, TimeSpan.Zero));
+
+        // Plan §3.2 and `SlotCalculator_DstGap_ShiftsForward`: the local time does not exist, so the slot is the
+        // first minute that does — 02:30 EST would be 07:30Z, the gap's end 03:00 EDT is 07:00Z.
+        runs[0].SlotAt.ShouldBe(new DateTimeOffset(2027, 3, 14, 7, 0, 0, TimeSpan.Zero));
         adjusted.Count(AutopilotRunMetrics.DstGapKind).ShouldBe(1);
     }
 }

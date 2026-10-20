@@ -217,6 +217,15 @@ public static class WorkerServiceCollectionExtensions
         services.AddStoryGeneration();
         services.AddStoryQuality();
         services.AddSimilarity();
+
+        // 02.4.2-T1 (02 README D2, FR-02-7): `GenerateStoryCommandHandler` takes `IGenerationLimitGuard` in its
+        // constructor, so the Worker must compose the guard as soon as the Worker itself sends that command. It
+        // does: 02.8.3-T1's `create_episode` dispatches the first story of an autopilot slot through it (plan
+        // §3.5 `idea_picked → story_generating`). Step 5 of the handler counts user-triggered runs only, so the
+        // autopilot never spends the owner's limit; the registration is what lets Mediator activate the handler
+        // at all (without it the autopilot's fiction path threw `Unable to resolve service for
+        // IGenerationLimitGuard` and the slot stalled at `idea_picked`).
+        services.AddGenerationLimit();
         services.AddOptions<StoryJobOptions>()
             .BindConfiguration(StoryJobOptions.SectionName)
             .Validate(
