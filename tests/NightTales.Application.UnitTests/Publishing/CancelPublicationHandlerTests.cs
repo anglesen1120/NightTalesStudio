@@ -130,7 +130,6 @@ public sealed class CancelPublicationHandlerTests(TestDatabase database) : Integ
     [InlineData("{\"quotaReservedDay\": \"2026/03/01\"}")]
     [InlineData("{\"quotaReservedDay\": \"2026-02-30\"}")]
     [InlineData("{\"quotaReservedDay\": \"yesterday\"}")]
-    [InlineData("{\"quotaReservedDay\": null}")]
     [InlineData("{}")]
     [InlineData("{\"preAudit\": true, \"requestedPrivacy\": \"private\"}")]
     public async Task UnreadableQuotaKey_IsTreatedAsAbsent_AndTheCancelStillSucceeds(string payload)
@@ -138,7 +137,9 @@ public sealed class CancelPublicationHandlerTests(TestDatabase database) : Integ
         // Task §Failure handling: a hand-edited row or a format change by 06.2.3-T2 must never fail the owner's
         // cancel. The column is jsonb, so a truncated document cannot exist in it; what can are a non-object
         // document, a key of the wrong JSON kind and a string that is not the ISO day — all read as "nothing to
-        // release" while the row still moves to cancelled.
+        // release" while the row still moves to cancelled. A JSON null under the key is not one of them: the
+        // writer removes the key instead of storing a null, so null is plain absence and
+        // CancelPublicationQaTests pins that it neither releases nor warns.
         var scene = await NewSceneAsync(PublicationStatus.Scheduled, platformPayloadJson: payload);
         var ledger = new RecordingQuotaLedger();
 

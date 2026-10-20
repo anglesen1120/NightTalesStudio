@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Common;
@@ -20,9 +21,10 @@ namespace NightTales.Application.UnitTests.Publishing;
 
 /// <summary>
 /// Independent QA for task 06.2.6-T1 (cancel command). Pins behaviour the existing handler tests do not cover: the
-/// later-state refusals beyond <c>uploading</c>, a retry after a failed quota release, and the release targeting the
-/// day the row recorded rather than the clock day. Helpers are copied from <c>CancelPublicationHandlerTests</c>, whose
-/// copies are private.
+/// later-state refusals beyond <c>uploading</c>, a retry after a failed quota release, the release targeting the
+/// day the row recorded rather than the clock day, and which reserved-day payloads warn: a JSON null (absence, no
+/// line) versus a key that is there and unusable (one warning, no release). Helpers are copied from
+/// <c>CancelPublicationHandlerTests</c>, whose copies are private.
 /// </summary>
 public sealed class CancelPublicationQaTests(TestDatabase database) : IntegrationTest(database)
 {
@@ -31,6 +33,12 @@ public sealed class CancelPublicationQaTests(TestDatabase database) : Integratio
 
     /// <summary>The quota day a reserving row would have written (06 README D10).</summary>
     private static readonly DateOnly ReservedDay = new(2026, 3, 1);
+
+    /// <summary>
+    /// The id of the line <c>PublicationQuotaRelease</c> writes for a reserved-day key that is there and unusable
+    /// (06.2.6-T1; the next free id after the cancel handler's 6503/6504).
+    /// </summary>
+    private const int UnreadableReservedDayEventId = 6505;
 
     [Theory]
     [InlineData(PublicationStatus.Processing, "processing")]
@@ -94,6 +102,49 @@ public sealed class CancelPublicationQaTests(TestDatabase database) : Integratio
         ledger.Released[0].ShouldBe(new QuotaReservation(PublicationBuilder.Platform, recorded));
     }
 
+    [Fact]
+    public async Task JsonNullQuotaKey_IsAbsent_WithoutReleaseOrWarning()
+    {
+        // 06.2.3-T2 removes the key instead of storing a null, so a null under it is a row with nothing reserved:
+        // no ledger call, and — unlike a value that is there and unusable — no warning line either.
+        var scene = await NewSceneAsync(PublicationStatus.Scheduled, """{"quotaReservedDay": null}""");
+        var ledger = new RecordingQuotaLedger();
+        var logger = new RecordingLogger();
+
+        var run = await CancelAsync(scene, ledger: ledger, logger: logger);
+
+        run.Result.IsError.ShouldBeFalse();
+        run.Command.Outcome.ShouldNotBeNull();
+        (await ScalarAsync(Column(scene, "status"))).ShouldBe("cancelled");
+        ledger.Released.ShouldBeEmpty();
+        logger.Entries.Where(entry => entry.EventId.Id == UnreadableReservedDayEventId).ShouldBeEmpty();
+        logger.Entries.Where(entry => entry.Level >= LogLevel.Warning).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{\"quotaReservedDay\": 20260301}")]
+    [InlineData("{\"quotaReservedDay\": \"yesterday\"}")]
+    public async Task MalformedQuotaKey_WarnsOnce_AndReleasesNothing(string payload)
+    {
+        // The other half of the same rule: the key is there and cannot be used, so the release is skipped and the
+        // one line that says so carries the row's id. Exactly one: the payload is parsed once per cancel.
+        var scene = await NewSceneAsync(PublicationStatus.Scheduled, payload);
+        var ledger = new RecordingQuotaLedger();
+        var logger = new RecordingLogger();
+
+        var run = await CancelAsync(scene, ledger: ledger, logger: logger);
+
+        run.Result.IsError.ShouldBeFalse();
+        (await ScalarAsync(Column(scene, "status"))).ShouldBe("cancelled");
+        ledger.Released.ShouldBeEmpty();
+
+        var unreadable = logger.Entries.Where(entry => entry.EventId.Id == UnreadableReservedDayEventId).ToArray();
+
+        unreadable.Length.ShouldBe(1);
+        unreadable[0].Level.ShouldBe(LogLevel.Warning);
+    }
+
     /// <summary>The rows of one scene, as the tests address them.</summary>
     private sealed record Scene(TestCurrentUser CurrentUser, Guid EpisodeId, Guid PublicationId);
 
@@ -136,7 +187,8 @@ public sealed class CancelPublicationQaTests(TestDatabase database) : Integratio
         Scene scene,
         Guid? publicationId = null,
         string? ifMatch = null,
-        RecordingQuotaLedger? ledger = null)
+        RecordingQuotaLedger? ledger = null,
+        ILogger<CancelPublicationHandler>? logger = null)
     {
         var ct = TestContext.Current.CancellationToken;
         var clock = new FakeClock(Now);
@@ -152,7 +204,7 @@ public sealed class CancelPublicationQaTests(TestDatabase database) : Integratio
             context,
             ledger ?? new RecordingQuotaLedger(),
             clock,
-            NullLogger<CancelPublicationHandler>.Instance);
+            logger ?? NullLogger<CancelPublicationHandler>.Instance);
 
         var result = await handler.Handle(command, ct);
 
@@ -220,6 +272,41 @@ public sealed class CancelPublicationQaTests(TestDatabase database) : Integratio
             }
 
             return Task.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+    }
+
+    /// <summary>One captured line: its level, its event id and its rendered message.</summary>
+    /// <param name="Level">The level the line was written at.</param>
+    /// <param name="EventId">The <c>LoggerMessage</c> id the line was written under.</param>
+    /// <param name="Message">The rendered message.</param>
+    private sealed record LogEntry(LogLevel Level, EventId EventId, string Message);
+
+    /// <summary>
+    /// Keeps every line the handler wrote, with its id and level, so a test can tell the warning about an unusable
+    /// reserved day from the handler's own success line.
+    /// </summary>
+    private sealed class RecordingLogger : ILogger<CancelPublicationHandler>
+    {
+        private readonly List<LogEntry> _entries = [];
+
+        /// <summary>Every line, in the order the handler wrote it.</summary>
+        internal IReadOnlyList<LogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+
+            _entries.Add(new LogEntry(logLevel, eventId, formatter(state, exception)));
         }
     }
 }

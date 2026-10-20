@@ -34,9 +34,13 @@ internal static class PublicationPlatformPayload
 
     /// <summary>
     /// The quota day (<c>yyyy-MM-dd</c>, the Pacific day) the row holds a reserved unit on, written by the upload
-    /// job when it reserves and removed by it when it releases or finishes (06.2.3-T2, 06.2.6-T1). Its presence is
-    /// what makes a cancel release a unit: a row that never reached the reserve step carries no key.
+    /// job when it reserves and <em>removed</em> by it when it releases or finishes (06.2.3-T2, 06.2.6-T1). Its
+    /// presence is what makes a cancel release a unit: a row that never reached the reserve step carries no key.
     /// </summary>
+    /// <remarks>
+    /// The writer removes the key rather than storing <c>null</c>, so a JSON <c>null</c> under it reads as absent —
+    /// a row with nothing reserved — and never costs a warning line (see <see cref="ReadQuotaReservedDay"/>).
+    /// </remarks>
     internal const string QuotaReservedDayKey = "quotaReservedDay";
 
     /// <summary>The one accepted spelling of the key's value.</summary>
@@ -88,27 +92,25 @@ internal static class PublicationPlatformPayload
     /// answers here, because only that key is read and every other key is left untouched.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Absent, blank, malformed, non-object, non-string and unparseable all read back as "no reserved day", never as
     /// an error: a cancel must not fail because a hand-edited row carries a payload nobody can read (06.2.6-T1 task
-    /// §Failure handling). <see cref="IsQuotaReservedDayUnreadable"/> is the same read reporting the <em>malformed</em>
-    /// half, so the caller can log the row whose release it skipped.
+    /// §Failure handling).
+    /// </para>
+    /// <para>
+    /// <b>One parse, one answer.</b> The day and the "present but unusable" flag come out of the same read, so a
+    /// caller parses the payload exactly once per cancel and can never pair a day from one parse with a warning
+    /// from another. A JSON <c>null</c> under the key — the value 06.2.3-T2 never writes, because it removes the
+    /// key — is plain <em>absent</em>: no day, no flag, no warning line.
+    /// </para>
     /// </remarks>
     /// <param name="json">The <c>platform_payload</c> column, or <see langword="null"/>.</param>
-    /// <returns>The reserved Pacific quota day, or <see langword="null"/>.</returns>
-    internal static DateOnly? ReadQuotaReservedDay(string? json) => ReadQuotaReservedDayCore(json).Day;
-
-    /// <summary>
-    /// Whether <see cref="ReadQuotaReservedDay"/> found the key but could not use it (a non-object payload, a
-    /// non-string value or a string that is not an ISO day), so the caller logs the skipped release.
-    /// </summary>
-    /// <param name="json">The <c>platform_payload</c> column, or <see langword="null"/>.</param>
-    /// <returns><see langword="true"/> only for a key that is present and unusable.</returns>
-    internal static bool IsQuotaReservedDayUnreadable(string? json) => ReadQuotaReservedDayCore(json).Unreadable;
-
-    /// <summary>The one parse both readers above use: the day, and whether the key was there but unusable.</summary>
-    /// <param name="json">The <c>platform_payload</c> column, or <see langword="null"/>.</param>
-    /// <returns>The day (or <see langword="null"/>) and the malformed flag.</returns>
-    private static (DateOnly? Day, bool Unreadable) ReadQuotaReservedDayCore(string? json)
+    /// <returns>
+    /// The reserved Pacific quota day (or <see langword="null"/> when there is nothing reserved) and whether the
+    /// key was present but unusable — the flag the caller logs a skipped release with, and never set for an absent
+    /// key.
+    /// </returns>
+    internal static (DateOnly? Day, bool Unreadable) ReadQuotaReservedDay(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -124,7 +126,8 @@ internal static class PublicationPlatformPayload
                 return (null, true);
             }
 
-            if (!document.RootElement.TryGetProperty(QuotaReservedDayKey, out var reservedDay))
+            if (!document.RootElement.TryGetProperty(QuotaReservedDayKey, out var reservedDay)
+                || reservedDay.ValueKind == JsonValueKind.Null)
             {
                 return (null, false);
             }

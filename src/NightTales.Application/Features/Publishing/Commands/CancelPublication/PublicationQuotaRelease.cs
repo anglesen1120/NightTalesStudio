@@ -24,7 +24,9 @@ namespace NightTales.Application.Features.Publishing.Commands.CancelPublication;
 /// says the row never passed the reserve step — a cancel of an <c>awaiting_consent</c>/<c>scheduled</c> row
 /// usually finds no key at all. A key that is present but unusable (a hand-edited payload, a format change) is
 /// the same "nothing to release", logged with the row's id and never an error: a cancel must not fail over a
-/// payload nobody can read. Only the ledger's own refusal fails the command, which rolls the whole transaction
+/// payload nobody can read. A JSON <c>null</c> under the key is not that case — the writer removes the key
+/// instead of storing a null, so the value means "nothing reserved" and is read as absent, with no warning line.
+/// Only the ledger's own refusal fails the command, which rolls the whole transaction
 /// back — a committed cancel whose unit was never released would leave the bound open with nothing left to
 /// release it.
 /// </para>
@@ -53,15 +55,16 @@ internal static partial class PublicationQuotaRelease
         ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var payload = publication.PlatformPayloadJson;
-        var day = PublicationPlatformPayload.ReadQuotaReservedDay(payload);
+        // One parse for the whole step: the day and the "present but unusable" flag come from the same read.
+        var (day, unreadable) = PublicationPlatformPayload.ReadQuotaReservedDay(publication.PlatformPayloadJson);
 
         if (day is null)
         {
-            if (PublicationPlatformPayload.IsQuotaReservedDayUnreadable(payload))
+            if (unreadable)
             {
                 // The key is there and cannot be used: the release is skipped, the cancel is not failed, and the
-                // line carries the row's id only.
+                // line carries the row's id only. A JSON null under the key is absent, not unreadable, and logs
+                // nothing.
                 LogUnreadableReservedDay(logger, publication.Id);
             }
 
