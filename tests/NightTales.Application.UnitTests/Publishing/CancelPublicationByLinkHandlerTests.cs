@@ -183,6 +183,44 @@ public sealed class CancelPublicationByLinkHandlerTests(TestDatabase database) :
         await AssertUntouchedAsync(scene, audit, $"the '{failure}' refusal writes nothing");
     }
 
+    /// <summary>
+    /// The presented values that cannot be a minted token: <see langword="null"/>, the empty string, and one
+    /// character past the handler's bound (the minter issues 43 base64url characters, so 129 is not one either).
+    /// </summary>
+    public static TheoryData<string?> NonTokenShapedTokens => new()
+    {
+        null!,
+        string.Empty,
+        new string('a', 129),
+    };
+
+    [Theory]
+    [MemberData(nameof(NonTokenShapedTokens))]
+    public async Task NonTokenShapedValues_AreRefusedGenericallyWithoutAStoreCall(string? token)
+    {
+        // 06.2.2-T2 perf review PERF-1: Step 1 refuses a value that cannot be a minted token before the hash and
+        // the consume statement, so a bogus body costs no store round trip — and it answers the same generic 400
+        // as every other failure, so the shape a probe sent is not a distinguishing signal. The fake consume is
+        // primed to succeed and cancel, so an empty recorder proves the store was never asked.
+        var scene = await NewSceneAsync(PublicationStatus.AwaitingConsent);
+        var tokens = new FakeActionTokens(new ConsumedActionToken(scene.UserId, scene.PublicationId));
+        var audit = new RecordingAuditWriter();
+        var ledger = new RecordingQuotaLedger();
+
+        var result = await CancelAsync(scene, tokens, ledger, audit, token: token);
+
+        result.FirstError.Code.ShouldBe(ErrorCodes.CancelTokenInvalid);
+        result.FirstError.Description.ShouldBe("The cancel link is invalid, already used or expired.");
+        result.FirstError.Metadata.ShouldBeNull("a metadata key would make the shape of a bad token distinguishable");
+        result.Errors.Count.ShouldBe(1);
+
+        tokens.Consumed.ShouldBeEmpty("a value that cannot be a token never reaches the store");
+        tokens.Kinds.ShouldBeEmpty();
+        ledger.Released.ShouldBeEmpty();
+
+        await AssertUntouchedAsync(scene, audit, "a refusal at Step 1 writes nothing");
+    }
+
     [Theory]
     [InlineData(PublicationStatus.Scheduled)]
     [InlineData(PublicationStatus.Uploading)]
@@ -272,12 +310,14 @@ public sealed class CancelPublicationByLinkHandlerTests(TestDatabase database) :
     /// <param name="ledger">The recording ledger.</param>
     /// <param name="audit">The recording audit writer.</param>
     /// <param name="publicationId">The id the body names; the scene's own unless a test targets another row.</param>
+    /// <param name="token">The plaintext token the body carries; the presented link unless a test sends another shape.</param>
     private async Task<ErrorOr<Success>> CancelAsync(
         Scene scene,
         FakeActionTokens tokens,
         RecordingQuotaLedger ledger,
         RecordingAuditWriter audit,
-        Guid? publicationId = null)
+        Guid? publicationId = null,
+        string? token = PresentedToken)
     {
         var ct = TestContext.Current.CancellationToken;
         var clock = new FakeClock(Now);
@@ -294,7 +334,7 @@ public sealed class CancelPublicationByLinkHandlerTests(TestDatabase database) :
             NullLogger<CancelPublicationByLinkHandler>.Instance);
 
         var result = await handler.Handle(
-            new CancelPublicationByLinkCommand(publicationId ?? scene.PublicationId, PresentedToken),
+            new CancelPublicationByLinkCommand(publicationId ?? scene.PublicationId, token!),
             ct);
 
         if (result.IsError)

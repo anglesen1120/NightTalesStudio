@@ -82,6 +82,12 @@ public sealed partial class CancelPublicationByLinkHandler(
     private const string AuditAction = "publishing.cancelled";
 
     /// <summary>
+    /// The longest value that can be a minted token: the minter issues 43 base64url characters, so anything past
+    /// this bound is not one and is refused without a store call.
+    /// </summary>
+    private const int MaxTokenLength = 128;
+
+    /// <summary>
     /// The refusal the route answers for <em>every</em> failed attempt: one code, one description, no metadata —
     /// so the four acceptance bodies are the same bytes (09 §4's no-state-leak rule).
     /// </summary>
@@ -101,9 +107,16 @@ public sealed partial class CancelPublicationByLinkHandler(
 
         // Step 1: spend the token. This single statement is the route's authentication and its replay guard; an
         // absent value is the same refusal as an unknown one (the erroring consume of 09 §4), and only the
-        // transient store failure keeps its own answer (09 README D5).
+        // transient store failure keeps its own answer (09 README D5). A value that cannot be a minted token
+        // (empty, or longer than any token the minter issues: 43 base64url characters) is refused before the
+        // hash and the statement, so a bogus body costs no store round trip (06.2.2-T2 perf review PERF-1).
+        if (string.IsNullOrEmpty(command.Token) || command.Token.Length > MaxTokenLength)
+        {
+            return Refuse("token", command.PublicationId);
+        }
+
         var consumed = await tokens
-            .ConsumeAsync(command.Token ?? string.Empty, UserActionKind.PublicationCancel, cancellationToken)
+            .ConsumeAsync(command.Token, UserActionKind.PublicationCancel, cancellationToken)
             .ConfigureAwait(false);
 
         if (consumed.IsError)
@@ -229,19 +242,19 @@ public sealed partial class CancelPublicationByLinkHandler(
     }
 
     [LoggerMessage(
-        EventId = 6510,
+        EventId = 6513,
         Level = LogLevel.Information,
         Message = "Publication {PublicationId} of episode {EpisodeId} was cancelled from {PreviousStatus} by its e-mail cancel link; no upload is sent.")]
     private partial void LogCancelled(Guid publicationId, Guid episodeId, string previousStatus);
 
     [LoggerMessage(
-        EventId = 6511,
+        EventId = 6514,
         Level = LogLevel.Information,
         Message = "A cancel link for publication {PublicationId} was refused by {Reason}; nothing was written.")]
     private partial void LogRefused(string reason, Guid publicationId);
 
     [LoggerMessage(
-        EventId = 6512,
+        EventId = 6515,
         Level = LogLevel.Warning,
         Message = "A cancel link could not be spent because the token store answered {ErrorCode}; nothing was written.")]
     private partial void LogStoreUnavailable(string errorCode);

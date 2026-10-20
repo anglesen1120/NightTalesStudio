@@ -337,9 +337,10 @@ public static class PublicationEndpoints
     /// <para>
     /// <b>Headers on every answer.</b> Both are set by the route's first endpoint filter — before the feature guard
     /// can answer 404 — so the success, each refusal and a thrown failure are uncacheable and leak no referrer. The
-    /// 429 is written by the rate-limiting middleware before the endpoint runs: the host's hardening headers
-    /// (BD12) still give it <c>Referrer-Policy: no-referrer</c>, and its missing <c>no-store</c> is a property of
-    /// the shared limiter writer, not of this route.
+    /// 429 is written by the rate-limiting middleware before the endpoint runs, so it takes the same pair from the
+    /// host's hardening headers (BD12) instead: that pass states <c>Referrer-Policy: no-referrer</c> on every
+    /// answer and <c>Cache-Control: no-store</c> on a refusal, which is what keeps the 429 of this route inside
+    /// acceptance check 8 as well.
     /// </para>
     /// <para>
     /// No <c>If-Match</c> and no <c>Idempotency-Key</c>: the single-use token is the optimistic guard, and a second

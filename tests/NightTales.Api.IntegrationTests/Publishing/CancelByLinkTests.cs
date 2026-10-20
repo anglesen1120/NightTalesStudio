@@ -295,8 +295,9 @@ public sealed class CancelByLinkTests(TestDatabase database) : IntegrationTest(d
     {
         // Acceptance #8: the `auth` policy (BD14) is on the route, so an anonymous burst is refused with the shared
         // 429 body. The window is shrunk to two permits so the burst is small; the host is per test, so the limiter's
-        // partitions are isolated. A 429 is written by the rate-limiting middleware before the endpoint runs, so it
-        // carries Referrer-Policy from the host's hardening headers (BD12) but not the route's own no-store.
+        // partitions are isolated. A 429 is written by the rate-limiting middleware before the endpoint runs, so
+        // both headers come from the host's hardening headers (BD12): the referrer policy it states on every answer
+        // and the `no-store` it stamps on a refusal.
         var world = await SeedAsync(PublicationStatus.AwaitingConsent);
         await SetFlagAsync(true);
         using var factory = NewFactory(authPermitLimit: 2);
@@ -319,6 +320,7 @@ public sealed class CancelByLinkTests(TestDatabase database) : IntegrationTest(d
         problem.Code.ShouldBe("rate_limited");
         third.Headers.RetryAfter.ShouldNotBeNull("the rejection advertises the window it counted");
         third.Headers.GetValues("Referrer-Policy").ShouldBe(["no-referrer"]);
+        third.Headers.CacheControl.ShouldNotBeNull("a refusal is never storable").NoStore.ShouldBeTrue();
     }
 
     [Fact]

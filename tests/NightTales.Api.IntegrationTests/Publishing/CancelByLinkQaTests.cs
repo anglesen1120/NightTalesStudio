@@ -377,9 +377,9 @@ public sealed class CancelByLinkQaTests(TestDatabase database) : IntegrationTest
     public async Task RateLimited429_CarriesReferrerPolicyAndNoStore()
     {
         // QA-1 / acceptance check 8: `every response carries Referrer-Policy: no-referrer + Cache-Control:
-        // no-store`. The 204, the 400 and the 404 already prove it elsewhere; the 429 is written by the shared
-        // limiter writer, which runs before the route's own header filter. This probe records which of the two
-        // headers the 429 actually carries, and skips (instead of failing the suite) while the gap is open.
+        // no-store`. The 204, the 400 and the 404 prove it elsewhere; the 429 is written by the shared limiter
+        // writer, which runs before the route's own header filter, so it takes the referrer policy from the
+        // host's hardening headers and `no-store` from that same pass's 429 branch.
         var owner = await SeedOwnerAsync();
         await SetFlagAsync(true);
         using var factory = NewFactory(authPermitLimit: 2);
@@ -400,20 +400,7 @@ public sealed class CancelByLinkQaTests(TestDatabase database) : IntegrationTest
 
         third.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
         third.Headers.GetValues("Referrer-Policy").ShouldBe(["no-referrer"]);
-
-        var cacheControl = third.Headers.CacheControl;
-
-        if (cacheControl is null || !cacheControl.NoStore)
-        {
-            Assert.Skip(
-                "QA-1 (acceptance check 8): the 429 does not carry Cache-Control: no-store — the rate-limiting "
-                + "middleware answers before the route's header filter runs. Observed Cache-Control: "
-                + (third.Headers.TryGetValues("Cache-Control", out var values)
-                    ? string.Join(',', values)
-                    : "(absent)"));
-        }
-
-        cacheControl!.NoStore.ShouldBeTrue();
+        third.Headers.GetValues("Cache-Control").ShouldBe(["no-store"]);
     }
 
     /// <summary>One response header, or <c>(absent)</c> so a pinned list can show its absence.</summary>
