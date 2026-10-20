@@ -62,7 +62,7 @@ public sealed partial class ScenePromptExpander(ILogger<ScenePromptExpander> log
     }
 
     [LoggerMessage(
-        EventId = 6507,
+        EventId = 6524,
         Level = LogLevel.Warning,
         Message = "Style template {StyleTemplateId} carries no term placeholder: {KeywordCount} keywords moderated as the full template text")]
     private partial void LogMissingPlaceholder(Guid styleTemplateId, int keywordCount);

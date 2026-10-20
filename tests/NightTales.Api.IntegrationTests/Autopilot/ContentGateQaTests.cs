@@ -109,9 +109,18 @@ public sealed class ContentGateQaTests(TestDatabase database) : IntegrationTest(
 
         var strict = options.Resolve("strict");
         strict.Story.MinMeanReviewScore.ShouldBe(4.0m, "strict still overlays its own story keys");
-        strict.Moderation.ShouldBe(
-            resolved.Moderation,
+
+        // ModerationThresholds is a record over a list and a dictionary, which the record's generated Equals compares
+        // by reference: two Resolve() calls build equal-but-distinct instances, so the contents are what must match.
+        strict.Moderation.BlockedCategories.ShouldBe(
+            resolved.Moderation.BlockedCategories,
             "strict names no Moderation block, so it inherits the default one rather than losing it");
+        strict.Moderation.MaxScore.Count.ShouldBe(resolved.Moderation.MaxScore.Count);
+        foreach (var (category, ceiling) in resolved.Moderation.MaxScore)
+        {
+            strict.Moderation.MaxScore[category].ShouldBe(ceiling, $"strict inherits the default ceiling of {category}");
+        }
+
         strict.RealWorld.IncidentWords.ShouldBe(resolved.RealWorld.IncidentWords);
 
         AutopilotGateOptionsValidator.Validate(options).ShouldBeEmpty("the shipped file must pass the start-up gate");
@@ -341,7 +350,8 @@ public sealed class ContentGateQaTests(TestDatabase database) : IntegrationTest(
             live.Value.AutoApproved.ShouldBeFalse();
         }
 
-        SqlProbe.ScalarText(Database, $"SELECT gate_results -> 'story' ->> 'mode' FROM autopilot_runs WHERE id = '{world.RunId}'")
+        // The mode is a key of the gate_results document itself (GateResultWriter.ModeKeyName), not of its story block.
+        SqlProbe.ScalarText(Database, $"SELECT gate_results ->> 'mode' FROM autopilot_runs WHERE id = '{world.RunId}'")
             .ShouldBe("live");
         StoredStatus(world.EpisodeId).ShouldBe("story_review");
     }
@@ -395,8 +405,11 @@ public sealed class ContentGateQaTests(TestDatabase database) : IntegrationTest(
 
                 if (moderator is not null)
                 {
+                    // Registered under the port, not under FakeContentModerator: ApiFactory already replaces the
+                    // production adapter with its own fake (ApiFactory.cs), so the removal would otherwise leave
+                    // IContentModerator unresolvable and the host would fail its own build validation.
                     services.RemoveAll<IContentModerator>();
-                    services.AddSingleton(moderator);
+                    services.AddSingleton<IContentModerator>(moderator);
                 }
             });
 

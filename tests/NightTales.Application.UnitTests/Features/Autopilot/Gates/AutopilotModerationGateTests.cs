@@ -600,11 +600,19 @@ public sealed class AutopilotModerationGateTests
     public async Task AutopilotModerationGate_ReCheckAttributesOnlyTheFailingSegment()
     {
         using var metrics = new ContentGateMetrics();
+        // Request() carries three texts: the packed narration (title, hook, p:0, p:1, ending), the metadata and the
+        // scene prompt. With more than one text the gate asks the union verdict, then every text, and only the
+        // packed narration fails — so the segment-by-segment pass runs over its five parts and names one of them.
         var moderator = new ScriptedModerator()
-            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
-            .Clean()
-            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
-            .Clean();
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the union call
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the packed narration text
+            .Clean() // title
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // hook
+            .Clean() // p:0
+            .Clean() // p:1
+            .Clean() // ending
+            .Clean() // meta
+            .Clean(); // scene:0
         var events = new RecordingEvents();
         var gate = Gate(moderator, events, metrics);
 
@@ -614,6 +622,8 @@ public sealed class AutopilotModerationGateTests
 
         verdict.Flagged.ShouldBeTrue();
         verdict.FlaggedSegments.ShouldBe(["hook"]);
+        moderator.Checks.Count.ShouldBe(9, "the union, the three texts, then the five parts of the failing packed one");
+        moderator.Checks[3].ShouldBe(["Hook"], "narrowing asks the segment alone, not the packed text");
         events.Items.Count.ShouldBe(1);
         events.Items[0].OwnText.ShouldBe("Hook");
     }
@@ -622,10 +632,13 @@ public sealed class AutopilotModerationGateTests
     public async Task AutopilotModerationGate_UnavailableDuringNarrowing_KeepsFailClosed()
     {
         using var metrics = new ContentGateMetrics();
+        // The union call fails, the packed narration text fails with it, its first part (title) fails on its own and
+        // is attributed, then the moderator goes down while the second part (hook) is being asked.
         var moderator = new ScriptedModerator()
-            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
-            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
-            .Unavailable();
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the union call
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // the packed narration text
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate") // title, attributed
+            .Unavailable(); // hook: the outage stops the narrowing
         var events = new RecordingEvents();
         var gate = Gate(moderator, events, metrics);
 

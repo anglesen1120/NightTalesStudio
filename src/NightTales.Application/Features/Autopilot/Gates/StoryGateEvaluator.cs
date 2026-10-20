@@ -835,13 +835,13 @@ public sealed partial class StoryGateEvaluator(
     private partial void LogUnreadable(Guid runId, Guid episodeId, string errorCode);
 
     [LoggerMessage(
-        EventId = 6509,
+        EventId = 6526,
         Level = LogLevel.Warning,
         Message = "The story gate of autopilot run {RunId} cannot expand the scene prompts of episode {EpisodeId}: style template {StyleTemplateId} does not exist; check 7 fails closed.")]
     private partial void LogStyleTemplateMissing(Guid runId, Guid episodeId, Guid styleTemplateId);
 
     [LoggerMessage(
-        EventId = 6510,
+        EventId = 6527,
         Level = LogLevel.Warning,
         Message = "The story gate of autopilot run {RunId} moderates episode {EpisodeId} outside a run scope; the free call is not metered.")]
     private partial void LogUnmeteredModeration(Guid runId, Guid episodeId);

@@ -738,31 +738,31 @@ public sealed partial class AutopilotModerationGate(
     }
 
     [LoggerMessage(
-        EventId = 6503,
+        EventId = 6520,
         Level = LogLevel.Warning,
         Message = "Content gate stage autopilot_gate has nothing to moderate for episode {EpisodeId} version {StoryVersionId}: fail closed")]
     private partial void LogNothingToModerate(Guid episodeId, Guid storyVersionId);
 
     [LoggerMessage(
-        EventId = 6504,
+        EventId = 6521,
         Level = LogLevel.Error,
         Message = "Content gate stage autopilot_gate unavailable for episode {EpisodeId} version {StoryVersionId} chunks {ChunkCount}: fail closed")]
     private partial void LogUnavailable(Guid episodeId, Guid storyVersionId, int chunkCount);
 
     [LoggerMessage(
-        EventId = 6505,
+        EventId = 6522,
         Level = LogLevel.Information,
         Message = "Content gate stage autopilot_gate checked episode {EpisodeId} version {StoryVersionId} chunks {ChunkCount} flagged {Flagged} categories {CategoryCount}")]
     private partial void LogChecked(Guid episodeId, Guid storyVersionId, int chunkCount, bool flagged, int categoryCount);
 
     [LoggerMessage(
-        EventId = 6506,
+        EventId = 6523,
         Level = LogLevel.Warning,
         Message = "Content gate re-check unavailable for episode {EpisodeId} version {StoryVersionId} after {AttributedUnits} attributed units: keeping the fail-closed verdict")]
     private partial void LogRecheckUnavailable(Guid episodeId, Guid storyVersionId, int attributedUnits);
 
     [LoggerMessage(
-        EventId = 6508,
+        EventId = 6525,
         Level = LogLevel.Information,
         Message = "Content gate wrote moderation evidence for episode {EpisodeId} version {StoryVersionId}: segments {SegmentCount} events {EventCount}")]
     private partial void LogEvidenceWritten(Guid episodeId, Guid storyVersionId, int segmentCount, int eventCount);
