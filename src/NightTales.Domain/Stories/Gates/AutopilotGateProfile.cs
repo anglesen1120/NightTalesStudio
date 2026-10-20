@@ -104,16 +104,30 @@ public sealed record VideoGateThresholdsPatch(
     double? LoudnessMaxLufs = null);
 
 /// <summary>
-/// One resolved gate profile: everything <see cref="StoryGateRules"/> and <see cref="VideoGateRules"/> need,
-/// with no member left unset. The moderation thresholds (<c>BlockedCategories</c>, <c>MaxScore</c>) are
-/// 02.8.2-T2's block on the Application profile and are deliberately not here.
+/// One resolved gate profile: everything <see cref="StoryGateRules"/>, <see cref="VideoGateRules"/> and the
+/// Application's content gate need, with no member left unset.
 /// </summary>
 /// <param name="Story">The story thresholds (checks 1–13).</param>
 /// <param name="Video">The video thresholds (checks 1–10).</param>
-public sealed record AutopilotGateProfile(StoryGateThresholds Story, VideoGateThresholds Video)
+/// <param name="Moderation">
+/// The moderation thresholds of check 7 (<c>BlockedCategories</c>, <c>MaxScore</c>, 02.8.2-T2).
+/// </param>
+/// <param name="RealWorld">
+/// The real-world detector's behaviour of check 8 (02.8.2-T2): whether a date needs an incident word in the same
+/// segment, and the incident words themselves.
+/// </param>
+public sealed record AutopilotGateProfile(
+    StoryGateThresholds Story,
+    VideoGateThresholds Video,
+    ModerationThresholds Moderation,
+    RealWorldOptions RealWorld)
 {
     /// <summary>The plan §3.3 <c>default</c> profile; a series with no <c>gate_thresholds_ref</c> uses it.</summary>
-    public static AutopilotGateProfile Defaults { get; } = new(StoryGateThresholds.Defaults, VideoGateThresholds.Defaults);
+    public static AutopilotGateProfile Defaults { get; } = new(
+        StoryGateThresholds.Defaults,
+        VideoGateThresholds.Defaults,
+        ModerationThresholds.Defaults,
+        RealWorldOptions.Defaults);
 
     /// <summary>
     /// This profile with <paramref name="patch"/> overlaid: <c>strict</c> raises only the keys it names
@@ -123,7 +137,11 @@ public sealed record AutopilotGateProfile(StoryGateThresholds Story, VideoGateTh
     /// <returns>The merged profile.</returns>
     public AutopilotGateProfile Overlay(AutopilotGateProfilePatch? patch) => patch is null
         ? this
-        : new AutopilotGateProfile(Story.Overlay(patch.Story), Video.Overlay(patch.Video));
+        : new AutopilotGateProfile(
+            Story.Overlay(patch.Story),
+            Video.Overlay(patch.Video),
+            Moderation.Overlay(patch.Moderation),
+            MergeRealWorld(RealWorld, patch.RealWorld));
 
     /// <summary>
     /// The profile a series resolves to: the plan §3.3 defaults with its configured profile overlaid. This is
@@ -133,6 +151,12 @@ public sealed record AutopilotGateProfile(StoryGateThresholds Story, VideoGateTh
     /// <param name="patch">The configured profile entry, or <see langword="null"/> for the defaults.</param>
     /// <returns>A complete profile, safe to evaluate with.</returns>
     public static AutopilotGateProfile Resolve(AutopilotGateProfilePatch? patch) => Defaults.Overlay(patch);
+
+    private static RealWorldOptions MergeRealWorld(RealWorldOptions options, RealWorldOptionsPatch? patch) => patch is null
+        ? options
+        : new RealWorldOptions(
+            patch.RequireIncidentCoOccurrence ?? options.RequireIncidentCoOccurrence,
+            patch.IncidentWords ?? options.IncidentWords);
 }
 
 /// <summary>
@@ -141,6 +165,23 @@ public sealed record AutopilotGateProfile(StoryGateThresholds Story, VideoGateTh
 /// </summary>
 /// <param name="Story">The configured story section, or <see langword="null"/> to inherit all of it.</param>
 /// <param name="Video">The configured video section, or <see langword="null"/> to inherit all of it.</param>
+/// <param name="Moderation">The configured moderation block, or <see langword="null"/> to inherit all of it.</param>
+/// <param name="RealWorld">The configured real-world section, or <see langword="null"/> to inherit all of it.</param>
 public sealed record AutopilotGateProfilePatch(
     StoryGateThresholdsPatch? Story = null,
-    VideoGateThresholdsPatch? Video = null);
+    VideoGateThresholdsPatch? Video = null,
+    ModerationThresholdsPatch? Moderation = null,
+    RealWorldOptionsPatch? RealWorld = null);
+
+/// <summary>
+/// The configured <c>Autopilot:Gates:Profiles:*:RealWorld</c> section (plan §3.3): every member optional, so an
+/// absent key inherits. A configured empty <c>IncidentWords</c> list is a value, not an absent key.
+/// </summary>
+/// <param name="RequireIncidentCoOccurrence">
+/// The configured co-occurrence switch, or <see langword="null"/> to inherit. With <see langword="false"/> a
+/// dated-incident pattern alone is a hit; the shipped default requires the incident word in the same segment.
+/// </param>
+/// <param name="IncidentWords">The configured incident words, or <see langword="null"/> to inherit.</param>
+public sealed record RealWorldOptionsPatch(
+    bool? RequireIncidentCoOccurrence = null,
+    IReadOnlyList<string>? IncidentWords = null);

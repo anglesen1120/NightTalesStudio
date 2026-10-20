@@ -16,6 +16,7 @@ using NightTales.Domain.Stories.Length;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Stories.Review;
 using NightTales.Domain.Usage;
+using GateClaim = NightTales.Domain.Stories.Gates.RealWorldClaim;
 using SimilarityText = NightTales.Domain.Stories.Similarity.StoryText;
 
 namespace NightTales.Application.Features.Autopilot.Gates;
@@ -45,9 +46,17 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// local validator issue is not part of either review.
 /// </para>
 /// <para>
+/// <b>The claims are unioned across both reviews (02.8.2-T2).</b> <c>real_world_claims[]</c> is not a score of the
+/// text but a statement about it, and the revision rewrote the text those claims were written about, so check 8
+/// reads the claims of <c>model_review</c> <em>and</em> of a complete <c>revision.review_after</c>: an extra owner
+/// review is a cost, a missed claim is a hole (STATUS <c>S67-1</c>). A block whose member is absent or is not an
+/// array makes the whole answer unknown — the fail-closed rule of T1 — and the claims themselves are reduced to
+/// their D22 addresses, so the review model's wording never leaves <c>audit_report</c>.
+/// </para>
+/// <para>
 /// <b>No story text leaves here.</b> The reading carries ids, codes, numbers, the D22 segment addresses of the
-/// real-world claims and the text this gate itself has to moderate; nothing is copied into a gate verdict
-/// (D19/D22).
+/// real-world claims and the parsed content document the caller still has to check (the content gate and the
+/// detector both read it); nothing is copied into a gate verdict (D19/D22).
 /// </para>
 /// </remarks>
 /// <param name="prices">The active price version, the only source of the D4 band check 11 compares against.</param>
@@ -63,7 +72,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// <summary>The D22 key of the audit's local validator issues.</summary>
     private const string LocalMember = "local";
 
-    /// <summary>The D22 key of the draft-time moderation block (check 6 and the check-7 fallback).</summary>
+    /// <summary>The D22 key of the draft-time moderation block (check 6).</summary>
     private const string ModerationMember = "moderation";
 
     /// <summary>The D22 key of the real-world claims of the model review (check 8, 02.8.2-T1 decision 1).</summary>
@@ -90,14 +99,8 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// <summary><c>revision.applied</c> (check 5).</summary>
     private const string AppliedMember = "applied";
 
-    /// <summary><c>moderation.flagged</c> (checks 6 and 7).</summary>
+    /// <summary><c>moderation.flagged</c> (check 6).</summary>
     private const string FlaggedMember = "flagged";
-
-    /// <summary><c>moderation.categories</c>.</summary>
-    private const string CategoriesMember = "categories";
-
-    /// <summary><c>moderation.checked_at</c> (D22, plan §3.4).</summary>
-    private const string CheckedAtMember = "checked_at";
 
     /// <summary>An issue's <c>severity</c>.</summary>
     private const string SeverityMember = "severity";
@@ -182,27 +185,33 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                 approvedFactSheetId),
             Audit: audit.Facts,
             SourceSimilarity: row.SimilarityScore,
-            RealWorld: audit.RealWorld,
+            RealWorldClaims: audit.RealWorldClaims,
             Series: new SeriesGateContext(EffectiveTopic(row.Topic, row.FactSheetId)),
             Length: new LengthBand(
                 target.MinTokens,
                 target.MaxTokens,
                 (decimal)StoryQualityThresholds.Defaults.LengthTolerance),
             Moderation: audit.Moderation,
-            ModerationTexts: ModerationTexts(content),
+            Content: content,
             StoryText: content is null ? null : SimilarityText.From(content),
-            ProfileRef: ReadGateThresholdsRef(row.AutopilotSettings));
+            ProfileRef: ReadGateThresholdsRef(row.AutopilotSettings),
+            PriceVersion: active.Value.Version.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>
-    /// Assembles the Domain input from a reading plus the two values only a port can answer: the past-episode
-    /// score and the <c>autopilot_gate</c> moderation verdict (plan §3.1 checks 7 and 10).
+    /// Assembles the Domain input from a reading plus the values only a port can answer: the past-episode score
+    /// (check 10) and the two 02.8.2-T2 checks — the content gate's verdict (check 7) and the real-world detector's
+    /// signal (check 8).
     /// </summary>
     /// <param name="reading">The stored facts, from <see cref="ReadAsync"/>.</param>
     /// <param name="pastEpisodeSimilarity">The score against the series' own history, or null when none was scorable.</param>
     /// <param name="moderation">
-    /// The check-7 verdict: the stored draft-time block when it is usable, otherwise the gate's own free check, or
-    /// null when neither exists — a null fails check 7 closed.
+    /// The check-7 verdict over the current content, or null when the gate could not run at all — a null fails
+    /// check 7 closed.
+    /// </param>
+    /// <param name="realWorld">
+    /// The check-8 signal over the current content and the stored claims, or null when either could not be read —
+    /// a null fails check 8 closed.
     /// </param>
     /// <param name="attempt">The story-gate attempt of the run, 1-based (D17).</param>
     /// <returns>The input <see cref="StoryGateRules.Evaluate"/> reads.</returns>
@@ -211,6 +220,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         StoryGateReading reading,
         decimal? pastEpisodeSimilarity,
         ModerationGateOutcome? moderation,
+        RealWorldSignal? realWorld,
         int attempt)
     {
         ArgumentNullException.ThrowIfNull(reading);
@@ -220,7 +230,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
             reading.Audit,
             new SimilaritySignals(reading.SourceSimilarity, pastEpisodeSimilarity, PastEpisodeCorpusMax),
             moderation,
-            reading.RealWorld,
+            realWorld,
             reading.Series,
             reading.Length,
             attempt);
@@ -268,35 +278,6 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         return (int)Math.Ceiling(minutes * (double)StoryQualityThresholds.Defaults.KeywordsPerMinute);
     }
 
-    // The text the gate moderates itself when the draft-time verdict is missing or stale (plan §3.1 checks 6–8):
-    // the narration, the title, the description and the tags — never a scene prompt, a keyword or a source text.
-    private static List<string> ModerationTexts(StoryContentV1? content)
-    {
-        if (content is null)
-        {
-            return [];
-        }
-
-        var texts = new List<string>(4 + (content.Tags?.Count ?? 0));
-        Add(content.Title);
-        Add(DerivedStoryFields.From(content).Body);
-        Add(content.Description);
-        foreach (var tag in content.Tags ?? [])
-        {
-            Add(tag);
-        }
-
-        return texts;
-
-        void Add(string? text)
-        {
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                texts.Add(text);
-            }
-        }
-    }
-
     // Null on an unreadable document, which is the state the caller treats as "no content": the similarity and
     // moderation checks that read the story text fail closed, and the gate moderates nothing.
     private static StoryContentV1? ReadContent(string content) =>
@@ -309,7 +290,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         if (root is null)
         {
             // A missing, truncated or foreign document: every check that reads the audit fails closed, and the
-            // real-world signal, the issues and the keyword violations are unreadable rather than clean.
+            // real-world claims, the issues and the keyword violations are unreadable rather than clean.
             return new AuditReading(
                 new AuditFacts(
                     ModelReviewPresent: false,
@@ -319,7 +300,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                     ModerationFlagged: null,
                     RevisionApplied: null),
                 StoredModerationVerdict.None,
-                RealWorld: null,
+                RealWorldClaims: null,
                 KeywordViolations: null);
         }
 
@@ -351,11 +332,11 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                 Issues: issues,
                 // A block that is not a complete, current verdict — missing, malformed, stale or unavailable
                 // (StoryDraftModeration.NeedsRecheck, D12) — is no evidence that the draft was clean: check 6 fails
-                // closed and check 7 checks the current draft itself.
+                // closed. Check 7 no longer reads this block at all (02.8.2-T2 checks the current content itself).
                 ModerationFlagged: moderation.Usable ? moderation.Flagged : null,
                 RevisionApplied: revision is null ? false : applied),
             moderation,
-            ReadRealWorld(review),
+            ReadClaims(review, reviewAfter),
             KeywordViolations: local is null ? null : CountKeywordViolations(local));
     }
 
@@ -369,9 +350,9 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     private static JsonArray? ReadLocalIssues(JsonNode? localBlock) =>
         localBlock is JsonObject block && block[IssuesMember] is JsonArray issues ? issues : null;
 
-    // The stored moderation block's value for checks 7 and the check-6 fallback. StoryDraftModeration owns the
-    // shape (flagged/categories/blocking/stale/unavailable) and the "needs a fresh check" rule, so the gate and
-    // the approval re-check agree on what a usable verdict is.
+    // The one member check 6 reads. StoryDraftModeration owns the whole shape (flagged/categories/blocking/stale/
+    // unavailable) and the "needs a fresh check" rule, so the gate and the approval re-check agree on what a usable
+    // verdict is; check 7 no longer reuses this block at all (02.8.2-T2 checks the current content itself).
     private static StoredModerationVerdict ReadModeration(JsonNode? node)
     {
         if (StoryDraftModeration.NeedsRecheck(node) || node is not JsonObject moderation)
@@ -379,56 +360,59 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
             return StoredModerationVerdict.None;
         }
 
-        var flagged = ReadFlag(moderation[FlaggedMember]) ?? false;
-        var categories = new List<string>();
-        if (moderation[CategoriesMember] is JsonArray array)
-        {
-            foreach (var entry in array)
-            {
-                if (entry is JsonValue value && value.TryGetValue<string>(out var category) && !string.IsNullOrWhiteSpace(category))
-                {
-                    categories.Add(category);
-                }
-            }
-        }
-
-        return new StoredModerationVerdict(true, flagged, categories, ReadInstant(moderation[CheckedAtMember]));
+        return new StoredModerationVerdict(true, ReadFlag(moderation[FlaggedMember]) ?? false);
     }
 
-    // Check 8 (02.8.2-T1 decision 1): only the persisted model claims count, and only their kinds and their
-    // number ever reach a verdict. The claims' own wording is never copied here (D19/D22).
-    private static RealWorldSignal? ReadRealWorld(JsonObject? review)
+    // Check 8 (02.8.2-T2, plan §3.1): the claims of the model review and of a complete revision.review_after,
+    // unioned and reduced to their D22 addresses, because the revision rewrote the text the first review's claims
+    // were about (an extra owner review is a cost, a missed claim is a hole). A review that does not carry the
+    // member — or carries something that is not an array — makes the whole answer unknown: AuditReportBuilder
+    // always writes it (F6), so an absent one is a foreign or truncated document, and check 8 fails closed. A
+    // present but empty array is still the clean signal "the model claimed nothing". The claims' own wording is
+    // never copied here (D19/D22).
+    private static List<GateClaim>? ReadClaims(JsonObject? review, JsonObject? reviewAfter)
     {
         if (review is null)
         {
             return null;
         }
 
-        if (review[RealWorldClaimsMember] is not { } claims)
-        {
-            // F6: only a review that stored the member can assert "no claims" (AuditReportBuilder always writes
-            // it), so an absent one is a foreign or truncated document and check 8 fails closed. A present but
-            // empty array is still the clean signal "the model claimed nothing".
-            return null;
-        }
-
-        if (claims is not JsonArray array)
+        var claims = new List<GateClaim>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!AppendClaims(review, claims, seen))
         {
             return null;
         }
 
-        var hits = new List<RealWorldSignalHit>(array.Count);
-        foreach (var claim in array)
+        if (IsCompleteReview(reviewAfter) && !AppendClaims(reviewAfter!, claims, seen))
         {
-            var segment = claim is JsonObject entry ? ReadText(entry[SegmentMember]) : null;
-            hits.Add(new RealWorldSignalHit(
-                Cap(segment),
-                RealWorldSignalKind.ModelClaim,
-                MatchedPhrase: string.Empty,
-                Evidence: string.Empty));
+            return null;
         }
 
-        return new RealWorldSignal(hits.Count > 0, hits);
+        return claims;
+
+        static bool AppendClaims(JsonObject block, List<GateClaim> claims, HashSet<string> seen)
+        {
+            if (block[RealWorldClaimsMember] is not JsonArray array)
+            {
+                return false;
+            }
+
+            foreach (var claim in array)
+            {
+                var segment = Cap(claim is JsonObject entry ? ReadText(entry[SegmentMember]) : null);
+
+                // One entry per address: the same segment claimed by both reviews is one place to look at, and
+                // the detector's own address lookup is case-insensitive. A claim with no readable address keeps
+                // one entry each, because each of them asserted something.
+                if (segment.Length == 0 || seen.Add(segment))
+                {
+                    claims.Add(new GateClaim(segment));
+                }
+            }
+
+            return true;
+        }
     }
 
     // local.issues ∪ the selected review's issues (plan §3.1 check 4). Both sides must be arrays: a selected
@@ -610,12 +594,6 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     private static string? ReadText(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
-    private static DateTimeOffset? ReadInstant(JsonNode? node) =>
-        ReadText(node) is { } text
-        && DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var instant)
-            ? instant
-            : null;
-
     private static string Cap(string? value)
     {
         var clean = TextSafety.Clean(value);
@@ -626,7 +604,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// <param name="VersionId">The row's id.</param>
     /// <param name="WordCount">The D4 token count of the stored body (check 11).</param>
     /// <param name="Keywords">The stored keywords; only their count and their violations are read (check 12).</param>
-    /// <param name="Content">The stored <c>content</c> document (check 13, the similarity projection, the fallback moderation).</param>
+    /// <param name="Content">The stored <c>content</c> document (check 13, the similarity projection, and the parse checks 7 and 8 read).</param>
     /// <param name="AuditReport">The stored <c>audit_report</c>, or null when the row has none (checks 1–6, 8).</param>
     /// <param name="SimilarityScore"><c>story_versions.similarity_score</c> (check 9), or null when it was never computed.</param>
     /// <param name="FactSheetId">The sheet the version was written from (check 14), or null.</param>
@@ -652,53 +630,64 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         string? AutopilotSettings,
         DateTimeOffset CreatedAt);
 
-    /// <summary>What the factory read from one row: everything except the past-episode score and the gate's own moderation verdict.</summary>
+    /// <summary>What the factory read from one row: everything except the past-episode score and the two 02.8.2-T2 checks.</summary>
     /// <param name="Version">The version facts (checks 11–14).</param>
     /// <param name="Audit">The audit facts, already selected per 02.6.2-T1 (checks 1–6).</param>
     /// <param name="SourceSimilarity">The stored source similarity (check 9).</param>
-    /// <param name="RealWorld">The persisted model claims (check 8), or null when they could not be read.</param>
+    /// <param name="RealWorldClaims">
+    /// The review model's claims reduced to their D22 addresses, unioned across <c>model_review</c> and a complete
+    /// <c>revision.review_after</c>, or <see langword="null"/> when the stored audit report did not let them be read
+    /// (check 8 fails closed).
+    /// </param>
     /// <param name="Series">The series facts (the <c>true_crime</c> hold).</param>
     /// <param name="Length">The D4 band of the version's tier × language cell (check 11).</param>
-    /// <param name="Moderation">The stored draft-time moderation verdict (check 7), usable or not.</param>
-    /// <param name="ModerationTexts">The narration and metadata the gate moderates itself when the stored verdict is unusable.</param>
+    /// <param name="Moderation">The stored draft-time moderation verdict (check 6), usable or not.</param>
+    /// <param name="Content">
+    /// The parsed <c>story.v1</c> document, or <see langword="null"/> when it could not be read: the content gate
+    /// (check 7) and the real-world detector (check 8) both read this one parse, and an unreadable document leaves
+    /// both with nothing to check — which they fail closed on.
+    /// </param>
     /// <param name="StoryText">The version's own segments, for the past-episode score, or null when the content is unreadable.</param>
     /// <param name="ProfileRef">The series' gate-thresholds profile reference, or null for the <c>default</c> profile.</param>
+    /// <param name="PriceVersion">
+    /// The active price version at the version's creation instant, as text: the D4 band was resolved with it, and the
+    /// gate's free moderation call is metered against it (02 README D14).
+    /// </param>
     public sealed record StoryGateReading(
         StoryVersionFacts Version,
         AuditFacts Audit,
         decimal? SourceSimilarity,
-        RealWorldSignal? RealWorld,
+        IReadOnlyList<GateClaim>? RealWorldClaims,
         SeriesGateContext Series,
         LengthBand Length,
         StoredModerationVerdict Moderation,
-        IReadOnlyList<string> ModerationTexts,
+        StoryContentV1? Content,
         SimilarityText? StoryText,
-        string? ProfileRef);
+        string? ProfileRef,
+        string PriceVersion);
 
     /// <summary>
-    /// The stored draft-time moderation verdict as the gate reads it (plan §3.1 checks 6–7).
+    /// The stored draft-time moderation verdict as check 6 reads it (plan §3.1 check 6).
     /// </summary>
+    /// <remarks>
+    /// Only the flag is kept: check 6 asks whether the draft-time check passed, and check 7 reads the current
+    /// content through the content gate instead of reusing this block (02.8.2-T2). An unusable block is not a
+    /// clean one — <see cref="AuditFacts.ModerationFlagged"/> stays <see langword="null"/> and check 6 fails closed.
+    /// </remarks>
     /// <param name="Usable">
     /// Whether the block is a complete, current verdict (<see cref="StoryDraftModeration.NeedsRecheck"/> says no).
-    /// An unusable block makes the gate run the free check itself.
     /// </param>
     /// <param name="Flagged">The verdict's flag; false when there is no usable verdict.</param>
-    /// <param name="Categories">The flagged categories; empty when there is none.</param>
-    /// <param name="CheckedAt">The <c>moderation.checked_at</c> of the stored block (D22), when it wrote one.</param>
-    public sealed record StoredModerationVerdict(
-        bool Usable,
-        bool Flagged,
-        IReadOnlyList<string> Categories,
-        DateTimeOffset? CheckedAt)
+    public sealed record StoredModerationVerdict(bool Usable, bool Flagged)
     {
-        /// <summary>No usable stored verdict: the gate checks the draft itself, fail closed.</summary>
-        public static StoredModerationVerdict None { get; } = new(false, false, [], null);
+        /// <summary>No usable stored verdict.</summary>
+        public static StoredModerationVerdict None { get; } = new(false, false);
     }
 
     /// <summary>The three blocks one <c>audit.v1</c> read produces.</summary>
     /// <param name="Facts">The facts checks 1–6 read.</param>
-    /// <param name="Moderation">The stored moderation verdict (check 7).</param>
-    /// <param name="RealWorld">The persisted model claims (check 8), or null when they could not be read.</param>
+    /// <param name="Moderation">The stored moderation verdict (check 6).</param>
+    /// <param name="RealWorldClaims">The review model's claims by D22 address (check 8), or null when they could not be read.</param>
     /// <param name="KeywordViolations">
     /// The stored blocked-keyword issues (check 12), or <see langword="null"/> when the local block could not be
     /// read, which fails the check closed.
@@ -706,7 +695,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     private sealed record AuditReading(
         AuditFacts Facts,
         StoredModerationVerdict Moderation,
-        RealWorldSignal? RealWorld,
+        IReadOnlyList<GateClaim>? RealWorldClaims,
         int? KeywordViolations);
 
     /// <summary>

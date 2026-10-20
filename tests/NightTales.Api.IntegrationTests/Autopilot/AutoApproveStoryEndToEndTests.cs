@@ -433,8 +433,10 @@ public sealed class AutoApproveStoryEndToEndTests(TestDatabase database) : Integ
             CorpusMax: 0,
             RealWorldHit: false,
             RealWorldKinds: [],
+            RealWorldSegments: [],
             ModerationFlagged: false,
             ModerationCategories: [],
+            ModerationSegments: [],
             ModerationUnavailableDetail: null,
             ModerationCheckedAt: null,
             EpisodeStatusAtEvaluation: "story_review");

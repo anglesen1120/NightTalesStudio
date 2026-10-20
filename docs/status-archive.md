@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next clause (2026-10-20, replaced when the Session 70 02.8.2-T2 PR opened)
+
+Replaced text (verbatim), the tail of the Session 67 backend Resume bullet:
+
+Next (backend): 02.8.2-T2, 02.8.2-T3 or 02.8.3-T1.
+
+### Superseded Resume bullet (2026-10-20, replaced by the Session 70 02.8.2-T2 PR)
+
+Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 64 closed, merged #249 → `develop` `ee3de595`):** **09.7.1-T1** approve/reject video: `POST /api/v1/episodes/{id}/video/approve` (If-Match required, 200 `ready`, re-stamps `retention_until = approve + Assets:RetentionDays` (30) on every live asset of the episode, newest 50, WT56) and `POST /api/v1/episodes/{id}/video/reject` (If-Match + Idempotency-Key, target `story` 200 `story_review` clearing the approved pointer, target `re_render` 202 `story_approved`, no Location). Events `video_approved.v1` / `video_rejected.v1` (no text in payload, audit has only `notePresent`/`reasonPresent`); Worker `VideoReRenderHandler` sends `RenderEpisodeCommand` (key `video-reject-rerender:{messageId}`, reused key = already ran, other errors throw so the outbox retries). **One migration `09_EpisodeVideoReview`** (`episodes.ready_at`, `episodes.video_reject_reason varchar(500)`, expand-only, 09 CR-48): **deferred owner review**, coordinator auto-pick A 2026-10-18, the merge does not ratify it. Gate ``GATE_RC=0` on `aa32087d` (remote, Ubuntu arm64; the tip adds docs only)`. Open: §Open tasks rows `09.7.1-T1 …`. Next (backend): coordinator assigns; 09.7.1 unblocks 10.6.2-T1 and 02.8.2-T1.
+
 ### Superseded Session 67 rows (2026-10-19, replaced when the Session 67 02.8.2-T1 PR opened)
 
 Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):

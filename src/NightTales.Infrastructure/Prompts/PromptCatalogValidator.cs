@@ -193,9 +193,9 @@ internal sealed class PromptCatalogValidator
 
     /// <summary>
     /// Rule 3: the writer system prompt, the shared blocks a preset substitutes and the story schema
-    /// (both languages where they vary) plus the true-crime attestation clause text of every language
-    /// (02.3.3-T1), so a release that drops one of them fails the boot by name even when its manifest
-    /// entry went with it.
+    /// (both languages where they vary), the true-crime attestation clause text of every language
+    /// (02.3.3-T1) and the real-world framing lexicon of every language (02.8.2-T2), so a release that
+    /// drops one of them fails the boot by name even when its manifest entry went with it.
     /// </summary>
     private void RequireRequiredFiles()
     {
@@ -212,6 +212,7 @@ internal sealed class PromptCatalogValidator
             required.Add($"shared/ear-rules.{PromptKeys.Spelling(language)}.v1.md");
             required.Add($"shared/overused.{PromptKeys.Spelling(language)}.v1.txt");
             required.Add(PromptKeys.Attestation(language));
+            required.Add(PromptKeys.RealWorldFraming(language));
         }
 
         foreach (var key in required)
