@@ -276,10 +276,11 @@ public sealed class PublicationTests
     }
 
     [Fact]
-    public void Cancel_IllegalFrom_Uploading()
+    public void Cancel_FromUploading_IsRefused()
     {
-        // 06 README D7: once the upload runs there is a video to take down rather than a job to stop, so the two
-        // states past `scheduled` can no longer cancel.
+        // 06 README D7: once the upload runs there is a video to take down rather than a job to stop, so every
+        // state past `scheduled` refuses — `cancelled` alone is answered idempotently by
+        // Cancel_IsIdempotentFromCancelled.
         var publication = Uploading();
         var uploadStartedAt = Now.AddMinutes(10);
 
@@ -296,7 +297,6 @@ public sealed class PublicationTests
     [InlineData(PublicationStatus.Processing)]
     [InlineData(PublicationStatus.Published)]
     [InlineData(PublicationStatus.Failed)]
-    [InlineData(PublicationStatus.Cancelled)]
     public void Cancel_FromTheLaterStates_IsRefused(PublicationStatus status)
     {
         var publication = Uploading();
@@ -307,6 +307,27 @@ public sealed class PublicationTests
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(PublicationErrors.InvalidStateCode);
         publication.Status.ShouldBe(status);
+        publication.DomainEvents.OfType<PublicationUpdated>().Count().ShouldBe(2, "a refused cancel raises no event");
+    }
+
+    [Fact]
+    public void Cancel_IsIdempotentFromCancelled()
+    {
+        // 06 README D7's lost-response retry: the owner retries a DELETE the first attempt already applied, so the
+        // repeat is a success that writes nothing — no status move, no `updated_at` bump and no second
+        // `publication_updated.v1` (a second event would make 06.2.2-T3 stop work twice).
+        var publication = Consented();
+        var cancelledAt = Now.AddMinutes(15);
+        publication.Cancel(cancelledAt).IsError.ShouldBeFalse();
+
+        var eventCount = publication.DomainEvents.OfType<PublicationUpdated>().Count();
+
+        var repeat = publication.Cancel(Now.AddMinutes(30));
+
+        repeat.IsError.ShouldBeFalse();
+        publication.Status.ShouldBe(PublicationStatus.Cancelled);
+        publication.UpdatedAt.ShouldBe(cancelledAt, "the repeat must not move the stamp");
+        publication.DomainEvents.OfType<PublicationUpdated>().Count().ShouldBe(eventCount, "the repeat raises nothing");
     }
 
     [Fact]

@@ -195,6 +195,20 @@ public interface IAppDbContext
     Task LockRenderJobForUpdateAsync(Guid renderJobId, TimeSpan lockTimeout, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Takes the row lock of the current user's publication (<c>SELECT … FOR NO KEY UPDATE</c>, 06.2.6-T1) as the
+    /// first statement of a cancel's transaction, so the cancel and the upload job's own locked read of the same
+    /// row cannot interleave: whichever takes the lock first decides, and the other one then reads the committed
+    /// status (<c>cancelled</c> — an idempotent success; <c>uploading</c> — the 409). <c>FOR NO KEY UPDATE</c> is
+    /// the render cancel's keying, so an unrelated foreign-key <c>KEY SHARE</c> check may still proceed.
+    /// Like <see cref="LockEpisodeForUpdateAsync"/> it matches only rows owned by the scope's user, so another
+    /// user's id, an unknown id and an anonymous scope lock nothing; the tenant-filtered load that follows is
+    /// what answers 404.
+    /// </summary>
+    /// <param name="publicationId">The publication to lock.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockPublicationForUpdateAsync(Guid publicationId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
     /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
     /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>
