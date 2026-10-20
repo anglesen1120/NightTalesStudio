@@ -168,9 +168,24 @@ public sealed class ChannelConnectionTests
         connection.ExternalAccountId.ShouldBe(ChannelId);
         connection.DisplayName.ShouldBe(Title);
 
+        // D13/06.4.1-T1 step 8: the disconnect is a state change, so it publishes its own
+        // `channel_connection_changed.v1` row — one, carrying the id, the owner, the status it converged to and
+        // the disconnect instant. The connect raised the first one; nothing else did.
+        var changes = connection.DomainEvents.OfType<ChannelConnectionChanged>().ToList();
+
+        changes.Count.ShouldBe(2, "the connect and the disconnect each publish exactly one change row");
+        changes[^1].ConnectionId.ShouldBe(connection.Id);
+        changes[^1].UserId.ShouldBe(UserId);
+        changes[^1].Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        changes[^1].OccurredAt.ShouldBe(revokedAt);
+
         // `revoked` is terminal (06.4.1-T1 checks the status before it calls, and the row must stay out of
         // ux_channel_connections_account with its NULL tokens).
         Should.Throw<InvalidOperationException>(() => connection.Revoke(Now.AddMinutes(16)));
+
+        connection.DomainEvents.OfType<ChannelConnectionChanged>().Count().ShouldBe(
+            2,
+            "the refused repeat changes nothing, so it raises no second change row");
     }
 
     [Fact]

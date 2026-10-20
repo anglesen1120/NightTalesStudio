@@ -66,7 +66,7 @@ State machine (arrows this folder's jobs/commands trigger, all via the members a
 | `active`/`expired`/`error` | `revoked` | refresh fails `invalid_grant`/`TokenRevoked` in `TokenHealthJob` | 06.4.2-T1 | tokens nulled, 30-day deletion request (`google_revoke`), outbox |
 | `expired`/`error` | `active` | refresh succeeds inside `ITokenService` (called by `TokenHealthJob`) | `ITokenService` (06.1.2-T2), triggered by 06.4.2-T1 | rotated tokens, `last_verified_at = now` (06.4.2-T1 does not call `MarkRefreshed` itself) |
 | any | unchanged | classifier outcome `PlatformIncident` | 06.4.2-T2 | **no** status change, **no** deletion request; `IPlatformIncidentStore.RaiseAsync` called, refresh skipped for the rest of the client group |
-| `revoked` | `active` | user reconnects the channel | 06.1.2-T2 (`Reconnect`) | new tokens, same row, `revoked_at = null` |
+| `revoked` | (unchanged, stays history) | user reconnects the same Google account | 06.1.2-T1/T2 connect path (`Reconnect` refuses a revoked row, S61 CODE-3) | a **new** `active` row is inserted for that account; the revoked row is never revived and keeps its `revoked_at` |
 | `revoked` | (identity nulled) | `DataDeletionJob` executes a `channel` request | 06.4.3-T1 (`PurgeYouTubeData`) | tokens + identity nulled; row stays `revoked` |
 
 Publication cascade (`Publication.Cancel(...)`, owned by 06.2.6-T1, called here in bulk): `awaiting_consent` | `scheduled` → `cancelled`. `uploading` | `processing` | `published` | `failed` are **never** touched by a disconnect (no video deletion on the user's channel, 06.2.6).

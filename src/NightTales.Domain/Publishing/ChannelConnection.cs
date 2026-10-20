@@ -375,6 +375,12 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
         RefreshTokenEnc = null;
         TokenExpiresAt = now;
         RevokedAt = now;
+
+        // Same D13 obligation as Connect and Reconnect (06.4.1-T1 §Design step 8): a disconnect is a state change, so
+        // it publishes its own `channel_connection_changed.v1` row (status revoked) in the caller's unit of work. The
+        // aggregate is the only place that can raise it — AggregateRoot.Raise is protected and there is no outbox
+        // writer port — and OutboxSaveChangesInterceptor turns it into the outbox row on save.
+        Raise(new ChannelConnectionChanged(Id, UserId, Status, now));
     }
 
     /// <summary>

@@ -8,7 +8,7 @@ namespace NightTales.TestKit.Google;
 /// client identities a test can pin a state row to, the channel <c>channels.list</c> returns, the per-id
 /// processing states <c>videos.list</c> returns, and the failure switches
 /// (<c>invalid_grant</c>/<c>invalid_client</c>/<c>unauthorized_client</c>, a token endpoint 500, a channels
-/// status, a missing refresh token).
+/// status, a revoke status, a missing refresh token).
 /// </summary>
 /// <remarks>
 /// The values are deliberately low-entropy canaries: a real client id or secret never appears in git
@@ -65,6 +65,16 @@ public sealed class FakeGoogleOptions
 
     /// <summary>When true, a successful exchange omits <c>refresh_token</c> (a silent prior grant).</summary>
     public bool OmitRefreshToken { get; set; }
+
+    /// <summary>
+    /// The status the revocation endpoint (<c>POST /revoke</c>, 06.4.1-T1's disconnect) answers with, and the body
+    /// that goes with it. Leave it <see cref="HttpStatusCode.OK"/> for Google's success answer; set
+    /// <c>BadRequest</c> (or any <c>4xx</c>) for Google's already-revoked <c>{"error":"invalid_token"}</c>, which the
+    /// client maps to <c>RevokeOutcome.AlreadyRevoked</c>; set <c>InternalServerError</c> (or any <c>5xx</c>) to make
+    /// every revoke fail with a server-shaped error body, the retry-then-<c>googleRevoke = "failed"</c> case. A test
+    /// that never sets it gets the 200 the fake always answered.
+    /// </summary>
+    public HttpStatusCode RevokeStatusCode { get; set; } = HttpStatusCode.OK;
 
     /// <summary>
     /// The <c>expires_in</c> every successful token answer claims. A test sets it to an absurd value to prove the
