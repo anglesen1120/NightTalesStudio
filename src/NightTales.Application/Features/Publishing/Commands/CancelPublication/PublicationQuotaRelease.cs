@@ -78,6 +78,66 @@ internal static partial class PublicationQuotaRelease
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Releases the reserved units of several cancelled publications in one call (06.4.1-T1 §Design step 6,
+    /// STATUS S72-3). Same rule as <see cref="ReleaseAsync"/> per row — only a readable reserved day releases — but
+    /// the units are handed to the ledger together, so the adapter answers the whole cascade with one statement per
+    /// day and one gauge publication instead of one of each per row.
+    /// </summary>
+    /// <param name="publications">The rows this command cancelled; empty is a no-op success.</param>
+    /// <param name="ledger">The ledger the units are given back to.</param>
+    /// <param name="logger">The log of an unusable key.</param>
+    /// <param name="cancellationToken">Cancels the ledger statement.</param>
+    /// <returns>The number of units released, or the ledger's own error.</returns>
+    internal static async ValueTask<ErrorOr<int>> ReleaseManyAsync(
+        IReadOnlyList<Publication> publications,
+        IQuotaLedger ledger,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(publications);
+        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        if (publications.Count == 0)
+        {
+            return 0;
+        }
+
+        var reservations = new List<QuotaReservation>(publications.Count);
+
+        foreach (var publication in publications)
+        {
+            ArgumentNullException.ThrowIfNull(publication);
+
+            // One parse per row: the day and the "present but unusable" flag come from the same read.
+            var (day, unreadable) = PublicationPlatformPayload.ReadQuotaReservedDay(publication.PlatformPayloadJson);
+
+            if (day is null)
+            {
+                if (unreadable)
+                {
+                    LogUnreadableReservedDay(logger, publication.Id);
+                }
+
+                continue;
+            }
+
+            reservations.Add(new QuotaReservation(publication.Platform, day.Value));
+        }
+
+        if (reservations.Count == 0)
+        {
+            return 0;
+        }
+
+        var released = await ledger
+            .ReleaseManyAsync(reservations, cancellationToken)
+            .ConfigureAwait(false);
+
+        return released.IsError ? released.Errors : reservations.Count;
+    }
+
     [LoggerMessage(
         EventId = 6505,
         Level = LogLevel.Warning,

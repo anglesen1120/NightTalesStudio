@@ -103,6 +103,63 @@ public sealed partial class YouTubeQuotaLedger(
     }
 
     /// <summary>
+    /// Releases a whole batch in one statement per day and one gauge publication (06.4.1-T1, STATUS S72-3): the port's
+    /// default loops <see cref="ReleaseAsync"/> and would pay three round trips and a gauge read-back per cancelled row,
+    /// while a disconnect cancels every open publication of one channel at once.
+    /// </summary>
+    /// <remarks>
+    /// The <c>units_used &gt; 0</c> guard and the "never below zero" clamp are the single release's rules, applied to the
+    /// batch's count instead of <c>1</c>: a day whose counter is lower than the batch releases what it has and the rest is
+    /// a no-op, exactly as N single releases would be. The gauge is published once, for the clock's day, because that is
+    /// the ratio the single release publishes (06 README S72-5's own reading: the gauge reports today, not the released
+    /// day).
+    /// </remarks>
+    /// <param name="reservations">One entry per unit; empty is a no-op success.</param>
+    /// <param name="ct">Cancels the statements.</param>
+    /// <returns>Always <c>Success</c> (the release never fails on the bookkeeping).</returns>
+    public async Task<ErrorOr<Success>> ReleaseManyAsync(
+        IReadOnlyList<QuotaReservation> reservations,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(reservations);
+
+        if (reservations.Count == 0)
+        {
+            return Result.Success;
+        }
+
+        var nowUtc = clock.UtcNow;
+
+        var days = reservations
+            .GroupBy(reservation => (reservation.Platform, reservation.Day))
+            .Select(group => (group.Key.Platform, group.Key.Day, Units: group.Count()))
+            .OrderBy(day => day.Platform, StringComparer.Ordinal)
+            .ThenBy(day => day.Day)
+            .ToList();
+
+        foreach (var day in days)
+        {
+            var units = day.Units;
+
+            await db.PlatformQuotaUsage
+                .Where(row => row.Platform == day.Platform && row.QuotaDay == day.Day && row.UnitsUsed > 0)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(row => row.UnitsUsed, row => row.UnitsUsed > units ? row.UnitsUsed - units : 0)
+                        .SetProperty(row => row.UpdatedAt, nowUtc),
+                    ct)
+                .ConfigureAwait(false);
+        }
+
+        foreach (var platform in days.Select(day => day.Platform).Distinct(StringComparer.Ordinal))
+        {
+            await PublishGaugeAsync(platform, PacificQuotaDay.Day(nowUtc), ct).ConfigureAwait(false);
+        }
+
+        return Result.Success;
+    }
+
+    /// <summary>
     /// Publishes the day's used/limit ratio on <c>youtube_quota_used</c>. The gauge is best effort and the whole step
     /// (read-back and recorder) is guarded: a failure is logged and never reaches the caller, because the reservation
     /// or release it follows has already succeeded. Only cancellation propagates.

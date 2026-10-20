@@ -23,6 +23,10 @@ public static class DeletionServiceCollectionExtensions
         services.TryAddScoped<IDeletionRequests, DeletionRequests>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDeletionTargetOwnership, EpisodeDeletionTargetOwnership>());
 
+        // 06.4.1-T1: the channel scope's own check, without which a disconnect cannot schedule its purge (the engine
+        // refuses a scope that needs a target and has no registered ownership check).
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IDeletionTargetOwnership, ChannelDeletionTargetOwnership>());
+
         return services;
     }
 

@@ -13,6 +13,7 @@ using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Channels.Commands.CompleteYouTubeConnect;
 using NightTales.Application.Features.Publishing.Channels.Commands.ConnectYouTube;
+using NightTales.Application.Features.Publishing.Channels.Commands.DisconnectChannel;
 using NightTales.Application.Features.Publishing.Channels.Queries.ListChannels;
 using NightTales.Domain.Common;
 using NightTales.Domain.Publishing;
@@ -65,6 +66,12 @@ public static class PublishingEndpoints
 
     /// <summary>The callback route, relative to <see cref="GroupPrefix"/>.</summary>
     public const string CallbackRoute = "/{platform}/callback";
+
+    /// <summary>
+    /// The disconnect route of 06.4.1-T1, relative to <see cref="GroupPrefix"/>: the connection id, never the platform
+    /// — a disconnect names one connection the caller owns, not a platform's connection.
+    /// </summary>
+    public const string DisconnectRoute = "/{id:guid}";
 
     /// <summary>
     /// The feature flag that gates every YouTube publishing route (06 README D9); the same key
@@ -147,8 +154,46 @@ public static class PublishingEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
+        // 06.4.1-T1 (06 README D15/D17/D18): the disconnect — the owner's own destructive intent on a connection the
+        // path names, so no If-Match and no idempotency key (D15: the repeat answers 204 again, and the locked read,
+        // not a stale tag, decides). Rate-limited like the connect route because it is the one channel route that
+        // reaches Google. The 409 is not the connect route's: the command answers `concurrency_conflict` when the
+        // deletion engine's conflicting insert keeps racing a request that completes under it three times
+        // (`DeletionRequests.CreateAsync`, `ErrorCodes.ConcurrencyConflict`), so it stays advertised.
+        channels.MapDelete(DisconnectRoute, DisconnectAsync)
+            .RequireFeature(FeatureKey)
+            .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicies.Auth)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
         return routes;
     }
+
+    /// <summary>
+    /// <c>DELETE /api/v1/channels/{id}</c>: 204 once the connection is revoked, its open publications are cancelled and
+    /// its deletion request is scheduled — or 404 for an unknown or foreign id. The only conflict it can answer is the
+    /// deletion engine's own <c>concurrency_conflict</c> (409), raised when the request it is scheduling keeps being
+    /// completed by the job under its insert.
+    /// </summary>
+    /// <remarks>
+    /// 204 for the repeat too (D15, R3): a retried request after a lost response answers exactly what the first attempt
+    /// answered. The route carries no body, no If-Match and no idempotency key — the command's locked read is the only
+    /// guard.
+    /// </remarks>
+    /// <param name="id">The connection id from the path.</param>
+    /// <param name="sender">The Mediator sender.</param>
+    /// <param name="http">The request, for the problem details of a refusal.</param>
+    /// <param name="ct">The request cancellation token.</param>
+    private static async Task<IResult> DisconnectAsync(
+        Guid id,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+        => (await sender.Send(new DisconnectChannelCommand(id), ct).ConfigureAwait(false)).ToNoContentResult(http);
 
     /// <summary>
     /// <c>POST /api/v1/channels/{platform}/connect</c>: 200 with the authorization URL and the state's

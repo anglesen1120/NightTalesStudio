@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next clause (2026-10-21, replaced when the Session 73 06.4.1-T1 PR opened)
+
+Replaced text (verbatim), the tail of the Session 72 backend Resume bullet:
+
+Next (backend): coordinator assigns (06.2.3-T2 upload job, 06.4.1-T1 disconnect).
+
+### Superseded Resume bullet (2026-10-21, replaced by the Session 73 06.4.1-T1 PR)
+
+Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 66 closed, merged #253 → `develop` `44129936`):** **06.2.1-T1** Publication aggregate: `Domain/Publishing/Publication` (state machine, `StartUpload` needs `consent_at`), `YouTubeMetadataRules` (byte-accurate title/description/tags, attribution append), `POST/GET /api/v1/episodes/{id}/publications` (flag `youtube_publish` stays OFF; 201 + `Location` + `ETag "pu-<xmin>"`), `GET /episodes/{id}` `publications` summary (+1 grouped query), outbox `publication_updated.v1`, audit `publishing.publication_created`; migration `20261018204807_06_Publications` (expand-only; 06 CR-23 adds the missing columns to 00 §6). Autopilot authorization is bound to the episode's series and the connection by the handler (the FK is single-column SET NULL; the `TenantForeignKeyTests` carve-out S66-6 is confirmed by owner 2026-10-19). Open items S66-1..S66-5, S66-7 (§Open findings; S66-6 confirmed by owner; S66-5 and 06 CR-23 stay deferred owner review). Next (backend): coordinator assigns.
+
 ### Superseded backend Next clause (2026-10-20, replaced when the Session 70 02.8.2-T2 PR opened)
 
 Replaced text (verbatim), the tail of the Session 67 backend Resume bullet:
@@ -1476,3 +1488,9 @@ Replaced text (verbatim): the pre-merge Resume bullet (rewritten in place as clo
 Also replaced (verbatim), the `Next (backend)` sentence of the Session 67 Resume bullet (`STATUS.md` L17), which still said the task was in review:
 
 - **Backend (Session 67 closed, merged #257 → `develop` `ddb05b38`; branch `feature/02.8.2-T1-s67` from `develop` `fa6c0aa2`, merged develop `c53efc0c`):** **02.8.2-T1** auto-approval gate engine: Domain `Stories/Gates` (15 true-crime / 13 fiction story checks, 10 video checks, threshold profile overlay `default`/`strict`), `StoryGateEvaluator`/`VideoGateEvaluator` behind an `IAutoApprovalGate` facade, `GateResultWriter` (`gates.v1` into `autopilot_runs.gate_results`), `GateOutcomeRecorder`, `AutopilotApprovalService` (sends the same `ApproveStoryCommand`/`ApproveVideoCommand` under `ISystemContext.For(owner)`; the story ETag is bound to the evaluated version and the video `IfMatch` comes from the checked snapshot), `AutopilotNotificationService` (owner e-mail + audit + outbox in the verdict's own transaction; the handler only publishes realtime), `GateFailureStreakReader`, options/metrics/DI in Api and Worker, `AutopilotRun.RecordGateResults`/`RaiseOwnerActionRequired`, and a defence-in-depth `trueCrime && Source == Autopilot` guard in `ApproveStoryCommandHandler`. No migration, no public route, `openapi.json`/`web/openapi.json` untouched, `Autopilot:Gates:DryRun` defaults true. Gates: build-only and targeted remote runs `GATE_RC=0`, full remote `GATE_RC=0` on `98df4ada`. T3 gates: QA agent (defect D1 fixed), code review 15, perf 5, security 9, one `judge_batch` triage (`typesafe/jev-1.13.0`, 27/27, USD 0.0005), 19 fixed, delta review: R1 and R2 regressions fixed, R3 and R4 open as S67-8 and S67-9. Open items S67-1..S67-9 (§Open findings); contract deviations in the task §Notes. Next (backend): 02.8.2-T2 is in review (PR #263, not merged); after it merges, 02.8.2-T3 (thresholds config + dry-run calibration) or 02.8.3-T1.
+
+## Session 73 close-out (2026-10-21)
+
+Replaced Resume header (Session 73 bullet, PR open state), verbatim:
+
+- **Backend (Session 73, PR #265 open, not merged; `feature/06.4.1-T1-s73` from `develop` `3e168ca5`):**

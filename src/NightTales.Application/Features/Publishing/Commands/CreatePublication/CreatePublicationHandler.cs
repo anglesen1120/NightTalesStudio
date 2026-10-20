@@ -4,6 +4,7 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Publishing;
@@ -15,9 +16,9 @@ namespace NightTales.Application.Features.Publishing.Commands.CreatePublication;
 
 /// <summary>
 /// Creates an episode's publication in <c>awaiting_consent</c> (06.2.1-T1 task §Application steps 1-10, 06 README
-/// D6/D11/D12/D13/D17): reads the episode, the connection and the render's music attribution, refuses a metadata
-/// set YouTube would reject, resolves the veto window of an autopilot create, applies the pre-audit privacy
-/// override and writes the row, its outbox message and its audit row in one transaction.
+/// D6/D11/D12/D13/D17): reads the episode, locks and reads the connection, reads the render's music attribution,
+/// refuses a metadata set YouTube would reject, resolves the veto window of an autopilot create, applies the
+/// pre-audit privacy override and writes the row, its outbox message and its audit row in one transaction.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,6 +27,16 @@ namespace NightTales.Application.Features.Publishing.Commands.CreatePublication;
 /// <c>public</c> is checked as <c>public</c>, and only then is the effective value chosen — otherwise a
 /// pre-audit client could never be told that the privacy it asked for is not the privacy it will get, and the
 /// <c>platform_payload</c> stamp would hide the very value the check had to see.
+/// </para>
+/// <para>
+/// <b>The one row lock, and where it sits.</b> The connection is read through
+/// <see cref="IChannelConnectionLocker.LockByIdAsync"/> — the same <c>FOR UPDATE</c> the disconnect (06.4.1-T1),
+/// the reconnect and <see cref="ITokenService"/> take — <em>before</em> its status is decided on (STATUS S66-3:
+/// an unlocked read could see <c>active</c>, be overtaken by a disconnect that snapshots the publications not
+/// yet inserted, and then commit a publication the cascade never cancelled). The episode read above it takes no
+/// lock, and the only lock this command takes after the connection's is the one the insert itself takes on the
+/// same row (its foreign key's key-share lock), so the order here is <c>channel_connections</c> →
+/// <c>publications</c> — the order the disconnect's cascade uses too, and the reverse of no path.
 /// </para>
 /// <para>
 /// <b>Why the handler flushes.</b> Step 8 saves inside the handler although the pipeline's
@@ -41,11 +52,16 @@ namespace NightTales.Application.Features.Publishing.Commands.CreatePublication;
 /// code for the same reason.
 /// </para>
 /// </remarks>
+/// <param name="locker">
+/// The connection's row lock (<see cref="IChannelConnectionLocker.LockByIdAsync"/>, the lock the disconnect, the
+/// reconnect and <see cref="ITokenService"/> take): the status this command decides on is read under it.
+/// </param>
 /// <param name="db">The tracked write model; the tenant filter is what turns "another owner's row" into a 404.</param>
 /// <param name="options">The <c>YouTube</c> section (06 README D11): the audit status, the publish lead time and the minimum veto window.</param>
 /// <param name="clock">The scope's clock; one instant is read for the whole command.</param>
 /// <param name="logger">The id-only log lines of this path.</param>
 public sealed partial class CreatePublicationHandler(
+    IChannelConnectionLocker locker,
     IAppDbContext db,
     YouTubeOptions options,
     IClock clock,
@@ -95,9 +111,15 @@ public sealed partial class CreatePublicationHandler(
             return PublicationErrors.EpisodeInvalidState();
         }
 
-        // Step 3: the connection, owner-scoped as well; a revoked, expired or error row is channel_not_active.
-        var connection = await db.ChannelConnections
-            .SingleOrDefaultAsync(row => row.Id == command.ChannelConnectionId, cancellationToken)
+        // Step 3: the connection, locked before its status is read. The lock is the one the disconnect, the
+        // reconnect and the token refresh take (IChannelConnectionLocker, the table's only locking protocol), so a
+        // create either runs entirely before a disconnect — its row is then in the set the cascade snapshots — or
+        // waits for it and reads the revoked row it committed. Without it, a create that read `active` before the
+        // disconnect's snapshot could insert afterwards and commit an awaiting_consent publication nobody ever
+        // cancels (STATUS S66-3). It also scopes the read to the caller: another owner's id, an unknown id and an
+        // anonymous scope all lock nothing and answer the same 404.
+        var connection = await locker
+            .LockByIdAsync(command.ChannelConnectionId, cancellationToken)
             .ConfigureAwait(false);
 
         if (connection is null)
@@ -105,6 +127,8 @@ public sealed partial class CreatePublicationHandler(
             return Errors.NotFound();
         }
 
+        // A revoked, expired or error row is channel_not_active — evaluated on the locked row, never on a
+        // snapshot read before the lock was taken.
         if (connection.Status != ChannelConnectionStatus.Active)
         {
             return PublicationErrors.ChannelNotActive();
