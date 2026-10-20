@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Gates;
@@ -421,5 +422,253 @@ public sealed class RealWorldSignalDetectorTests
         RealWorldOptions.Defaults.IncidentWords.ShouldContain("vụ án");
         RealWorldOptions.Defaults.IncidentWords.ShouldContain("murder case");
         RealWorldOptions.Defaults.IncidentWords.Count.ShouldBe(23);
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_EnglishMonthAndYearWithIncidentWord_Hits()
+    {
+        // The task file's own example hit (§"Real-world detection"): a month and a year, no day.
+        var taskFileExample = StoryTextSegments.Create(
+            null,
+            "In March 2019 the murder case was reopened.",
+            [],
+            null,
+            null);
+
+        var hit = RealWorldSignalDetector.Detect(taskFileExample, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem();
+        hit.Kind.ShouldBe(RealWorldSignalKind.DatedIncident);
+        hit.MatchedPhrase.ShouldBe("murder case");
+
+        // The abbreviation and the comma spelling are the same shape, so they hit for the same reason.
+        foreach (var text in new[]
+                 {
+                     "In Mar 2019 the murder case was reopened.",
+                     "In March, 2019 the murder case was reopened.",
+                 })
+        {
+            var segments = StoryTextSegments.Create(null, text, [], null, null);
+
+            RealWorldSignalDetector.Detect(segments, EnFraming, NoClaims, RealWorldOptions.Defaults)
+                .Hits.ShouldHaveSingleItem().Kind.ShouldBe(RealWorldSignalKind.DatedIncident);
+        }
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_VietnameseMonthAndYearWithIncidentWord_Hits()
+    {
+        // The vi counterpart of the same shape: "tháng 3 năm 2019" and its numeric spelling "tháng 3/2019".
+        foreach (var text in new[]
+                 {
+                     "Tháng 3 năm 2019 cảnh sát mở lại hồ sơ vụ án.",
+                     "Tháng 3/2019 cảnh sát mở lại hồ sơ vụ án.",
+                 })
+        {
+            var segments = StoryTextSegments.Create(null, text, [], null, null);
+
+            var hit = RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults)
+                .Hits.ShouldHaveSingleItem();
+            hit.Kind.ShouldBe(RealWorldSignalKind.DatedIncident);
+            hit.MatchedPhrase.ShouldBe("vụ án");
+        }
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_MonthWithoutYear_NoHit()
+    {
+        // A month name alone is not a date, even next to an incident word: the year is what makes it specific.
+        var english = StoryTextSegments.Create(
+            null,
+            "In March the ship left, and the murder case stayed open for years.",
+            [],
+            null,
+            null);
+        RealWorldSignalDetector.Detect(english, EnFraming, NoClaims, RealWorldOptions.Defaults).Hit.ShouldBeFalse();
+
+        var vietnamese = StoryTextSegments.Create(null, "Tháng 3 cảnh sát mở lại hồ sơ vụ án.", [], null, null);
+        RealWorldSignalDetector.Detect(vietnamese, ViFraming, NoClaims, RealWorldOptions.Defaults).Hit.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_ModalMayWithYear_IsAcceptedFailClosedNoise()
+    {
+        // Documented noise (RealWorldOptions): "may" is a month name and a modal verb, so "may 2019" reads as a date.
+        // In a segment that also holds an incident word that is a hit — a missed real-world claim costs more than
+        // the owner review it triggers.
+        var segments = StoryTextSegments.Create(
+            null,
+            "They may 2019 have been wrong about the murder case.",
+            [],
+            null,
+            null);
+
+        RealWorldSignalDetector.Detect(segments, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("murder case");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_MonthAndYearInAnotherSegmentThanIncident_NoHit()
+    {
+        // The co-occurrence rule is per segment for the month-and-year shape too.
+        var segments = StoryTextSegments.Create(
+            "March 2019",
+            "The harbour was quiet.",
+            ["A man walked to the pier.", "The murder case was never closed."],
+            "Nothing was proven.",
+            null);
+
+        RealWorldSignalDetector.Detect(segments, EnFraming, NoClaims, RealWorldOptions.Defaults).Hit.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_NumericMonthAndYear_IsNotADate()
+    {
+        // "3/2019" is as likely a chapter count as a date, so it is deliberately not a date pattern in either mode.
+        var segments = StoryTextSegments.Create(
+            null,
+            "Hồ sơ số 3/2019 vẫn mở: một vụ án chưa có lời giải.",
+            [],
+            null,
+            null);
+
+        RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults).Hit.ShouldBeFalse();
+        RealWorldSignalDetector.Detect(
+                segments,
+                ViFraming,
+                NoClaims,
+                RealWorldOptions.Defaults with { RequireIncidentCoOccurrence = false })
+            .Hit.ShouldBeFalse("a bare month/year number is never a specific date");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_NonBreakingSpaceBetweenWords_StillHits()
+    {
+        // Owner text pasted from Word or a web page carries U+00A0 between words: the phrase still matches, and the
+        // evidence is the raw segment with its NBSP rather than the prepared form.
+        var text = "Đây là câu chuyện dựa\u00A0trên sự kiện có thật.";
+        var segments = StoryTextSegments.Create(null, text, [], null, null);
+
+        var hit = RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem();
+        hit.MatchedPhrase.ShouldBe("dựa trên sự kiện có thật");
+        hit.Segment.ShouldBe("hook");
+        hit.Evidence.ShouldBe(text);
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_DoubleSpaceAndLineBreakInsidePhrase_StillHits()
+    {
+        // A double space, and a line break on its own (the common shape of owner text pasted from a web page).
+        var doubleSpace = StoryTextSegments.Create(
+            null,
+            "The podcast is based  on real events from a small town.",
+            [],
+            null,
+            null);
+        RealWorldSignalDetector.Detect(doubleSpace, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("based on real events");
+
+        var lineBreak = StoryTextSegments.Create(
+            null,
+            "The podcast is based on\nreal events from a small town.",
+            [],
+            null,
+            null);
+        RealWorldSignalDetector.Detect(lineBreak, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("based on real events");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_ZeroWidthSpaceInsideWord_StillHits()
+    {
+        var segments = StoryTextSegments.Create(null, "This is a tr\u200Bue story about a boat.", [], null, null);
+
+        RealWorldSignalDetector.Detect(segments, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("true story");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_SoftHyphenAndTabInsidePhrase_StillHits()
+    {
+        var softHyphen = StoryTextSegments.Create(null, "This is based on real eve\u00ADnts, they said.", [], null, null);
+        RealWorldSignalDetector.Detect(softHyphen, EnFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("based on real events");
+
+        var tabbed = StoryTextSegments.Create(null, "Đây là chuyện\tcó thật.", [], null, null);
+        RealWorldSignalDetector.Detect(tabbed, ViFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("chuyện có thật");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_DecomposedIncidentWordWithDate_Hits()
+    {
+        // The configured incident word may arrive decomposed (an owner editing appsettings in a non-NFC editor).
+        var incidentWord = "vụ án".Normalize(NormalizationForm.FormD);
+        var segments = StoryTextSegments.Create(
+            null,
+            "Ngày 12/3/2019, cảnh sát xác định đây là vụ án chưa có lời giải.",
+            [],
+            null,
+            null);
+
+        var hit = RealWorldSignalDetector.Detect(
+                segments,
+                ViFraming,
+                NoClaims,
+                RealWorldOptions.Defaults with { IncidentWords = [incidentWord] })
+            .Hits.ShouldHaveSingleItem();
+        hit.Kind.ShouldBe(RealWorldSignalKind.DatedIncident);
+        hit.MatchedPhrase.ShouldBe(incidentWord);
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_IncidentWordWithZeroWidthSpaceNextToDate_Hits()
+    {
+        var segments = StoryTextSegments.Create(
+            null,
+            "Ngày 12/3/2019, cảnh sát xác định đây là vụ\u200B án.",
+            [],
+            null,
+            null);
+
+        RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem().MatchedPhrase.ShouldBe("vụ án");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_InvisibleCharactersKeepEvidenceRawAndTheSegmentId()
+    {
+        // The prepared text is shorter than the raw one (a dropped ZWSP, a collapsed double space): the hit still
+        // quotes the raw draft around the match and keeps the D22 segment id.
+        var paragraph = string.Concat(Enumerable.Repeat("Một đoạn văn dài không có dấu hiệu nào.  ", 12))
+            + "Cuối cùng thì đây là chuyện\u200B có thật.";
+        var segments = StoryTextSegments.Create(null, null, [paragraph], null, null);
+
+        var hit = RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults)
+            .Hits.ShouldHaveSingleItem();
+
+        hit.Segment.ShouldBe("p:0");
+        hit.Evidence.Length.ShouldBeLessThanOrEqualTo(ValidationIssue.MaxEvidenceChars);
+        paragraph.ShouldContain(hit.Evidence);
+        hit.Evidence.ShouldContain("chuyện");
+        hit.Evidence.ShouldContain("có thật");
+    }
+
+    [Fact]
+    public void RealWorldSignalDetector_HugeInvisibleCharacterRun_StaysLinear()
+    {
+        // Hostile input of a new shape after the hardening: a megabyte of zero-width spaces is dropped in one pass,
+        // not walked once per phrase.
+        var block = string.Concat(Enumerable.Repeat("\u200B", 1_000_000));
+        var segments = StoryTextSegments.Create(null, block + "Đây là chuyện có thật.", [], null, null);
+
+        var watch = Stopwatch.StartNew();
+        var signal = RealWorldSignalDetector.Detect(segments, ViFraming, NoClaims, RealWorldOptions.Defaults);
+        watch.Stop();
+
+        signal.Hits.ShouldHaveSingleItem().Segment.ShouldBe("hook");
+        watch.Elapsed.ShouldBeLessThan(
+            TimeSpan.FromSeconds(20),
+            "dropping invisible code points is one linear pass, like every other scan");
     }
 }

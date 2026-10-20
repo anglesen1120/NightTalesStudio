@@ -27,8 +27,13 @@ public sealed partial class ScenePromptExpander(ILogger<ScenePromptExpander> log
 {
     /// <summary>Expands every keyword of <paramref name="keywords"/> into its moderation text.</summary>
     /// <param name="style">The style template the run resolved (03 README D1).</param>
-    /// <param name="keywords">The story's keywords, in order; a <see langword="null"/> entry is skipped.</param>
-    /// <returns>One moderation text per non-null keyword, in the same order.</returns>
+    /// <param name="keywords">The story's keywords, in order.</param>
+    /// <returns>
+    /// One moderation text per keyword, in the same order, so index <c>i</c> is always the keyword at position
+    /// <c>i</c> and a flagged prompt names the scene the owner edited (<c>scene:i</c>). A <see langword="null"/>
+    /// keyword yields <see cref="string.Empty"/> at its own position — the gate skips a blank text — instead of
+    /// renumbering every scene after it.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="style"/> or <paramref name="keywords"/> is <see langword="null"/>.</exception>
     public IReadOnlyList<string> Expand(StyleTemplate style, IReadOnlyList<string> keywords)
     {
@@ -45,6 +50,8 @@ public sealed partial class ScenePromptExpander(ILogger<ScenePromptExpander> log
         {
             if (keyword is null)
             {
+                prompts.Add(string.Empty);
+
                 continue;
             }
 

@@ -75,9 +75,11 @@ public sealed class StoryTextSegments : IReadOnlyList<StoryTextSegment>
 
     /// <summary>
     /// Assembles the segments from a stored <c>story.v1</c> document, the shape <c>story_versions.content</c>
-    /// carries. <c>meta</c> is the description followed by the tags, one per line, so no phrase can match across
-    /// the join; the similarity projection deliberately excludes the metadata, this one does not, because a
-    /// description that says "based on real events" is exactly the F31 signal.
+    /// carries. <c>meta</c> is the description followed by the tags, one per line. The detector collapses every
+    /// whitespace run (a line break included) to one space, so the join behaves like a space: a phrase that runs
+    /// from the end of the description into the first tag is matched on purpose (fail closed). The similarity
+    /// projection deliberately excludes the metadata, this one does not, because a description that says "based
+    /// on real events" is exactly the F31 signal.
     /// </summary>
     /// <param name="content">The stored content, or null.</param>
     /// <returns>The populated segments, or <see cref="Empty"/> when there is no content.</returns>

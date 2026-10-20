@@ -23,7 +23,8 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <param name="RealWorldKinds">The kinds of the signals that fired, as their wire names, once each.</param>
 /// <param name="RealWorldSegments">
 /// The D22 ids the signals fired on (<c>title</c>, <c>hook</c>, <c>p:&lt;i&gt;</c>, <c>ending</c>, <c>meta</c>), once
-/// each and in hit order; empty for a clean story or a claim with no readable address.
+/// each and in hit order; empty for a clean story, and an address outside that shape (a claim's own wording, say) is
+/// never listed — the hit it belongs to still counts in <paramref name="RealWorldKinds"/>.
 /// </param>
 /// <param name="ModerationFlagged">The content gate's own verdict over the current content (plan §3.1 check 7).</param>
 /// <param name="ModerationCategories">The blocking category names of the verdict, and nothing else.</param>

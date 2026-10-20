@@ -1,9 +1,9 @@
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Features.Autopilot.Gates;
-using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Stories.Gates;
 using Shouldly;
@@ -13,8 +13,8 @@ namespace NightTales.Application.UnitTests.Features.Autopilot.Gates;
 
 /// <summary>
 /// <see cref="AutopilotModerationGate"/> (02.8.2-T2): the per-category threshold rules of decision 5, the
-/// fail-closed paths, the chunking that keeps a D22 segment address, the one evidence row per failing chunk and
-/// the counter T3 calibrates with. Transport-free: a scripted moderator and a recording event writer (D20).
+/// fail-closed paths, the packing and splitting that keep a D22 segment address, the attribution rows and the
+/// counter T3 calibrates with. Transport-free: a scripted moderator and a recording event writer (D20).
 /// </summary>
 public sealed class AutopilotModerationGateTests
 {
@@ -40,7 +40,9 @@ public sealed class AutopilotModerationGateTests
         verdict.FlaggedSegments.ShouldBeEmpty();
         moderator.Checks.Count.ShouldBe(1);
         moderator.Stages.ShouldAllBe(stage => stage == ModerationStage.AutopilotGate);
-        moderator.Checks[0].ShouldBe(["Title", "Hook", "Para one.", "Para two.", "Ending", "meta text", "scene text"]);
+        moderator.Checks[0].ShouldBe(
+            ["Title\n\nHook\n\nPara one.\n\nPara two.\n\nEnding", "meta text", "scene text"],
+            "the narration is one packed text, the metadata and the scene prompt stay their own (SEC-02)");
         events.Items.ShouldBeEmpty();
     }
 
@@ -152,10 +154,8 @@ public sealed class AutopilotModerationGateTests
             UserId,
             EpisodeId,
             VersionId,
-            Language.Vi,
             StoryTextSegments.Create("  ", null, [""], null, null),
             ["", "   "],
-            "dark-folklore-ink",
             AutopilotGateProfile.Defaults);
 
         var verdict = await CheckAsync(gate, blank);
@@ -185,10 +185,8 @@ public sealed class AutopilotModerationGateTests
                 UserId,
                 EpisodeId,
                 VersionId,
-                Language.Vi,
                 StoryTextSegments.Create(long3Paragraphs, null, [], null, null),
                 [],
-                "dark-folklore-ink",
                 AutopilotGateProfile.Defaults));
 
         verdict.Flagged.ShouldBeFalse();
@@ -216,10 +214,8 @@ public sealed class AutopilotModerationGateTests
                 UserId,
                 EpisodeId,
                 VersionId,
-                Language.Vi,
                 StoryTextSegments.Create(withPair, withCombining, [], null, null),
                 [],
-                "dark-folklore-ink",
                 AutopilotGateProfile.Defaults));
 
         var chunks = moderator.Checks[0];
@@ -227,6 +223,339 @@ public sealed class AutopilotModerationGateTests
         chunks.ShouldAllBe(chunk => !char.IsHighSurrogate(chunk[chunk.Length - 1]) && !char.IsLowSurrogate(chunk[0]));
         chunks.ShouldContain(chunk => chunk.Contains("\U0001F600", StringComparison.Ordinal), "the pair stays whole");
         chunks.ShouldContain(chunk => chunk.Contains("e\u0301", StringComparison.Ordinal), "the combining sequence stays whole");
+    }
+
+    /// <summary>
+    /// A break near the start of the text is never taken (D2): taking it would leave the next start at or behind
+    /// this one, because every next piece steps back by the 200-character overlap, and the split would then emit a
+    /// near-duplicate piece per character for the rest of the window. Only a break in the last 20% of the window
+    /// may end a piece, so this text is split into full-cap pieces instead.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_EarlyBreakFollowedByALongRun_StepsByTheOverlap()
+    {
+        const int cap = ModerationOptions.MinCharsPerChunk;
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Clean();
+        var gate = Gate(moderator, new RecordingEvents(), metrics, maxCharsPerChunk: cap);
+        var text = "short\n\n" + new string('x', 4000);
+
+        var verdict = await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(text, null, [], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        verdict.Flagged.ShouldBeFalse();
+        moderator.Checks.Count.ShouldBe(1, "one batch call: the pieces travel together");
+        var chunks = moderator.Checks[0];
+        chunks.ShouldAllBe(chunk => chunk.Length <= cap);
+        chunks[0].ShouldStartWith("short\n\n", Case.Sensitive, "the early break is inside the first piece, not a cut");
+        chunks.Count.ShouldBe(13, $"a break in the first characters must not cost extra pieces; lengths=[{Lengths(chunks)}]");
+        chunks.Take(12).ShouldAllBe(chunk => chunk.Length == cap, $"lengths=[{Lengths(chunks)}]");
+        chunks[^1].Length.ShouldBe(text.Length - (12 * (cap - 200)), $"lengths=[{Lengths(chunks)}]");
+
+        // The pieces are runs of one repeated letter, so an occurrence search would find the first equal run
+        // instead of the piece's own offset: the offsets are walked arithmetically instead.
+        var offset = 0;
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            text.Substring(offset, chunks[index].Length).ShouldBe(chunks[index], $"piece {index} at {offset}");
+            if (index < chunks.Count - 1)
+            {
+                offset += chunks[index].Length - 200;
+            }
+        }
+
+        (offset + chunks[^1].Length).ShouldBe(text.Length, "the last piece reaches the end");
+    }
+
+    /// <summary>
+    /// A long whitespace-free text (the failure table's "single paragraph longer than the limit") is hard-cut into
+    /// full-cap pieces that overlap by 200 characters: one piece per 300 characters, never one per character (D2),
+    /// and the final piece reaches the end of the text.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_SplitsALongWhitespaceFreeText_WithoutCrawling()
+    {
+        const int cap = ModerationOptions.MinCharsPerChunk;
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Clean();
+        var gate = Gate(moderator, new RecordingEvents(), metrics, maxCharsPerChunk: cap);
+        var text = new string('q', 2000);
+
+        await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [text], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        var chunks = moderator.Checks[0];
+        chunks.Count.ShouldBe(6, $"500 characters of step per piece; lengths=[{Lengths(chunks)}]");
+        chunks.ShouldAllBe(chunk => chunk.Length == cap, $"lengths=[{Lengths(chunks)}]");
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            chunks[index].ShouldBe(text.Substring(index * (cap - 200), cap));
+        }
+    }
+
+    /// <summary>
+    /// A text whose only breaks are line breaks is cut on them when they fall in the last 20% of the window: each
+    /// piece then ends where a line ends — never mid-line — and the pieces still overlap.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_SplitsOnLineBreaks_WhenTheBreakIsLateInTheWindow()
+    {
+        const int cap = ModerationOptions.MinCharsPerChunk;
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Clean();
+        var gate = Gate(moderator, new RecordingEvents(), metrics, maxCharsPerChunk: cap);
+        const string line = "0123456789";
+        var text = string.Join('\n', Enumerable.Repeat(line, 10).Select(static value => string.Concat(Enumerable.Repeat(value, 10))));
+        text.Length.ShouldBe((10 * 100) + 9);
+
+        await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [text], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        var chunks = moderator.Checks[0];
+        chunks.ShouldAllBe(chunk => chunk.Length <= cap);
+        chunks.Count.ShouldBe(4, $"one piece per ~400 characters, not one per line; lengths=[{Lengths(chunks)}]");
+
+        // Every line is identical, so an occurrence search would find the first equal run instead of the piece's
+        // own offset: the offsets are walked arithmetically, and the cut positions are checked against the text.
+        var offset = 0;
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            text.Substring(offset, chunks[index].Length).ShouldBe(chunks[index], $"piece {index} at {offset}");
+            var end = offset + chunks[index].Length;
+            if (index < chunks.Count - 1)
+            {
+                text[end].ShouldBe('\n', $"piece {index} must end where a line ends, never mid-line");
+                offset += chunks[index].Length - 200;
+            }
+            else
+            {
+                end.ShouldBe(text.Length, "the last piece reaches the end of the text");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A combining mark may never begin a piece: the base letter it belongs to stays in the piece before it, which
+    /// therefore ends one character short of the cap instead of splitting the grapheme cluster.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_CombiningSequenceAtTheCut_KeepsTheClusterWhole()
+    {
+        const int cap = ModerationOptions.MinCharsPerChunk;
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Clean();
+        var gate = Gate(moderator, new RecordingEvents(), metrics, maxCharsPerChunk: cap);
+        var text = new string('a', cap) + "\u0301" + new string('b', 200);
+
+        await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [text], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        var chunks = moderator.Checks[0];
+        chunks.Count.ShouldBe(2, $"lengths=[{Lengths(chunks)}]");
+        chunks[0].Length.ShouldBe(cap - 1, "the cut steps back over the base letter of the combining mark");
+        chunks[0].ShouldBe(new string('a', cap - 1));
+        text[chunks[0].Length].ShouldBe('a', "the cut stops before the base letter of the mark");
+        text[chunks[0].Length + 1].ShouldBe('\u0301', "the mark stays behind its base, never alone");
+        chunks[1].ShouldContain("a\u0301", Case.Sensitive, "the cluster stays whole in one piece");
+        chunks.ShouldAllBe(chunk => chunk.Length > 0 && !IsCombiningMark(chunk[0]));
+    }
+
+    private static bool IsCombiningMark(char value) =>
+        CharUnicodeInfo.GetUnicodeCategory(value) is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.EnclosingMark;
+
+    /// <summary>
+    /// An astral character followed by a variation selector is one cluster of three characters: the cut must step
+    /// back over the mark AND then over the surrogate pair, never leaving a lone high surrogate at the end of a
+    /// piece (the mark walk alone would undo the pair check).
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_AstralClusterAtTheCut_KeepsTheSurrogatePairWhole()
+    {
+        const int cap = ModerationOptions.MinCharsPerChunk;
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Clean();
+        var gate = Gate(moderator, new RecordingEvents(), metrics, maxCharsPerChunk: cap);
+        var text = new string('a', cap - 2) + "\U0001F600\uFE0F" + new string('b', 200);
+
+        await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [text], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        var chunks = moderator.Checks[0];
+        chunks.Count.ShouldBe(2, $"lengths=[{Lengths(chunks)}]");
+        chunks[0].Length.ShouldBe(cap - 2, "the cut steps back over the mark and then over the whole pair");
+        chunks[0].ShouldBe(new string('a', cap - 2));
+        char.IsHighSurrogate(text[chunks[0].Length]).ShouldBeTrue("the pair starts at the cut, whole");
+        char.IsLowSurrogate(text[chunks[0].Length + 1]).ShouldBeTrue("the pair stays together");
+        chunks[1].ShouldContain("\U0001F600\uFE0F", Case.Sensitive, "the cluster stays whole in one piece");
+        chunks.ShouldAllBe(
+            chunk => !char.IsHighSurrogate(chunk[^1]) && !char.IsLowSurrogate(chunk[0]) && !IsCombiningMark(chunk[0]));
+    }
+
+    private static string Lengths(IReadOnlyList<string> chunks) =>
+        string.Join(",", chunks.Select(chunk => chunk.Length));
+
+    /// <summary>
+    /// A failing packed chunk is narrowed segment by segment, so the owner is told which paragraph to re-read
+    /// rather than the three paragraphs that shared a moderator text (SEC-02): one row, one excerpt, one address.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_PackedChunk_NarrowsTheFailureToItsParagraph()
+    {
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Clean()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Clean();
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics, maxCharsPerChunk: ModerationOptions.MinCharsPerChunk);
+        var first = "First paragraph. " + new string('a', 200);
+        var second = "Second paragraph. " + new string('b', 200);
+        var third = "Third paragraph. " + new string('c', 200);
+
+        var verdict = await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [first, second, third], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        verdict.Flagged.ShouldBeTrue();
+        verdict.FlaggedSegments.ShouldBe(["p:1"], "the packed text is narrowed to the paragraph that failed");
+        moderator.Checks.Count.ShouldBe(5, "one union call, one per chunk, then the packed chunk's segments");
+        events.Items.ShouldHaveSingleItem().OwnText.ShouldBe(second);
+    }
+
+    /// <summary>
+    /// When no segment of a packed chunk fails on its own, the combination did: the whole chunk is the failing unit
+    /// — every address it holds is named and its opening characters are the excerpt, so the owner still has the
+    /// text to look at.
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_PackedChunkWithNoIndividualFailure_NamesEverySegment()
+    {
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Clean()
+            .Clean()
+            .Clean();
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics, maxCharsPerChunk: ModerationOptions.MinCharsPerChunk);
+        var first = "First paragraph. " + new string('a', 200);
+        var second = "Second paragraph. " + new string('b', 200);
+        var third = "Third paragraph. " + new string('c', 200);
+
+        var verdict = await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [first, second, third], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        verdict.Flagged.ShouldBeTrue();
+        verdict.FlaggedSegments.ShouldBe(["p:0", "p:1"], "the packed text is the failing unit");
+        events.Items.ShouldHaveSingleItem().OwnText.ShouldBe($"{first}\n\n{second}");
+    }
+
+    /// <summary>
+    /// Overlapping pieces of one oversized segment are the same evidence: the gate writes one row per
+    /// (segment set, categories) pair, not one per piece, so a long failing paragraph cannot flood the table with
+    /// near-duplicate excerpts (SEC-02/P2).
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_OverlappingPieces_WriteOneEvidenceRow()
+    {
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator()
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate")
+            .Verdict(flagged: true, Scores(("hate", 0.9)), "hate");
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics, maxCharsPerChunk: ModerationOptions.MinCharsPerChunk);
+
+        var verdict = await CheckAsync(
+            gate,
+            new AutopilotContentGateRequest(
+                UserId,
+                EpisodeId,
+                VersionId,
+                StoryTextSegments.Create(null, null, [new string('q', 1350)], null, null),
+                [],
+                AutopilotGateProfile.Defaults));
+
+        verdict.Flagged.ShouldBeTrue();
+        verdict.FlaggedSegments.ShouldBe(["p:0"]);
+        moderator.Checks.Count.ShouldBe(5, "one union call and one per piece");
+        events.Items.ShouldHaveSingleItem("four pieces of one segment are one evidence row");
+    }
+
+    /// <summary>
+    /// A provider flag whose category carries no score cannot be compared against the profile's ceiling, so it is
+    /// an unverifiable flag and fails closed (SEC-02/SEC-04): a missing <c>category_scores</c> entry must never read
+    /// as "within the ceiling".
+    /// </summary>
+    [Fact]
+    public async Task AutopilotModerationGate_FlaggedCategoryWithoutScore_FailsClosed()
+    {
+        using var metrics = new ContentGateMetrics();
+        var moderator = new ScriptedModerator().Verdict(flagged: true, Scores(), "violence");
+        var events = new RecordingEvents();
+        var gate = Gate(moderator, events, metrics);
+
+        var verdict = await CheckAsync(gate, SingleTextRequest());
+
+        verdict.Flagged.ShouldBeTrue("a flag with no score is unverifiable, not a pass");
+        verdict.Categories.ShouldBe(["violence"]);
+        verdict.FlaggedSegments.ShouldBe(["title"]);
+        events.Items.ShouldHaveSingleItem().Categories.ShouldBe(["violence"]);
     }
 
     [Fact]
@@ -248,24 +577,27 @@ public sealed class AutopilotModerationGateTests
                 UserId,
                 EpisodeId,
                 VersionId,
-                Language.Vi,
                 StoryTextSegments.Create(null, null, [first, second], null, null),
                 [],
-                "dark-folklore-ink",
                 AutopilotGateProfile.Defaults));
 
         verdict.Flagged.ShouldBeTrue();
         verdict.FlaggedSegments.ShouldBe(["p:0", "p:1"]);
         moderator.Checks.Count.ShouldBe(3, "one union check, then one per chunk to attribute");
-        events.Items.Count.ShouldBe(2, "one row per failing chunk");
+        events.Items.Count.ShouldBe(2, "one row per failing unit: each paragraph of the packed text narrowed on its own");
         events.Items[0].OwnText.ShouldBe(first);
         events.Items[1].OwnText.ShouldBe(second);
         events.Items.ShouldAllBe(item => item.EpisodeId == EpisodeId && item.UserId == UserId);
         events.Items.ShouldAllBe(item => item.Categories.SequenceEqual(new[] { "hate" }));
     }
 
+    /// <summary>
+    /// The union verdict is one answer over every text, so the gate narrows it before writing evidence: the packed
+    /// narration text is asked segment by segment and only the segment that fails on its own is named, which is what
+    /// the owner reads in the run log (D22).
+    /// </summary>
     [Fact]
-    public async Task AutopilotModerationGate_ReCheckAttributesOnlyTheFlaggedChunk()
+    public async Task AutopilotModerationGate_ReCheckAttributesOnlyTheFailingSegment()
     {
         using var metrics = new ContentGateMetrics();
         var moderator = new ScriptedModerator()
@@ -287,7 +619,7 @@ public sealed class AutopilotModerationGateTests
     }
 
     [Fact]
-    public async Task AutopilotModerationGate_UnavailableDuringReCheck_KeepsFailClosed()
+    public async Task AutopilotModerationGate_UnavailableDuringNarrowing_KeepsFailClosed()
     {
         using var metrics = new ContentGateMetrics();
         var moderator = new ScriptedModerator()
@@ -304,7 +636,7 @@ public sealed class AutopilotModerationGateTests
         verdict.Flagged.ShouldBeTrue("the union verdict failed; an attribution outage does not undo it");
         verdict.UnavailableDetail.ShouldBeNull();
         verdict.FlaggedSegments.ShouldBe(["title"]);
-        events.Items.Count.ShouldBe(1, "the chunks attributed before the outage keep their row");
+        events.Items.Count.ShouldBe(1, "the units attributed before the outage keep their row");
     }
 
     [Fact]
@@ -342,8 +674,12 @@ public sealed class AutopilotModerationGateTests
         log.Lines.ShouldAllBe(line => !line.Contains("SECRET", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// T3 reads the counter per failing unit: a packed text that narrows to two flagged paragraphs counts both of
+    /// them, and the category that only one of them breached counts once.
+    /// </summary>
     [Fact]
-    public async Task AutopilotModerationGate_CountsEachFlaggedCategoryPerFailingChunk()
+    public async Task AutopilotModerationGate_CountsEachFlaggedCategoryPerFailingUnit()
     {
         using var listener = new FlagListener();
         using var metrics = new ContentGateMetrics();
@@ -361,10 +697,8 @@ public sealed class AutopilotModerationGateTests
                 UserId,
                 EpisodeId,
                 VersionId,
-                Language.Vi,
                 StoryTextSegments.Create(null, null, [first, second], null, null),
                 [],
-                "dark-folklore-ink",
                 AutopilotGateProfile.Defaults));
 
         listener.Flags.Where(flag => flag.Category == "hate").Sum(flag => flag.Value).ShouldBe(2);
@@ -383,10 +717,8 @@ public sealed class AutopilotModerationGateTests
             UserId,
             EpisodeId,
             VersionId,
-            Language.Vi,
             StoryTextSegments.Create(title, hook, paragraphs ?? ["Para one.", "Para two."], ending, meta),
             scenes ?? ["scene text"],
-            "dark-folklore-ink",
             AutopilotGateProfile.Defaults);
 
     private static AutopilotContentGateRequest SingleTextRequest() =>
@@ -394,10 +726,8 @@ public sealed class AutopilotModerationGateTests
             UserId,
             EpisodeId,
             VersionId,
-            Language.Vi,
             StoryTextSegments.Create("Title", null, [], null, null),
             [],
-            "dark-folklore-ink",
             AutopilotGateProfile.Defaults);
 
     private static async Task<ContentGateVerdict> CheckAsync(AutopilotModerationGate gate, AutopilotContentGateRequest request)

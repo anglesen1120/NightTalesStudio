@@ -69,16 +69,22 @@ public sealed class ScenePromptExpanderTests
         log.Lines.ShouldAllBe(line => !line.Contains("cổng làng", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A null keyword keeps its own position (C9): the expander emits <see cref="string.Empty"/> there instead of
+    /// dropping the entry, so <c>scene:&lt;i&gt;</c> always names the keyword the owner edited — the gate skips a
+    /// blank text, and a flag on "con sông" reads <c>scene:2</c>, not <c>scene:1</c>.
+    /// </summary>
     [Fact]
-    public void ScenePromptExpander_NullKeyword_IsSkipped()
+    public void ScenePromptExpander_NullKeyword_KeepsTheSceneIndex()
     {
         var expander = new ScenePromptExpander(NullLogger<ScenePromptExpander>.Instance);
 
         var prompts = expander.Expand(Style(), ["cổng làng", null!, "con sông"]);
 
-        prompts.Count.ShouldBe(2);
+        prompts.Count.ShouldBe(3, "one entry per keyword, in keyword order");
+        prompts[1].ShouldBe(string.Empty, "the null keyword holds its position behind a blank text");
         prompts[0].ShouldContain("cổng làng", Case.Sensitive);
-        prompts[1].ShouldContain("con sông", Case.Sensitive);
+        prompts[2].ShouldContain("con sông", Case.Sensitive);
     }
 
     [Fact]

@@ -604,7 +604,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
     /// <param name="VersionId">The row's id.</param>
     /// <param name="WordCount">The D4 token count of the stored body (check 11).</param>
     /// <param name="Keywords">The stored keywords; only their count and their violations are read (check 12).</param>
-    /// <param name="Content">The stored <c>content</c> document (check 13, the similarity projection, the fallback moderation).</param>
+    /// <param name="Content">The stored <c>content</c> document (check 13, the similarity projection, and the parse checks 7 and 8 read).</param>
     /// <param name="AuditReport">The stored <c>audit_report</c>, or null when the row has none (checks 1–6, 8).</param>
     /// <param name="SimilarityScore"><c>story_versions.similarity_score</c> (check 9), or null when it was never computed.</param>
     /// <param name="FactSheetId">The sheet the version was written from (check 14), or null.</param>

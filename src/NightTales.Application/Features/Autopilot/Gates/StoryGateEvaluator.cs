@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,7 @@ using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Gates;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Similarity;
@@ -135,6 +137,9 @@ public sealed partial class StoryGateEvaluator(
 
     /// <summary>The error code of a past-episode corpus that could not be read: check 10 is not decided on unknown.</summary>
     public const string CorpusUnavailableErrorCode = "autopilot_gate_corpus_unavailable";
+
+    /// <summary>The prefix of a paragraph's D22 address (<c>p:0</c>, <c>p:7</c>), the one id with an index.</summary>
+    private const string ParagraphAddressPrefix = "p:";
 
     /// <summary>
     /// Evaluates the story gate of one run and, on a live pass, approves the story.
@@ -538,10 +543,8 @@ public sealed partial class StoryGateEvaluator(
             run.UserId,
             episodeId,
             versionId,
-            series.Language,
             StoryTextSegments.From(content),
             scenePrompts.Expand(style, keywords),
-            style.Name,
             profile);
 
         var metering = await MeteringContextAsync(run, episodeId, versionId, story.PriceVersion, ct).ConfigureAwait(false);
@@ -646,15 +649,33 @@ public sealed partial class StoryGateEvaluator(
             : [.. signal.Hits.Select(hit => WireName(hit.Kind)).Distinct(StringComparer.Ordinal)];
 
     // Where the signals fired, once each and in hit order: the D22 ids the owner jumps to in the editor (10.5.10).
-    // A claim whose address does not name a segment of this version carries no id and is not listed; the hit itself
-    // is still counted in RealWorldKinds, so the verdict never loses it.
+    // A model-claim hit carries the address the stored review wrote — only its length was capped there, and it was
+    // validated against the text of an older version — so an address that does not have the D22 shape names nothing
+    // to jump to and is not listed; the hit itself is still counted in RealWorldKinds, so the verdict never loses it.
     private static IReadOnlyList<string> RealWorldSegments(RealWorldSignal? signal) =>
         signal is null
             ? []
             : [.. signal.Hits
                 .Select(hit => hit.Segment)
-                .Where(segment => !string.IsNullOrWhiteSpace(segment))
+                .Where(IsSegmentAddress)
                 .Distinct(StringComparer.Ordinal)];
+
+    // The D22 shape: the four fixed ids, or `p:<digits>`. Digits only — NumberStyles.None refuses a sign, a decimal
+    // separator, a stray letter and surrounding whitespace (the review path's own rule, ReviewResultValidator), so a
+    // claim's prose never becomes an id `gate_results` lists. Only the shape is checked: an index this version no
+    // longer has (`p:7` after a revision) still has the shape and stays listed, because the editor addresses what the
+    // review wrote against.
+    private static bool IsSegmentAddress(string segment) =>
+        segment switch
+        {
+            SegmentAddress.Title or SegmentAddress.Hook or SegmentAddress.Ending or SegmentAddress.Meta => true,
+            _ => segment.StartsWith(ParagraphAddressPrefix, StringComparison.Ordinal)
+                && int.TryParse(
+                    segment.AsSpan(ParagraphAddressPrefix.Length),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out _),
+        };
 
     /// <summary>The wire name <c>gate_results</c> stores for an enum member: its snake_case form (plan §3.4).</summary>
     /// <param name="value">The enum member.</param>

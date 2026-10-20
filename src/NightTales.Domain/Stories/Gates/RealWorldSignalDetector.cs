@@ -20,17 +20,31 @@ namespace NightTales.Domain.Stories.Gates;
 /// list would both miss real people and hold every ordinary story.
 /// </para>
 /// <para>
-/// Pure and deterministic: no clock, no IO and no randomness. Matching is NFC-normalised, diacritic- and
-/// case-insensitive over <em>our own</em> draft only — the owner's brief, notes and fact statements never reach it —
-/// and every quoted fragment is at most <see cref="ValidationIssue.MaxEvidenceChars"/> characters of our text
-/// (D22), with the lexicon phrase or the incident word as the matched phrase (never the review model's wording).
+/// Pure and deterministic: no clock, no IO and no randomness. Matching is case- and diacritic-insensitive over
+/// <em>our own</em> draft only — the owner's brief, notes and fact statements never reach it — and every quoted
+/// fragment is at most <see cref="ValidationIssue.MaxEvidenceChars"/> characters of our text (D22), with the lexicon
+/// phrase or the incident word as the matched phrase (never the review model's wording).
+/// </para>
+/// <para>
+/// Text is prepared before matching, and the segment, every lexicon phrase and every incident word go through the
+/// same preparation: invisible code points (the format category and variation selectors) are dropped, every
+/// whitespace code point becomes one ASCII space and whitespace runs collapse to one, combining marks left after
+/// NFC are dropped, and letters are invariant-lower-cased. So an NBSP, a double space, a newline or tab inside a
+/// phrase, a zero-width space inside a word and a fully decomposed (NFD) Vietnamese word all match the release
+/// lexicon, and decomposed input folds to the same string as composed input. Evidence is still quoted from the raw
+/// segment through an index map (prepared position to raw position), so it carries our spelling and our invisible
+/// characters, and an empty map means the two forms are the same length and index.
 /// </para>
 /// <para>
 /// Hostile input cannot cost unbounded time: phrases and incident words are found with an ordinal search (no
 /// pattern is built from configuration), the date patterns are source-generated with
 /// <see cref="RegexOptions.NonBacktracking"/> so they are linear in the segment length, and every scan is a single
-/// left-to-right pass. Noncharacters and unpaired surrogates are dropped before the NFC step, because ICU refuses
-/// to normalise them on Linux and the detector must report on hostile text, not throw on it.
+/// left-to-right pass. Noncharacters, unpaired surrogates and invisible characters are dropped before the NFC step,
+/// because ICU refuses some input on Linux and the detector must report on hostile text, not throw on it.
+/// </para>
+/// <para>
+/// Known limit: Cyrillic and Greek homoglyphs (for example <c>а</c>, <c>е</c>, <c>о</c>, <c>р</c>, <c>с</c>) and other
+/// mixed-script confusables do not fold to their Latin lookalikes, so a phrase spelled with them is not matched.
 /// </para>
 /// </remarks>
 public static partial class RealWorldSignalDetector
@@ -269,7 +283,10 @@ public static partial class RealWorldSignalDetector
     private static bool HasDatePattern(string text) =>
         TryFirstSpecificDate(text, out _, out _) || YearOnly().IsMatch(text);
 
-    /// <summary>The leftmost specific date of the segment (day/month/year or month and year), across all patterns.</summary>
+    /// <summary>
+    /// The leftmost specific date of the segment across all patterns: a day and a month with a year, a month and a
+    /// year, or a numeric date. A bare year and a bare month/year number are not specific dates.
+    /// </summary>
     private static bool TryFirstSpecificDate(string text, out int index, out int length)
     {
         index = int.MaxValue;
@@ -277,6 +294,7 @@ public static partial class RealWorldSignalDetector
 
         Consider(ViNumericDate().Match(text), ref index, ref length);
         Consider(ViLongDate().Match(text), ref index, ref length);
+        Consider(ViMonthYear().Match(text), ref index, ref length);
         Consider(EnMonthDate().Match(text), ref index, ref length);
         Consider(EnDayMonth().Match(text), ref index, ref length);
         Consider(EnNumericDate().Match(text), ref index, ref length);
@@ -425,10 +443,10 @@ public static partial class RealWorldSignalDetector
     }
 
     /// <summary>
-    /// The text as the matcher sees it: NFC-composed, diacritic-folded and lower-cased, with a map back to the raw
-    /// segment so evidence is always quoted from the draft and not from this derived form. Folding is one character
-    /// to one character, and only the fold map's Vietnamese letters are rewritten; every other character is only
-    /// lower-cased, so the map stays exact.
+    /// The text as the matcher sees it: invisible code points dropped, whitespace collapsed to one ASCII space,
+    /// NFC-composed, diacritic-folded and lower-cased, with a map back to the raw segment so evidence is always
+    /// quoted from the draft and not from this derived form. <c>null</c> means prepared index == raw index, which is
+    /// the common case: already composed, plainly spaced text with no invisible or mark code point in it.
     /// </summary>
     private static PreparedText Prepare(string text)
     {
@@ -437,9 +455,8 @@ public static partial class RealWorldSignalDetector
             return new PreparedText(string.Empty, null);
         }
 
-        if (!HasRefusedCodePoint(text.AsSpan()) && IsComposed(text))
+        if (IsPlain(text) && IsComposed(text))
         {
-            // The common case: nothing to drop and nothing to compose, so prepared index == raw index.
             return new PreparedText(Fold(text), null);
         }
 
@@ -451,30 +468,80 @@ public static partial class RealWorldSignalDetector
             return new PreparedText(string.Empty, null);
         }
 
-        var kept = new string(filtered, 0, count);
-        var source = new int[count];
-        Array.Copy(rawIndex, source, count);
-
-        if (IsComposed(kept))
-        {
-            var fold = new StringBuilder(count);
-            for (var index = 0; index < count; index++)
-            {
-                fold.Append(Fold(kept[index]));
-            }
-
-            return new PreparedText(fold.ToString(), source);
-        }
-
-        return Compose(kept, source);
+        return ComposeAndFold(filtered.AsSpan(0, count), rawIndex);
     }
 
     /// <summary>
-    /// The slow path: text that is not NFC yet, composed one canonical unit at a time (a starter and the combining
-    /// marks that follow it), which is exactly where NFC composition happens. Each prepared character maps to the
-    /// raw index the unit started at.
+    /// Whether the text needs nothing beyond the case and diacritic fold: every code point is a BMP scalar that is
+    /// neither a noncharacter nor invisible nor a combining mark, and the only whitespace is a single ASCII space.
+    /// This is what keeps the common path free of an index map, and it is one linear pass like every other step.
     /// </summary>
-    private static PreparedText Compose(string text, int[] rawIndex)
+    private static bool IsPlain(string text)
+    {
+        var previousWasSpace = false;
+
+        for (var index = 0; index < text.Length; index++)
+        {
+            var character = text[index];
+
+            if (character == ' ')
+            {
+                if (previousWasSpace)
+                {
+                    return false;
+                }
+
+                previousWasSpace = true;
+                continue;
+            }
+
+            previousWasSpace = false;
+
+            if (character < '\u0080')
+            {
+                // Only a printable ASCII code point is plain: a tab, a line break or a form feed is whitespace and
+                // has to be collapsed like any other whitespace run.
+                if (char.IsWhiteSpace(character))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            // A surrogate pair takes the slow path as well: folding a supplementary letter can move it between
+            // planes, and the map back to the raw segment must stay exact.
+            var status = Rune.DecodeFromUtf16(text.AsSpan(index), out var rune, out var consumed);
+            if (status != OperationStatus.Done || consumed > 1 || NeedsPreparation(rune))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a code point changes under preparation: a noncharacter, an invisible one (format category or
+    /// variation selector), a combining mark, or whitespace other than the ASCII space.
+    /// </summary>
+    private static bool NeedsPreparation(Rune rune)
+    {
+        var category = Rune.GetUnicodeCategory(rune);
+        return BibleOpNormalizer.IsNoncharacter(rune.Value)
+            || category is UnicodeCategory.Format
+                or UnicodeCategory.NonSpacingMark
+                or UnicodeCategory.SpacingCombiningMark
+                or UnicodeCategory.EnclosingMark
+            || IsVariationSelector(rune)
+            || Rune.IsWhiteSpace(rune);
+    }
+
+    /// <summary>
+    /// The slow path: one canonical unit at a time (a starter and the combining marks that follow it), composed to
+    /// NFC, then folded, with each prepared UTF-16 unit mapped to the raw index its unit started at.
+    /// </summary>
+    private static PreparedText ComposeAndFold(ReadOnlySpan<char> text, int[] rawIndex)
     {
         var folded = new StringBuilder(text.Length);
         var source = new List<int>(text.Length);
@@ -484,28 +551,86 @@ public static partial class RealWorldSignalDetector
         {
             var unitStart = position;
             var unitRawStart = rawIndex[position];
-            Rune.DecodeFromUtf16(text.AsSpan(position), out _, out var consumed);
+            var unitStatus = Rune.DecodeFromUtf16(text[position..], out var first, out var consumed);
+            if (unitStatus != OperationStatus.Done || consumed == 0)
+            {
+                // Filter only keeps whole scalars, so this is unreachable; it keeps a bad span from looping forever.
+                position++;
+                continue;
+            }
+
             position += consumed;
 
+            var marks = 0;
             while (position < text.Length)
             {
-                Rune.DecodeFromUtf16(text.AsSpan(position), out var mark, out var markConsumed);
-                if (!IsCombiningMark(mark))
+                var status = Rune.DecodeFromUtf16(text[position..], out var mark, out var markConsumed);
+                if (status != OperationStatus.Done || !IsCombiningMark(mark))
                 {
                     break;
                 }
 
                 position += markConsumed;
+                marks++;
             }
 
-            foreach (var character in Normalise(new string(text.AsSpan(unitStart, position - unitStart))))
+            if (marks == 0)
             {
-                folded.Append(Fold(character));
-                source.Add(unitRawStart);
+                AppendFolded(folded, source, unitRawStart, first);
+                continue;
+            }
+
+            // Exactly where NFC composition happens, and the one place a mark can lose its base: whatever mark is
+            // still a separate code point after composition cannot compose, so it is dropped and the composed and
+            // decomposed spellings of the same word fold alike.
+            var composed = Normalise(new string(text[unitStart..position]));
+            var at = 0;
+            while (at < composed.Length)
+            {
+                var status = Rune.DecodeFromUtf16(composed.AsSpan(at), out var composedRune, out var composedConsumed);
+                at += status == OperationStatus.Done ? composedConsumed : 1;
+                if (status == OperationStatus.Done)
+                {
+                    AppendFolded(folded, source, unitRawStart, composedRune);
+                }
             }
         }
 
         return new PreparedText(folded.ToString(), [.. source]);
+    }
+
+    /// <summary>
+    /// Appends one prepared code point and its raw index: a mark that composition left behind has no base to carry
+    /// and is dropped, whitespace becomes one ASCII space (a run collapses to the first one), and every other code
+    /// point takes the fold map's base letter or its invariant lower case.
+    /// </summary>
+    private static void AppendFolded(StringBuilder folded, List<int> source, int rawIndex, Rune rune)
+    {
+        if (IsCombiningMark(rune))
+        {
+            return;
+        }
+
+        if (Rune.IsWhiteSpace(rune))
+        {
+            if (folded.Length > 0 && folded[^1] == ' ')
+            {
+                return;
+            }
+
+            folded.Append(' ');
+            source.Add(rawIndex);
+            return;
+        }
+
+        Span<char> buffer = stackalloc char[2];
+        var written = Fold(rune).EncodeToUtf16(buffer);
+
+        for (var index = 0; index < written; index++)
+        {
+            folded.Append(buffer[index]);
+            source.Add(rawIndex);
+        }
     }
 
     private static string Normalise(string unit)
@@ -523,24 +648,45 @@ public static partial class RealWorldSignalDetector
     }
 
     /// <summary>
-    /// The text with every unpaired surrogate and every noncharacter removed, plus the raw index of each kept
-    /// character. Returns the number of kept UTF-16 units. The filter is what makes the NFC step safe on hostile
-    /// input (see <see cref="BibleOpNormalizer.IsNoncharacter"/>, the set the bible and keyword rules share).
+    /// The text with every unpaired surrogate, noncharacter, invisible code point (format category, variation
+    /// selector) removed, every whitespace code point mapped to one ASCII space and whitespace runs collapsed, plus
+    /// the raw index of each kept UTF-16 unit. Returns the number of kept UTF-16 units. The filter is what makes the
+    /// NFC step safe on hostile input (see <see cref="BibleOpNormalizer.IsNoncharacter"/>, the set the bible and
+    /// keyword rules share) and what keeps a pasted NBSP, a stray tab or a zero-width space from breaking a match.
     /// </summary>
     private static int Filter(string text, char[] destination, int[] rawIndex)
     {
         var position = 0;
         var count = 0;
+        var previousWasSpace = false;
 
         while (position < text.Length)
         {
             var status = Rune.DecodeFromUtf16(text.AsSpan(position), out var rune, out var consumed);
 
-            if (status != OperationStatus.Done || BibleOpNormalizer.IsNoncharacter(rune.Value))
+            if (status != OperationStatus.Done
+                || BibleOpNormalizer.IsNoncharacter(rune.Value)
+                || IsInvisible(rune))
             {
                 position += status == OperationStatus.Done ? consumed : 1;
                 continue;
             }
+
+            if (Rune.IsWhiteSpace(rune))
+            {
+                if (!previousWasSpace)
+                {
+                    destination[count] = ' ';
+                    rawIndex[count] = position;
+                    count++;
+                    previousWasSpace = true;
+                }
+
+                position += consumed;
+                continue;
+            }
+
+            previousWasSpace = false;
 
             for (var offset = 0; offset < consumed; offset++)
             {
@@ -555,24 +701,17 @@ public static partial class RealWorldSignalDetector
         return count;
     }
 
-    /// <summary>Whether a refused code point (an unpaired surrogate or a noncharacter) is present anywhere.</summary>
-    private static bool HasRefusedCodePoint(ReadOnlySpan<char> text)
-    {
-        var position = 0;
+    /// <summary>
+    /// An invisible code point: the format category (soft hyphen, zero-width space and joiners, bidi controls, BOM,
+    /// Mongolian vowel separator) and the variation selectors, which are marks but scalar-value modifiers rather
+    /// than diacritics.
+    /// </summary>
+    private static bool IsInvisible(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format || IsVariationSelector(rune);
 
-        while (position < text.Length)
-        {
-            var status = Rune.DecodeFromUtf16(text[position..], out var rune, out var consumed);
-            if (status != OperationStatus.Done || BibleOpNormalizer.IsNoncharacter(rune.Value))
-            {
-                return true;
-            }
-
-            position += consumed;
-        }
-
-        return false;
-    }
+    /// <summary>A variation selector, BMP or supplementary: it selects a glyph variant and carries no letter.</summary>
+    private static bool IsVariationSelector(Rune rune) =>
+        rune.Value is >= 0xFE00 and <= 0xFE0F or >= 0xE0100 and <= 0xE01EF;
 
     /// <summary>
     /// Whether the NFC step can be skipped: the text is already in form C, or the ICU backend refuses it, in which
@@ -595,6 +734,11 @@ public static partial class RealWorldSignalDetector
             or UnicodeCategory.SpacingCombiningMark
             or UnicodeCategory.EnclosingMark;
 
+    /// <summary>
+    /// The fast path's fold, one UTF-16 unit at a time. That path only ever sees BMP scalars that are not marks
+    /// (<see cref="IsPlain"/>), so a unit-to-unit fold is the same as <see cref="Fold(Rune)"/> and the identity map
+    /// stays exact.
+    /// </summary>
     private static string Fold(string text)
     {
         var builder = new StringBuilder(text.Length);
@@ -609,6 +753,15 @@ public static partial class RealWorldSignalDetector
     /// <summary>One character to its comparison form: the fold map's base letter, else its invariant lower case.</summary>
     private static char Fold(char character) =>
         FoldMap.TryGetValue(character, out var baseLetter) ? baseLetter : char.ToLowerInvariant(character);
+
+    /// <summary>
+    /// One code point to its comparison form: the fold map's base letter (a precomposed Vietnamese letter), else its
+    /// invariant lower case, so no machine culture can change a fold.
+    /// </summary>
+    private static Rune Fold(Rune rune) =>
+        rune.IsBmp && FoldMap.TryGetValue((char)rune.Value, out var baseLetter)
+            ? new Rune(baseLetter)
+            : Rune.ToLowerInvariant(rune);
 
     private static string Clip(string text, int maxChars)
     {
@@ -683,14 +836,25 @@ public static partial class RealWorldSignalDetector
     [GeneratedRegex(@"\bngay\s+\d{1,2}\s+thang\s+\d{1,2}(?:\s+nam\s+(?:19|20)\d{2})?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex ViLongDate();
 
+    /// <summary>
+    /// The vi month and year without a day, "tháng 3 năm 2019" or "tháng 3/2019". A bare month/year number ("3/2019")
+    /// is deliberately absent: it is as likely a chapter count as a date.
+    /// </summary>
+    /// <returns>The compiled pattern.</returns>
+    [GeneratedRegex(@"\bthang\s+\d{1,2}(?:\s+nam\s+(?:19|20)\d{2}|\s*/\s*(?:19|20)\d{2})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    private static partial Regex ViMonthYear();
+
     /// <summary>The bare vi year, "năm 2020": never a hit alone, only together with an incident word.</summary>
     /// <returns>The compiled pattern.</returns>
     [GeneratedRegex(@"\bnam\s+(?:19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex YearOnly();
 
-    /// <summary>The en month date, "March 12, 2019".</summary>
+    /// <summary>
+    /// The en month date with the day optional on either side of the month ("March 12, 2019", "March, 2019",
+    /// "March 2019", "Mar 2019"); the task file's own example hit is the month-and-year form.
+    /// </summary>
     /// <returns>The compiled pattern.</returns>
-    [GeneratedRegex(@"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2},?\s+(?:19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
+    [GeneratedRegex(@"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)[,\s]+(?:\d{1,2},?\s+)?(?:19|20)\d{2}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex EnMonthDate();
 
     /// <summary>The en day-month date, "12 March 2019".</summary>

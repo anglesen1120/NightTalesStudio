@@ -136,8 +136,8 @@ public static class StoryGateRules
             _ => new GateCheck(StoryGateCheckIds.ModerationGate, GateCheckKinds.Flag, 0, 0, true, null),
         });
 
-        // 8 — the real-world signal. T1 reads persisted model claims only, so no hit means no hit; a signal that
-        // could not be read is null and fails closed.
+        // 8 — the real-world signal (02.8.2-T2): the detector reads the current text against the framing lexicon and
+        // the stored model claims, so a null here is a signal that could not be read and fails closed.
         checks.Add(input.RealWorld switch
         {
             null => new GateCheck(StoryGateCheckIds.RealWorldSignal, GateCheckKinds.Flag, null, 0, false, GateDetailCodes.FieldAbsent),

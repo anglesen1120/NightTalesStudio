@@ -85,8 +85,9 @@ public sealed class ContentGateTests(TestDatabase database) : IntegrationTest(da
         FailedCheckIds(world.RunId).ShouldContain(StoryGateCheckIds.ModerationGate);
         StoryFlag(world.RunId, "pass").ShouldBeFalse();
 
-        // One batch call, then one per-chunk re-check per chunk (plan step 5): the batch is the gate's own text
-        // list, so the narration, the metadata and both scene prompts travel in one call.
+        // One batch call, then the attribution pass that narrows a failing packed text back to its segment
+        // (plan step 5): the batch is the gate's own text list, so the packed narration, the metadata and both
+        // scene prompts travel in one call.
         moderator.Checks[0].Texts.ShouldContain(text => text.Contains(GateRunSeed.StoryMarker, StringComparison.Ordinal));
         moderator.Checks[0].Texts.ShouldContain(scenePrompt);
 
@@ -138,6 +139,38 @@ public sealed class ContentGateTests(TestDatabase database) : IntegrationTest(da
         NoticePayloads(world).ShouldContain(OwnerActionReasons.FailedChecks);
         NoticeFailureCodes(world).ShouldContain(StoryGateCheckIds.RealWorldSignal);
         AutoApproveAuditRows(world).ShouldBe(0, "nothing is approved while a content check fails, not even in live mode");
+    }
+
+    /// <summary>
+    /// A stored model claim whose address is not a D22 id still fails check 8 — the claim is the model's statement
+    /// about the text — but it is never written into <c>gate_results.real_world.segments</c>: that list is the ids the
+    /// editor jumps to, and a claim's address is only length-capped where the review path stores it, so the gate
+    /// re-checks its shape (C7/SEC-7).
+    /// </summary>
+    [Fact]
+    public async Task StoryGate_ClaimWithANonD22Address_FailsTheCheckAndListsNoSegment()
+    {
+        var review = GateRunSeed.ReviewJson(4).Replace(
+            "\"real_world_claims\":[]",
+            "\"real_world_claims\":[{\"segment\":\"chapter 3\"}]",
+            StringComparison.Ordinal);
+        var world = await GateRunSeed.SeedRunAsync(
+            Database,
+            auditReport: GateRunSeed.AuditReport(review),
+            ct: Ct);
+        using var factory = Factory(dryRun: false);
+
+        var evaluated = await EvaluateAsync(factory, world);
+
+        evaluated.IsError.ShouldBeFalse(Describe(evaluated));
+        evaluated.Value.Result.Pass.ShouldBeFalse();
+        FailedCheckIds(world.RunId).ShouldContain(StoryGateCheckIds.RealWorldSignal);
+
+        var realWorld = RealWorldBlock(world.RunId);
+        realWorld.ShouldContain("\"hit\": true");
+        realWorld.ShouldContain("model_claim", Case.Sensitive, "the hit is counted whatever its address says");
+        realWorld.ShouldNotContain("\"segments\"", Case.Sensitive, "an address outside the D22 shape names no segment");
+        StoredStatus(world.EpisodeId).ShouldBe("story_review");
     }
 
     /// <summary>
