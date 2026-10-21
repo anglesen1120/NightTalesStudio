@@ -289,7 +289,7 @@ jobs:
       # The artifact is uploaded by `build-test` of this same run; a single-file artifact lands at the
       # root of `head/`. The "Locate the PR's document" step below fails loudly if that ever changes.
       - name: Download the PR's OpenAPI document
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: openapi
           path: head
