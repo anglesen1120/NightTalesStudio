@@ -167,7 +167,7 @@ Consumers of the tools (D1): `05.2.1-T1` (fidelity/sync evaluation reuses `mpt_c
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 05.4.1-T1 | Spike: MPT API, failures, restart, queue, outputs, stubs, mpt_client.py | Worker | L (2.0) | 01.2.2-T5, 01.2.3-T1, 03.4.1-T1; 04.1.2-T1 soft (S16) | 05.4.1-T2, 05.1.1-T1, 05.2.3-T1, 05.5.1-T1, 05.2.1-T1, 05.5.2-T1 |
-| 05.4.1-T2 | render-node.v1 contract, fixtures, hand-over to 09/11 | TL | S (0.5) | 05.4.1-T1 | 09.6.2-T1, 11.1.2-T1, 11.3.5-T1, 05.1.1-T2, 05.1.2-T1, 05.5.1-T2, 12.8.3-T3 (12 CR-19, soft) |
+| 05.4.1-T2 | render-node.v1 contract, fixtures, hand-over to 09/11 | TL | S (0.5) | 05.4.1-T1 | 09.6.2-T1, 11.1.2-T1, 11.3.5-T1, 05.1.1-T2, 05.1.2-T1, 05.5.1-T2 (the former 12.8.3-T3 (12 CR-19, soft) blocker was dropped by DEC 10.14) |
 
 Total **2.5 d** (high-level 2.25 d; README §9). The +0.25 d is T2 growing XS → S: the contract file, `contract/README.md`, 24 fixtures and the hand-over for three consumers are a full deliverable, not a note (README §9 row "05.4 worker contract").
 

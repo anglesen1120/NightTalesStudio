@@ -54,7 +54,7 @@ All facts were read on 2026-09-23. Re-check them at implementation time, because
 | J2 | TypeSafe "Jev" decision model: $0.042 / 1M input, output free; English primary. Legal terms not read ⚠️ | docs.typesafe.ai |
 | I1 | InkOS is AGPL-3.0 ✅ | github.com/Narcooo/inkos |
 | V1 | Vietnamese writes each syllable as its own space-separated token (multi-syllable words are no longer hyphenated) — implied ⚠️ | en.wikipedia.org/wiki/Vietnamese_alphabet |
-| P1 | Personal phase: 12 (credits, `price_versions`, spend caps 12.4.1) is **all S**. 09.5.2-T1 plans an `ICreditLedger` port with a **metering-only** P implementation. 09 §5.1 and 12.2.1 call the same port `ICreditService` ✅ | 00 §4.1; 09 §6; 12 §6 |
+| P1 | Personal phase = the whole product (DEC 10.14): plan 12 (credits, `price_versions`, spend caps) is **deleted, not deferred**; `price_versions` (P subset) and cost metering ship in P via 02.2.4-T1, and the spend caps/runway stay as the owner's own OpenAI metering. 09.5.2-T1 plans an `ICreditLedger` port with a **metering-only** P implementation. 09 §5.1 calls that port `ICreditLedger` (CR-2) | 00 §4.1; 09 §6; DECISIONS.md §10.14 |
 | P2 | `09.3.6` activity log (incl. `AuditBehavior`) is **S** (00 §4.1), but 02.3.3 and 02.8.2 write `audit_logs` in P ✅ | 00 §4.1; 09.3.6 |
 | P3 | 00 §7: `story_generating → draft \| story_review` on failure ("back to the previous state"). The true-crime guard sits on `draft → story_generating` ✅ | 00 §7 |
 | P4 | 09.2.6: Hangfire on PostgreSQL storage, with the `fetch` queue "only in the separate fetcher container". 11 §5.1: fetcher has "no DB credentials" ✅ — contradictory (F02) | 09.2.6; 11 §5.1 |

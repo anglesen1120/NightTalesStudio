@@ -6,18 +6,18 @@
 
 ## 1. Scope
 
-**Covered story:** **08.5.1-T1** (XS, 0.25 d, BA) — the **P slice** of epic 08.5. The high-level 08.5.1 ("30/60/90-day go/no-go", `plans/08-90-day-operations.md:76-78`) was written for the SaaS (sign-ups, activation, revenue); in P there are no users, so per F2 the SaaS checkpoints become **08.5.1-T2** (S, XS) and 08.5.1-T1 becomes *Gate 2 criteria + week-4/8/12 Channel-phase checkpoints* (`../README.md:14` F2, `:19` D4).
+**Covered story:** **08.5.1-T1** (XS, 0.25 d, BA) — the **P slice** of epic 08.5. The high-level 08.5.1 ("30/60/90-day go/no-go", `plans/08-90-day-operations.md:76-78`) was written for the SaaS (sign-ups, activation, revenue); in P there are no users, so per F2 the SaaS checkpoints became **08.5.1-T2** (XS, phase S) — **deleted outright by DEC 10.14** — and 08.5.1-T1 became *Gate 2 criteria + week-4/8/12 Channel-phase checkpoints* (`../README.md:14` F2, `:19` D4).
 
 **In scope.**
 - Drafting `docs/ops/gate-2.md` — the owner's **Gate 2 criteria** (proposed defaults for the owner to accept or change) plus the **week-4 / week-8 / week-12 checkpoint questions** (continue / adjust settings / stop) — and taking it to the owner's sign-off before public autopilot is switched on (K3, F4, D4).
 - The checkpoint *questions and the fields they read*, the review routine (who fills what, from which existing source), and the dry run that proves the routine is executable.
 
 **Out of scope.**
-- The **SaaS** 30/60/90 checkpoints (sign-ups, activation ≥ 40 %, 2nd-episode ≥ 30 %, margin ≥ 60 %, revenue ≥ infra+tooling) → **08.5.1-T2** (`plans/08-90-day-operations.md:77-78`; F2). §4 of that story is quoted nowhere here.
+- The **SaaS** 30/60/90 checkpoints (sign-ups, activation ≥ 40 %, 2nd-episode ≥ 30 %, margin ≥ 60 %, revenue ≥ infra+tooling) were 08.5.1-T2, which is **deleted by DEC 10.14**: the product is free and personal, so there are no sign-ups and no revenue to check.
 - The flagship **setup**, **calendar**, **weekly routine**, **KPI sheet**, `queries.sql` and **takedown runbook** — owned by 08.4.1-T1…08.4.4-T1 (`../README.md:18`, D1–D3). This task *reads* their outputs and *names the fields* it needs; it never creates or edits them.
 - Any new alert, dashboard or metric: P uses 11.6.2-T1's rules (K8, D5).
 - Any product surface change: the only P product surfaces this plan touches are existing screens (§6) — the criteria document is a repository file plus a sign-off act, not a feature.
-- Gate 2 **execution** (the SaaS go/no-go decision itself, M2 planning): this task delivers the document and the checkpoints; the decision is the owner's (§11).
+- Gate 2 **execution** as a go/no-go gate on a business (the former SaaS decision, M2 planning): deleted by DEC 10.14 — this task still delivers the document and the channel checkpoints; the continue/adjust/stop call is the owner's (§11).
 
 **Refines:** `plans/08-90-day-operations.md` §4 (08.5.1), §6 (KPI table's Flagship row), §11 epic row for 08.5; `plans/00-overview.md` §4 (Channel phase, Gate 2 [OPEN]); `DECISIONS.md` §10.12 (personal-first, Gate 2 inputs).
 
@@ -25,7 +25,7 @@
 
 | Id | Fact | Source (verified) |
 |---|---|---|
-| K1 | Channel phase = run the flagship channel on autopilot **≥ 12 weeks after the YouTube audit allows public uploads**; **Gate 2** is decided on channel results, **measured cost per video** and **time per episode** (SaaS build go/no-go) | ✅ `plans/00-overview.md:68` (row "Channel phase"), `plans/00-overview.md:469` (critical path: … public autopilot → Channel phase (≥ 12 weeks) → Gate 2); `plans/08-90-day-operations.md:76-78` |
+| K1 | Channel phase = run the flagship channel on autopilot **≥ 12 weeks after the YouTube audit allows public uploads**; **Gate 2** is decided on channel results, **measured cost per video** and **time per episode** (the SaaS build go/no-go that 00 §4 once attached to it was dropped with phase S, DEC 10.14) | ✅ `plans/00-overview.md:68` (row "Channel phase"), `plans/00-overview.md:469` (critical path: … public autopilot → Channel phase (≥ 12 weeks) → Gate 2); `plans/08-90-day-operations.md:76-78` |
 | K2 | In P, fiction is **auto-approved by gates**; true crime waits for the owner; variety guard; **per-channel daily cap default 1**; **veto window default 12 h** (2..48 h allowed) | ✅ `DECISIONS.md:332`; `../README.md:9` K2; settings schema `02.8.3-cadence-publishing/plan.md:55-63` |
 | K3 | **Gate 2 criteria are `[OPEN]`** and must be **set by the owner before the Channel phase starts**; drafted with proposed defaults in `docs/ops/gate-2.md` by 08.5.1-T1, signed before public autopilot | ✅ `DECISIONS.md:338` (the `[OPEN]` line); `../README.md:10` K3, `:19` D4 |
 | K4 | YPP thresholds: 1,000 subscribers + 4,000 watch hours (12 months) or 10M Shorts views (90 days); **mass-produced content is not monetizable** | ✅ `DECISIONS.md:145` (§6 platform rules); `plans/08-90-day-operations.md:72` (08.4.3 bullet, "vs YPP thresholds ✅") |
@@ -34,8 +34,8 @@
 | K7 | **Pre-audit mode** keeps uploads private until `YouTube:AuditStatus = approved`; outcome `published_private_locked`; the channel cannot grow while private | ✅ `../../06-youtube-posting/README.md` D11/YR2/YR20; `plans/00-overview.md:95`; run outcome enum `plans/00-overview.md:278` |
 | K8 | P alert rules already exist: quota > 80 % (warn), autopilot pause / run stuck > 60 min (page), gate-fail share > 50 %/24 h (warn), render-failure share > 20 %/24 h (page), open platform incident (page), deletion due < 24 h (page) — rules 5, 10, 11, 12, 16, 17 | ✅ `plans/features/11-worker-deployment/11.6-operations/11.6.2-T1-telemetry-dashboards-and-alerts.md:34-50` |
 | K9 | Pause triggers: reports, gate-fail streaks, spend caps (`Budget:MaxPlatformCostUsdPerDay = $3`, `…PerMonth = $40`); owner is e-mailed with the already-scheduled videos and Studio links; resume is an owner action | ✅ `02.8.3-cadence-publishing/plan.md:29` (D1), `../README.md:12` K9 |
-| B1 | **Cost/video has no single published figure.** Plan 12 computes cost from measurements (`usage_records`), not a target number; the worked example (Standard, 8 min ≈ **$0.708** measured) is explicitly *illustrative* ⚠️ and its parameters are marked ⚠️ | ✅ `plans/12-billing-credits.md:298` (GPU/`usage_records` formula), `:319` (worked example ⚠️ illustrative params), `plans/00-overview.md:294` (`usage_records` columns incl. `cost_usd`, `gpu_seconds`, `estimated`, `operation`) |
-| B2 | Plan 12's price invariant is a **≥ 60 % gross margin per episode** on measured OpenAI + GPU cost — a **pricing** rule that needs revenue; in P the owner's channel earns nothing, so the margin is **not measurable** in P | ✅ `plans/00-overview.md:59` (§3), `plans/12-billing-credits.md:56` (12.1.1 "prices keep ≥ 60 % margin (00 §3)"); model is S (12 plan header, `plans/12-billing-credits.md:5`) |
+| B1 | **Cost/video has no single published figure.** Plan 12 computes cost from measurements (`usage_records`), not a target number; the worked example (Standard, 8 min ≈ **$0.708** measured) is explicitly *illustrative* ⚠️ and its parameters are marked ⚠️ | ✅ DECISIONS §10.14 (plan 12 deleted, git history keeps it); live metering is 02.2.4-T1's `usage_records`, `plans/00-overview.md:294` (`usage_records` columns incl. `cost_usd`, `gpu_seconds`, `estimated`, `operation`) |
+| B2 | The former price invariant (**≥ 60 % gross margin per episode**) needed revenue and is **deleted with plan 12** (DEC 10.14); the owner's channel earns nothing, so only **measured cost per episode** is a criterion | ✅ DECISIONS §10.14; the criterion is C1 cost, never margin |
 | B3 | Render time is measurable: `render_duration_seconds` by stage/outcome and render success share are on the 11 board; the machine metric is `usage_records.gpu_seconds` | ✅ `11.6.2-T1-telemetry-dashboards-and-alerts.md:30` (boards), `plans/00-overview.md:294` |
 | B4 | Gate verdicts per run are persisted: `autopilot_runs.gate_results` jsonb, `outcome ∈ {published, published_private_locked, waiting_owner, gate_failed, cancelled_by_owner, awaiting_authorization, paused, failed}`, `pause_reason` | ✅ `plans/00-overview.md:278`; counters `autopilot_gate_total{result="fail"}` / `autopilot_pause_total` (`11.6.2-T1:44-45`) |
 
@@ -88,7 +88,7 @@ BA deliverable → "use cases" are **document routines**, each with a trigger, t
 
 | # | Criterion (after 12 counted public weeks) | Proposed default | Measurement source | Why this default |
 |---|---|---|---|---|
-| C1 | **Measured cost per episode** (OpenAI + GPU) | Owner sets a **ceiling**; proposed method: ceiling = the mean measured cost/episode of the first 4 public weeks × 1.25, expressed in VND and in USD at the top-up FX rate | `usage_records` (`cost_usd`, `gpu_seconds`, `operation`, `estimated`) via `queries.sql` (D3) | B1: plan 12 has **no** target number for P — it computes cost from measurements (`plans/12-billing-credits.md:298`), so the owner's ceiling is derived from P's own first-month data, not from a SaaS price; the 12 worked example ($0.708 ⚠️ illustrative, `:319`) is a sanity band only |
+| C1 | **Measured cost per episode** (OpenAI + GPU) | Owner sets a **ceiling**; proposed method: ceiling = the mean measured cost/episode of the first 4 public weeks × 1.25, expressed in VND and in USD at the top-up FX rate | `usage_records` (`cost_usd`, `gpu_seconds`, `operation`, `estimated`) via `queries.sql` (D3) | B1: there is **no** published cost target: the deleted plan 12 computed cost from measurements (`usage_records`) and its $0.708 worked example was illustrative ⚠️ only, so the owner's ceiling is derived from the Channel phase's own first-month data (DEC 10.14) |
 | C2 | **Owner touch time per episode** | ≤ **20 min** average over the phase | `weekly/YYYY-WW.md` minutes ÷ episodes that week (D2/D3) | D4's proposed default; matches the 45 min/week time box at the default cadence of 3 slots/week (D1, `../README.md:17`) |
 | C3 | **Planned slots published without manual rescue** | ≥ **90 %** | `autopilot_runs.outcome` + `publications.status` vs `calendar.md` planned slots | D4's proposed default; the complement (≤ 10 %) is the measured "how often did I have to intervene" |
 | C4 | **Policy standing** | **Zero** YouTube policy strikes; no channel restriction | Studio (manual) + platform incident rows | K4 (mass-produced risk); a strike is a stop-signal, not a tunable |
@@ -104,7 +104,7 @@ BA deliverable → "use cases" are **document routines**, each with a trigger, t
 Same routine as UC-2, plus: recompute C1's ceiling from 8 weeks of data and state whether the measured cost is trending toward or away from it; state the touch-time average and its worst week; list every pause with its cause (from `pause_reason`, K9).
 
 ### UC-4 — Week-12 checkpoint → **Gate 2 recommendation**
-Same routine, and: evaluate **every** criterion C1–C7 against the owner's signed numbers, produce the **Gate 2 recommendation** (build the SaaS / continue the Channel phase for another 4-week block with named changes / stop), and hand it to the owner for the actual decision. **Observable:** §2's week-12 entry with a per-criterion verdict table (`met` / `missed` / `not measurable`) and the recommendation; the owner's decision is recorded there and, if "build", the SaaS plans (06 S, 10 S, 12 S, 13 S) unblock.
+Same routine, and: evaluate **every** criterion C1–C7 against the owner's signed numbers, produce the **Gate 2 recommendation** (continue the Channel phase for another 4-week block with named changes / adjust settings / stop), and hand it to the owner for the actual decision. **Observable:** §2's week-12 entry with a per-criterion verdict table (`met` / `missed` / `not measurable`) and the recommendation; the owner's decision is recorded there. There is no "build the SaaS" outcome — phase S and its plans were deleted by DEC 10.14.
 
 ### UC-5 — Late or paused phase
 If the audit approval, an autopilot pause or a policy event interrupts the phase, the checkpoint moves to the next counted week (§4 of the document defines "counted week": ≥ 90 % of planned slots published, no open pause at week end). No checkpoint is ever evaluated on a partial week. **Observable:** §4 of the document states the clock rule; §2's entries always name the counted-week index, not a calendar date.
@@ -206,9 +206,9 @@ Canonical dependency table (row verbatim from `../README.md` §8.1):
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 08.5.1-T1 | Gate 2 criteria + week-4/8/12 Channel-phase checkpoints document (signed before public autopilot) | XS (0.25) | — | 08.4.1-T1, 08.5.1-T2 (08 CR-15) |
+| 08.5.1-T1 | Gate 2 criteria + week-4/8/12 Channel-phase checkpoints document (signed before public autopilot) | XS (0.25) | — | 08.4.1-T1 (the former second consumer, 08.5.1-T2, was deleted by DEC 10.14) |
 
-**Estimate:** 08.5.1-T1 = 0.25 d (XS) — unchanged from the high-level 08.5 (`plans/08-90-day-operations.md` §11; `../README.md` §9: 08.5 stays 2.5 d for the P slice, with the SaaS 08.5.1-T2 (S, 0.25) added outside this folder). Plan 08 total stays **7.0 d** (P 2.5 / S 4.5), buffered 8.4 (`../README.md` §9).
+**Estimate:** 08.5.1-T1 = 0.25 d (XS) — unchanged from the high-level 08.5 (`plans/08-90-day-operations.md` §11; `../README.md` §9: 08.5 stays 2.5 d for the P slice; the SaaS 08.5.1-T2 (XS) that once sat outside this folder is **deleted**, DEC 10.14). Plan 08 total is now **2.5 d** (P only), buffered 3.0 (`../README.md` §9).
 
 **Downstream consumers of this task's document:** 08.4.1-T1's exit (sign-off evidence), 08.4.2-T1/08.4.3-T1 (they fill the weekly log and KPI row the checkpoints read), and the Gate 2 decision itself at week 12.
 
@@ -220,4 +220,4 @@ Canonical dependency table (row verbatim from `../README.md` §8.1):
 - **Monitoring while the phase runs:** no new alert (D5) — the phase is watched by 11.6.2-T1's rules (K8: quota, pause/stuck, gate-fail share, render failure, platform incident) and by 08.4.2-T1's weekly log. A checkpoint only reads what those already surfaced.
 - **Change control after sign-off:** criteria changes append a §5 revision with the owner's initials; a closed criterion (C4 policy strike) is re-opened only by a new revision. If the audit is rejected, the clock never starts and the document is unchanged (§11 records it as a precondition failure, not a criteria failure).
 - **Rollback:** none needed (a document); a wrongly specified criterion is corrected by a revision plus an owner note — the signed baseline is preserved in §5.
-- **Gate 2 outcome routing:** "build" → unblocks the S plans (06 S, 10 S, 12, 13 S); "continue" → a new 4-week block with named adjustments; "stop" → the Saas plans stay closed and the reason is recorded in §2.
+- **Gate 2 outcome routing:** "continue" → a new 4-week block with named adjustments; "adjust" → the named settings change plus its re-accept obligation; "stop" → the reason is recorded in §2. The former "build" branch (unblock the SaaS plans 06 S / 10 S / 12 / 13 S) no longer exists — those plans were deleted by DEC 10.14.

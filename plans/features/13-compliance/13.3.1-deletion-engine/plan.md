@@ -18,14 +18,14 @@
 
 **Out of scope (never re-implemented here).**
 - Channel scope body (tokens/identity/payload revoke via `ChannelConnection.PurgeYouTubeData`) → 06.4.3-T1; the 06.4.1-T1 route that creates the request.
-- Account scope body + `POST /me/delete` + anonymisation → 13.3.2-T1 (S).
+- Account scope body + `POST /me/delete` + anonymisation → belonged to the dropped data-rights task (phase S, DEC 10.14); the account scope stays unhandled.
 - Object-store internals (`IBlobStore`, `S3BlobStore`, buckets) → 09.7.2-T1; asset retention sweep and `assets.deleted_at` → 09.7.3-T1.
 - Extracted-text *writing* and the `research/` key layout → 02.5.2-T2; the episode/`story_sources` DB cascade shape → 02 CR-22.
 - Audit table/behaviour, e-mail pipeline, job scheduler, tenant filter, outbox → 09.2.x / 09.3.6-T1; alert backends, dashboards and rule loading → 11.6.2-T1.
 - **Any notification mechanism of our own**: the due-soon alert is a monitoring rule over our metric, not an e-mail, not a job-level page (K20, §4 UC3).
 - Any HTTP route, and any new flag/audit/e-mail/incident mechanism.
 
-**Consumers (blocks).** 06.4.1-T1, 06.4.3-T1 (channel), 11.6.1-T1 (soft: restore runbook re-applies through `deletions reapply`), 02 CR-22 (episode prefix), 13.3.2-T1 (S: account scope reuses the same engine).
+**Consumers (blocks).** 06.4.1-T1, 06.4.3-T1 (channel), 11.6.1-T1 (soft: restore runbook re-applies through `deletions reapply`), 02 CR-22 (episode prefix), the dropped account-deletion task (phase S, DEC 10.14) would have reused the same engine.
 
 **Dependencies.** 09.2.2-T1 (`data_deletion_requests` base table + migration conventions), 09.2.6-T1 (`IJobScheduler`, `IRecurringJobRegistration`, `[JobPolicy]`, queues), 09.7.2-T1 (`IBlobStore`, `BlobLocator`, `StorageSettings`). Soft additions recorded as CRs in §10.1: 09.1.2-T1/09.2.3-T1 (allow-list + system context), 09.3.6-T1 (audit), 11.6.2-T1 (rule), 06.2.3-T3 (`platform_incidents`).
 
@@ -178,7 +178,7 @@ D4's `FOR UPDATE SKIP LOCKED` is realised as **this atomic conditional claim ins
 ## 5. API and events
 
 ### 5.1 HTTP
-**No route in P.** Every P caller is in-process (06.4.3-T1 revoke handler, 02/10 episode hard delete); the S-phase owner surfaces (`POST /me/delete`, admin retry) belong to 13.3.2-T1/13.3.4-T1 with their own re-auth and routes. Consequence: no new error codes, no OpenAPI change, no oasdiff surface, no CSRF/idempotency-key surface to define.
+**No route in P.** Every P caller is in-process (06.4.3-T1 revoke handler, 02/10 episode hard delete); the S-phase owner surfaces (`POST /me/delete`, admin retry) belonged to the dropped data-rights tasks with their own re-auth and routes (DEC 10.14). Consequence: no new error codes, no OpenAPI change, no oasdiff surface, no CSRF/idempotency-key surface to define.
 
 ### 5.2 Outbox / SignalR
 None (§4 UC2 step 8). The audit row plus the request row are the durable record; 06's/10's own events carry any user-visible effect.
@@ -203,7 +203,7 @@ nts-worker deletions reapply --since <iso8601> [--file <path>]  # run against th
 | 06.4.3-T1 / 06.4.1-T1 | channel disconnect + the resulting duty | `channels.revoke_*`, `deletion_scheduled` |
 | 10.5.1-T1 (+09.5.1) | episode hard delete confirmation | episode delete copy; states only that the deletion is in progress |
 | 06.4.2-T2 | channel state display | `publications.*` (06 owns) |
-No new i18n key is introduced here — there is no user-visible surface and no notification copy in P (UC3 is a metric). A UI that showed "deletion scheduled/complete" would need `GET /me/deletion-requests` — **not in P** (S, 13.3.2-T1) and deliberately absent so no client depends on a route that does not exist.
+No new i18n key is introduced here — there is no user-visible surface and no notification copy in P (UC3 is a metric). A UI that showed "deletion scheduled/complete" would need `GET /me/deletion-requests` — **not in P** (the phase-S account-deletion task is dropped, DEC 10.14) and deliberately absent so no client depends on a route that does not exist.
 
 ## 7. Jobs and integrations
 
@@ -287,7 +287,7 @@ Projects (09 README Part A D2): `tests/NightTales.Domain.UnitTests`, `tests/Nigh
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 13.3.1-T1 | Deletion requests engine | M (1.0) | 09.2.2-T1, 09.2.6-T1, 09.7.2-T1 | 06.4.1-T1, 06.4.3-T1, 11.6.1-T1 (soft), 13.3.2-T1, 08.2.2-T1 (13 CR-17, 08 CR-16) |
+| 13.3.1-T1 | Deletion requests engine | M (1.0) | 09.2.2-T1, 09.2.6-T1, 09.7.2-T1 | 06.4.1-T1, 06.4.3-T1, 11.6.1-T1 (soft); the former 10.8.2-T1 blocker was dropped by DEC 10.14 |
 
 Canonical row equals `../README.md` §8.1 ✅. Re-estimate: high-level M (1.0) → detailed **M (1.0)**, unchanged (`../README.md` §9: "13.1.1-T1, 13.1.2-T1, 13.3.1-T1, 13.4.2-T1 … unchanged"). Folder total 1.0 d.
 

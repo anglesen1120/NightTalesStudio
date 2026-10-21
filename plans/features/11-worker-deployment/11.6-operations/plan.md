@@ -1,12 +1,12 @@
 # 11.6.1, 11.6.2, 11.6.3 — Operations foundation: backups and restore, telemetry and alerts, capacity and cost
 
 > Parent: [`../README.md`](../README.md) — plan 11 TL review (facts K/E/P, findings F01–F28, decisions D1–D19, CR-1…CR-11, §5 sequencing, §8.1 canonical dependency table). High-level story: [`../../11-worker-deployment.md`](../../11-worker-deployment.md) §3 Epic 11.6, §6 task table. Templates: `../../00-overview.md` §10.1 (sections 1–11), `../README.md` §6 (task file).
-> Stories: **11.6.1 Backups and restore** (Must · S) · **11.6.2 Monitoring and alerts** (Must · M) · **11.6.3 Capacity and cost measurement** (Must · M) · **11.6.4 `nts-admin` job image** (Must · S, added by 09 W3 CR-6). Tasks: 11.6.1-T1 (S 0.5) · 11.6.2-T1 (M 1.0) · 11.6.3-T1 (M 1.0) · 11.6.4-T1 (S 0.5) = **3.0 d raw / 3.6 d buffered** (high-level §11 "11.6 Ops foundation 2.5" (P12) + 0.5 d, 09 W3 CR-6).
+> Stories: **11.6.1 Backups and restore** (Must · S) · **11.6.2 Monitoring and alerts** (Must · M) · **11.6.3 Capacity and cost measurement** (Must · M); the `nts-admin` job image was the phase-S 11.6.4, dropped by DEC 10.14. Tasks: 11.6.1-T1 (S 0.5) · 11.6.2-T1 (M 1.0) · 11.6.3-T1 (M 1.0) = **2.5 d raw / 3.0 d buffered** (high-level §11 "11.6 Ops foundation 2.5", P12).
 > Legend: ✅ read from source/docs (file + line) · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
 
 ## 1. Scope
 
-The plan-11 **operations** slice: it builds no product feature, it makes the M1 platform operable and produces the two measurements the owner's pricing and scaling decisions rest on (videos/hour, cost/video).
+The plan-11 **operations** slice: it builds no product feature, it makes the M1 platform operable and produces the two measurements the owner's cost metering and scaling decisions rest on (videos/hour, cost/video).
 
 **In scope**
 
@@ -53,7 +53,7 @@ The plan-11 **operations** slice: it builds no product feature, it makes the M1 
 | `render_jobs` (+`quality_report`), `worker_nodes`, `outbox_messages` | queue depth, outbox lag, render success rate, dispatch counters (D13, 09.9.3) |
 | `usage_records` / cost ledger, `youtube_quota_used` | OpenAI cost/day vs the budget line; YouTube quota > 80 % (D17) |
 | Backup artefacts | PITR/WAL and PostgreSQL snapshots inside the managed service; media copies in the `nt-backup-<env>` bucket on `storage-backup-<env>` (SeaweedFS versioning — deleted objects remain as noncurrent versions, T79; written by 11.4.1-T3's `filer.backup`, T80); daily provider snapshots of the `storage-<env>` volume only 7 d (T87); `DP_KEK` in the owner's offline store only (D21) (11 CR-15) |
-| Measurement record | DECISIONS §10.4, `plans/12-*.md` (12.1.1), and the final config values (11.6.3-T1) |
+| Measurement record | DECISIONS §10.4 and the final config values (11.6.3-T1) |
 
 Retention (D17, `00-overview.md:412`): WAL archive 7 days (PITR source), PostgreSQL daily snapshots 30 days (provider restore into a new instance), `nt-media-<env>` copies in `nt-backup-<env>` held as versions — `NoncurrentVersionExpiration` 29 days (with object lock GOVERNANCE 29 d, T87) purges a deleted object's data within 30 days of its primary delete marker (no current-version expiry), on `storage-backup-<env>` (SeaweedFS), primary storage-volume snapshots 7 days (backup volume not snapshotted, T87) (11 CR-15), `DP_KEK` indefinite and offline (never a DB backup or bucket) — and therefore deleted data ages out of **all** tiers within 30 days, which is 13's deletion window promise.
 
@@ -63,7 +63,7 @@ Retention (D17, `00-overview.md:412`): WAL archive 7 days (PITR source), Postgre
 - **UC2 Deletion survives a restore.** Enumerate `data_deletion_requests` with `completed_at` in `(backup_time, now]` and assert each is re-applied before the system serves data — a story deleted last week must not come back (D17, `00-overview.md:412`).
 - **UC3 The operator sees a problem before the user does.** One platform board (API latency/errors, queue depth, outbox lag, render success rate, OpenAI cost/day, YouTube quota), one node board (GPU util/mem/temp, disk, free slots, health reasons, relay metrics) and one storage board (gateway 5xx ratio, `nts_backup_lag_seconds` (T85), writable volumes, volume disk; D21) (11 CR-15).
 - **UC4 Alert fires and is acknowledged.** Provoke one real condition on staging, observe the notification, record the detection latency, clear it, leave the rule enabled.
-- **UC5 Capacity and cost decided with numbers.** 20 renders at 1/2/4 give per-stage wall times, peaks, failures and cost/video; the owner changes `NTS_MPT_MAX_CONCURRENT` and the pricing input (12.1.1) on evidence (D17, F28, P13).
+- **UC5 Capacity and cost decided with numbers.** 20 renders at 1/2/4 give per-stage wall times, peaks, failures and cost/video; the owner changes `NTS_MPT_MAX_CONCURRENT` and the cost meter (owner) on evidence (D17, F28, P13).
 
 ## 5. API and events
 
@@ -121,15 +121,14 @@ No Hangfire recurring job is added here (P9: a sub-minute recurring job is unrel
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 11.6.1-T1 | Backups, retention and timed monthly restore drill | Ops | S (0.5) | 11.2.2-T4, 11.4.1-T1, 11.4.1-T3 (11 CR-15); 13.3.1-T1 soft | 13.3.2-T2 |
-| 11.6.2-T1 | Telemetry collector, dashboards, alert rules and alert drill | Ops | M (1.0) | 11.2.1-T1, 11.3.3-T2, 09.9.3-T1, 11.4.1-T2, 11.4.1-T3 (11 CR-15) | 08.4.3-T1 (08 CR-5), 09.10.4-T3 (`ISecurityAlerter` → 11.6.2 pipeline, 09 W3 CR-18), 08.2.2-T1, 08.2.1-T1, 08.1.1-T1, 12.3.3-T2, 12.5.1-T2, 07.3.3-T1 |
-| 11.6.3-T1 | 20-render capacity and cost test on the prod node | Ops/BA | M (1.0) | 11.3.1-T3, 11.3.2-T2, 09.6.3-T1 | 12.1.1 soft, 12.1.1-T1 |
-| 11.6.4-T1 | One-shot `nts-admin` job image (09 W3 CR-6) | Ops | S (0.5) | 11.5.2-T1 | 09.10.7-T1, 08.2.2-T2 |
-| **Total** | | | **3.0 d raw / 3.6 d buffered** | | |
+| 11.6.1-T1 | Backups, retention and timed monthly restore drill | Ops | S (0.5) | 11.2.2-T4, 11.4.1-T1, 11.4.1-T3 (11 CR-15); 13.3.1-T1 soft | — |
+| 11.6.2-T1 | Telemetry collector, dashboards, alert rules and alert drill | Ops | M (1.0) | 11.2.1-T1, 11.3.3-T2, 09.9.3-T1, 11.4.1-T2, 11.4.1-T3 (11 CR-15) | 08.4.3-T1 (08 CR-5), 07.3.3-T1 |
+| 11.6.3-T1 | 20-render capacity and cost test on the prod node | Ops/BA | M (1.0) | 11.3.1-T3, 11.3.2-T2, 09.6.3-T1 | — (billing plan dropped by DEC 10.14) |
+| **Total** | | | **2.5 d raw / 3.0 d buffered** | | |
 
-Header cells equal `../README.md` §8.1 exactly (row 408); 11 CR-15 (T80) puts 11.4.1-T3 in the Depends cells of 11.6.1-T1 and 11.6.2-T1 (the 11.6.1-T1 and 11.6.2-T1 §8.1 rows carry the same cells with the `(11 CR-15)` tag). 11.6.1-T1 through 11.6.3-T1 are `P · M1` (README §5: "M1 order … → 11.3.1-T3 → 11.6.3-T1"); 11.6.4-T1 is `S · M2` (TL ruling 2026-09-25: it exists only for the S break-glass verb 09.10.7-T1), added by `09 W3 CR-6` and independent of the M1 render-path ordering (it only needs the secret manager, 11.5.2-T1).
+Header cells equal `../README.md` §8.1 exactly (row 408); 11 CR-15 (T80) puts 11.4.1-T3 in the Depends cells of 11.6.1-T1 and 11.6.2-T1 (the 11.6.1-T1 and 11.6.2-T1 §8.1 rows carry the same cells with the `(11 CR-15)` tag). All three tasks are `P · M1` (README §5: "M1 order … → 11.3.1-T3 → 11.6.3-T1"); the phase-S `nts-admin` job image (09 W3 CR-6) is dropped by DEC 10.14.
 
-**Re-estimate note.** The high-level 11 §6 sized 11.6.1 S, 11.6.2 M, 11.6.3 M = 2.5 d (P12; §11 "11.6 Ops foundation 2.5") and this folder keeps that: the expensive mechanisms are owned elsewhere (IaC, the collector container, the metric sources, the render harness). Two additions fit inside the same sizes: 11.6.1-T1 also owns the timed record, the deletion re-application check (UC2) and the two storage-restore legs (D21) (11 CR-15); 11.6.3-T1 also owns the final value list including `VIENEU_MAX_STREAMS` and the codec decision. **11 CR-15 adds no day here** (3.0 d raw / 3.6 d buffered unchanged): the SeaweedFS hosts, TLS and metrics are 11.4.1-T2's +0.5 d P and `filer.backup` + restore proof 11.4.1-T3's +0.5 d P (T80); this folder only asserts, drills and alerts (D21) (T74). A second capacity run after tuning is **not** budgeted. **11.6.4-T1 is new** (+0.5 d raw / +0.6 d buffered, `09 W3 CR-6`): the `nts-admin` one-shot job image and platform job manifest that 09.10.7-T1's break-glass CLI needs a host for; it did not exist in the high-level plan or the original re-estimate.
+**Re-estimate note.** The high-level 11 §6 sized 11.6.1 S, 11.6.2 M, 11.6.3 M = 2.5 d (P12; §11 "11.6 Ops foundation 2.5") and this folder keeps that: the expensive mechanisms are owned elsewhere (IaC, the collector container, the metric sources, the render harness). Two additions fit inside the same sizes: 11.6.1-T1 also owns the timed record, the deletion re-application check (UC2) and the two storage-restore legs (D21) (11 CR-15); 11.6.3-T1 also owns the final value list including `VIENEU_MAX_STREAMS` and the codec decision. **11 CR-15 adds no day here** (2.5 d raw / 3.0 d buffered unchanged): the SeaweedFS hosts, TLS and metrics are 11.4.1-T2's +0.5 d P and `filer.backup` + restore proof 11.4.1-T3's +0.5 d P (T80); this folder only asserts, drills and alerts (D21) (T74). A second capacity run after tuning is **not** budgeted. The former **`nts-admin` job image** (+0.5 d raw / +0.6 d buffered, `09 W3 CR-6`: the one-shot image for the phase-S break-glass CLI) is dropped with phase S (DEC 10.14), so this folder stays at the high-level 2.5 d.
 
 **Open items**
 
@@ -154,4 +153,4 @@ Header cells equal `../README.md` §8.1 exactly (row 408); 11 CR-15 (T80) puts 1
 2. **Telemetry second (11.6.2-T1)**, after the backend choice (11.2.1-T1), the node metric source (11.3.3-T2), the storage `-metricsPort` scrape (11.4.1-T2, D21) (11 CR-15) and a running `filer.backup` to alert on (11.4.1-T3, T80): collector up, dashboards imported, 25 rules (incl. the four storage ones) loaded with delivery enabled, then the drill. Rollback: disable delivery (keep the rules) if the channel is noisy; stop the collector without touching the apps (buffered telemetry is lost, no correctness impact).
 3. **Capacity test last (11.6.3-T1)**, after `nts-node deploy` (11.3.1-T3) and the network/TLS work (11.3.2-T2) are verified and 09.6.3 can dispatch. Operator-run; no public autopilot until the numbers are in. Rollback: revert the values to the provisioning defaults (one env change + unit restart), no data affected.
 
-**Gate for the owner.** Do not enable public autopilot (02.8.3) before (a) PITR plus a green drill record exist — DB restore, one object restored from `nt-backup-<env>` and one volume snapshot restored (D21) (11 CR-15), (b) the D17 + D21 alerts are live and one has fired in a drill, (c) `NTS_MPT_MAX_CONCURRENT` and cost/video are recorded in DECISIONS §10.4 and 12.1.1.
+**Gate for the owner.** Do not enable public autopilot (02.8.3) before (a) PITR plus a green drill record exist — DB restore, one object restored from `nt-backup-<env>` and one volume snapshot restored (D21) (11 CR-15), (b) the D17 + D21 alerts are live and one has fired in a drill, (c) `NTS_MPT_MAX_CONCURRENT` and cost/video are recorded in DECISIONS §10.4 and in the cost meter (owner; 12.1.1 is deleted by DEC 10.14).

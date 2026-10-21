@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube). The owner's channel is built first (**personal phase P**, one owner account, autopilot). The public SaaS (**phase S**) is built only after a go decision (`plans/00-overview.md` §1.3, §4.1).
+Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube and TikTok) for the owner's own channels: **one owner account with autopilot, one phase (P)**. There is no public SaaS, sign-up, credits or billing (DEC 10.14, `DECISIONS.md` §10.14; scope in `plans/00-overview.md` §1.3, §4.1).
 
 **Current state:** implementation started 2026-09-25 on the owner's Mac; which plans are in progress is recorded only in `STATUS.md`. Tracked code: the .NET solution (`NightTales.sln`, `src/`, `tests/`), the Angular app (`web/`), `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines), `tools/` and `.githooks/` (gitleaks). **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
 
@@ -33,7 +33,7 @@ Angular SPA ──REST + SignalR──► NightTales.Api ──► PostgreSQL 17
 | Path | Purpose |
 |---|---|
 | `plans/00-overview.md` | **The contract**: stack, solution layout, tables (§6), state machines (§7), routes (§8), estimates, phases, plan template (§10.1) |
-| `plans/01`–`13-*.md` | High-level plans per area (not final). Numbering: 01 env, 02 story, 03 images, 04 voice, 05 video, 06 YouTube, 07 TikTok, 08 operations, 09 backend, 10 web, 11 worker/deploy, 12 billing, 13 compliance |
+| `plans/01`–`13-*.md` | High-level plans per area (not final). Numbering: 01 env, 02 story, 03 images, 04 voice, 05 video, 06 YouTube, 07 TikTok, 08 operations, 09 backend, 10 web, 11 worker/deploy, 13 compliance (12 billing was deleted by DEC 10.14) |
 | `plans/features/<NN>-<slug>/` | Detailed plans. `README.md` holds the review, findings F-n, shared decisions D-n (the contract for that plan), CRs, index and re-estimate |
 | `plans/features/<NN>-<slug>/<story-id>-<slug>/` | One feature: `plan.md` + one `<task-id>-<slug>.md` per task |
 | `DECISIONS.md` | Locked product/stack decisions and verified facts. §3/§4 are locked: do not reopen them |
@@ -49,7 +49,7 @@ grep -rn "Idempotency → UnitOfWork" plans          # find text that contradict
 tar -czf ~/.nts-snapshots/plans-$(date +%Y%m%d-%H%M%S).tgz plans DECISIONS.md   # snapshot uncommitted work before bulk edits
 ```
 
-Diagrams: 61 mermaid blocks across 30 files, all currently render (checked 2026-09-25, after the S-phase plans). A `;` inside a `sequenceDiagram` message breaks the parser even inside quotes (it is the statement separator) — use `,`. Edge labels with `:`, `(`, `)`, `<`, `>` must be quoted. After editing a block in `DIAGRAMS.md`, re-export its SVG to `docs/diagrams/NN-<slug>.svg`, because the SVGs are checked in and reviewed.
+Diagrams: mermaid blocks across the plans (counted 2026-09-25, when the S-phase plans still existed; the DEC 10.14 sweep deleted some). A `;` inside a `sequenceDiagram` message breaks the parser even inside quotes (it is the statement separator) — use `,`. Edge labels with `:`, `(`, `)`, `<`, `>` must be quoted. After editing a block in `DIAGRAMS.md`, re-export its SVG to `docs/diagrams/NN-<slug>.svg`, because the SVGs are checked in and reviewed.
 
 Backend commands (as run by `.github/workflows/backend.yml`):
 
@@ -92,7 +92,7 @@ Backend CI (`backend.yml`) has four jobs: `build-test` (restore `--locked-mode`,
 - Web: Angular 22 on Node 26.10.0 (`engines` `^26.10.0`, 10 CR-43) with the Angular CLI and npm (`npm run api:gen` regenerates `shared/api/` from the CI `openapi.json`); bundle budgets live in `web/angular.json` (10 §10.1.1).
 - Worker (personal phase): MPT, VieNeu and faster-whisper are Python 3.11/3.12 pinned in `worker-node/pins.env` (`MPT_PYTHON`, `VIENEU_PYTHON`) — versions live only there.
 - PostgreSQL 17 in dev (native Homebrew `postgresql@17`, 127.0.0.1), CI (Actions service) and production. CI is GitHub Actions (`.github/workflows/backend.yml`, `web.yml`), with third-party actions pinned by SHA.
-- Licences must allow commercial SaaS use. No AGPL, RPL or non-commercial licences; MediatR and AutoMapper are rejected. Hangfire LGPL-3.0 is accepted only as unmodified NuGet packages.
+- Licences must stay permissive (no AGPL, RPL or non-commercial licences, so a future hosted variant remains possible); MediatR and AutoMapper are rejected. Hangfire LGPL-3.0 is accepted only as unmodified NuGet packages.
 - Local worker: runtime state lives in `NTS_HOME="${NTS_HOME:-<repo>/.nts}"` (gitignored; default set in `worker-node/bin/lib.sh`, CR-11). Secrets live only in the macOS Keychain and are never printed. Services bind to `127.0.0.1` only (ports 8000/8001/8002/8080).
 - OpenAI is the only paid provider.
 

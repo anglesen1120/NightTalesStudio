@@ -316,8 +316,8 @@ Projects (canonical names, 09 README Part A D2): `tests/NightTales.Application.U
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
 | 06.2.3-T1 | `IYouTubeClient` upload: resumable session, persisted session URI, streaming from storage, `FakeGoogleServer` | L (2.0) | 06.1.2-T2, 09.7.2-T1 | 06.2.3-T2 |
-| 06.2.3-T2 | `PublishYouTubeJob` + token refresh + error mapping | M (1.0) | 06.2.3-T1, 06.2.2-T1, 06.3.1-T1, 09.2.6-T1 | 06.2.3-T3, 06.2.4-T1, 06.2.5-T1, 02.8.3-T4, 07.3.1-T1 (07 CR-11), 06.3.2-T1 (06 CR-18) |
-| 06.2.3-T3 | `OAuthErrorClassifier` + platform incidents (hold, alert, clear verb) | XS (0.25) | 06.2.3-T2, 11.6.2-T1 (soft) | 06.4.2-T2, 08.2.2-T1 (08 CR-16) |
+| 06.2.3-T2 | `PublishYouTubeJob` + token refresh + error mapping | M (1.0) | 06.2.3-T1, 06.2.2-T1, 06.3.1-T1, 09.2.6-T1 | 06.2.3-T3, 06.2.4-T1, 06.2.5-T1, 02.8.3-T4, 07.3.1-T1 (07 CR-11) |
+| 06.2.3-T3 | `OAuthErrorClassifier` + platform incidents (hold, alert, clear verb) | XS (0.25) | 06.2.3-T2, 11.6.2-T1 (soft) | 06.4.2-T2 |
 
 **Folder total 3.25 d** (L 2.0 + M 1.0 + XS 0.25) against README §9's 06.2 band (7.0 → 8.5 d for the whole epic): this folder's share is unchanged from the high-level sizing — the L was already the largest single item in 06.2, and the two additions found in the review (the persisted encrypted session URI and the incident gate inside the job) are absorbed by T2's M because the port and the table live in T1/T2 respectively. No re-estimate change is requested.
 

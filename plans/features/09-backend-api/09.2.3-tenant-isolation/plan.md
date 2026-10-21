@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.3**, L88–95), §2 T6, §7; `../../../00-overview.md` §5.2 tenant isolation.
 > Contract: `../README.md` — **N9**, **D3**, **D8**, **D10**, **D13**.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: 09.2.3-T1 **implemented 2026-09-30** (PR #52) — independent QA, code/performance/security reviews passed. 09.2.3-T2 (cross-tenant route table, phase S) not started. Security-relevant: review by the TL plus a second reader (00 §10.1).
+> Status: 09.2.3-T1 **implemented 2026-09-30** (PR #52) — independent QA, code/performance/security reviews passed. The phase-S cross-tenant route table (09.2.3-T2) is deleted with phase S (DEC 10.14). Security-relevant: review by the TL plus a second reader (00 §10.1).
 
 ## 1. Scope
 
@@ -16,9 +16,9 @@
 - `ISystemContext.For(userId)` and `ISystemWorkQuery`.
 - The allow-list entries for `IgnoreQueryFilters` (the rule itself is in 09.1.2-T1).
 - The 404 policy.
-- In phase S: the cross-tenant route table generated from `openapi.json` (T2).
+- ~~In phase S: the cross-tenant route table generated from `openapi.json` (T2)~~ — deleted by DEC 10.14.
 
-**Out of scope.** JWT and claims issuance (09.3.2). Admin endpoints (09.9.1).
+**Out of scope.** JWT and claims issuance (09.3.2). Admin endpoints (`09.9.1`, dropped by DEC 10.14).
 
 ## 2. Confirmed facts
 
@@ -85,12 +85,11 @@ Integration tests for UC1–UC4 on both contexts; a unit test for `ScopedCurrent
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.3-T1 | Tenant filter, `ICurrentUser`, `ISystemContext`, `ISystemWorkQuery` | M (1.0) | 09.2.2-T1, 09.2.1-T2 | 09.1.3-T2, 09.2.4-T1, 09.4.1-T1, 09.2.3-T2 (09 W2 CR-9), 13.3.3-T1 |
-| 09.2.3-T2 | Cross-tenant route table from `openapi.json` (phase S) | M (1.0) | 09.2.3-T1, 09.9.5-T1 | M2 gate |
+| 09.2.3-T1 | Tenant filter, `ICurrentUser`, `ISystemContext`, `ISystemWorkQuery` | M (1.0) | 09.2.2-T1, 09.2.1-T2 | 09.1.3-T2, 09.2.4-T1, 09.4.1-T1 |
 
-Total **2.0 d** (unchanged).
+Total **1.0 d** — the single task file left after 09.2.3-T2 (M 1.0, the generated cross-tenant route table) was deleted by DEC 10.14.
 
 ## 11. Rollout
 
 - T1 ships before the first feature entity is queried (09.4.1-T1).
-- T2 activates in phase S. Until then, each P feature adds explicit 404 tests for its own `{id}` routes (09.4.1-T1, 09.5.1-T1 and the 02 tasks already do).
+- The former T2 (the generated cross-tenant route table) is deleted by DEC 10.14 and activates nowhere; each P feature adds explicit 404 tests for its own `{id}` routes (09.4.1-T1, 09.5.1-T1 and the 02 tasks already do).

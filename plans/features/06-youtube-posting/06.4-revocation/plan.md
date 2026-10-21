@@ -306,7 +306,7 @@ Projects (09 README D2, canonical names): `tests/NightTales.Domain.UnitTests`, `
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 06.4.1-T1 | Disconnect: Google revoke, wipe tokens, cancel publications, deletion request | S (0.5) | 06.1.2-T2, 06.2.6-T1, 06.3.1-T1, 13.3.1-T1 | 06.4.2-T1, 06.4.3-T1, 10.7.1-T1 (10 CR-15), 13.3.2-T1 (13 CR-17) |
+| 06.4.1-T1 | Disconnect: Google revoke, wipe tokens, cancel publications, deletion request | S (0.5) | 06.1.2-T2, 06.2.6-T1, 06.3.1-T1, 13.3.1-T1 | 06.4.2-T1, 06.4.3-T1, 10.7.1-T1 (10 CR-15) |
 | 06.4.2-T1 | `TokenHealthJob`: refresh check, Google-page revoke, 30-day data refresh | M (1.0) | 06.4.1-T1 | 06.4.2-T2, 02.8.3-T4 |
 | 06.4.2-T2 | Token-health incident path per `oauth_client_id` | XS (0.25) | 06.4.2-T1, 06.2.3-T3 | 06.5.1-T1 |
 | 06.4.3-T1 | YouTube channel-scope deletion handler + due-date alert | S (0.5) | 06.4.1-T1, 13.3.1-T1 | 06.5.1-T1 |

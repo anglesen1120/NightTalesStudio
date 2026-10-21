@@ -1,4 +1,4 @@
-# 10.7.3 — TikTok posting (R2)
+# 10.7.3 — TikTok posting (P · R2)
 
 > Detailed plan for the R2 TikTok screen family of `plans/10-web-ui.md:189/381`. Contract: `../README.md` **Part C** (§C0 folder brief `:566`, §C1 facts SC7/SC19/SC20/SC28, §C2 findings FC13/FC18, §C3 SD10/SD11–SD16, §C6 template, §C7 R2 gates, `### C8.1` rows `:749-751`, §C9 re-estimate `:776`, §C10 rulings S-O5/ST-6), Parts A (D1–D18) and B (WT-W1…WT-W15) signed context. Backend contracts consumed verbatim: `../../07-tiktok-posting/README.md` §3 (D1–D19), `../../06-youtube-posting/README.md:107` (publication wire), `../../09-backend-api/README.md` Part C (09 S wire), `plans/00-overview.md:99,289,308,363,364`.
 > Status: **draft for TL DoR** — the design gate of §11 is not yet recorded as approved (see §6).
@@ -212,13 +212,13 @@ No client job, timer, service worker or queue. The only asynchronous integration
 - **Never logged / never in the DOM**: `code`, `state`, tokens, `open_id`, the presigned URL and `platform_payload`. `console.*` in this folder is limited to the allow-list diagnostic; the callback query is redacted then replaced (the API already drops the query from the LB log, 07 D14/CR-10).
 - **CSP/Trusted Types**: no third-party script, no CDN, no `frame-src` need (K7 means no embedded player/uploader), no `innerHTML`; the composer renders the server's consent `text` as plain text (`{{ }}` binding, never `[innerHTML]`), and no `bypassSecurityTrust*` is used (D4/ST-2). The CSP fixture assertion is part of each task's e2e (10.1.6-T1).
 - **Privacy**: an unaudited client posts private-only — the notice states it and `privacy` is not user-selectable (K11, S-O5). Creator `nickname`/`avatarUrl` render from the DTO; the avatar loads from the API/vendor URL without referrer leakage (`referrerpolicy="no-referrer"`), and no caption/nickname/`open_id` is put into URLs, logs or telemetry (07 D14/D18).
-- **Secrets**: none. This folder reads no key, no token and no site key (the CAPTCHA/runtime-config item is 10.3.3-T2's, CR-28).
+- **Secrets**: none. This folder reads no key, no token and no site key; the CAPTCHA/runtime-config item belonged to the phase-S task 10.3.3-T2, deleted by DEC 10.14 (CR-28 is void).
 - **Double-submit / CSRF**: connect and create are state-changing `POST`s through the interceptors with the in-memory Bearer and a required `Idempotency-Key`; the UI disables the button while in flight, the intent (and therefore the key) survives a network error / 5xx / timeout so a retry replays the same logical command, and a new click after a terminal answer mints a fresh key. A missing-key 400, `422 idempotency_key_reused` or 409 `idempotency_conflict` is a client bug: dev console error + `errors.unknown_error` with `traceId` to the user (10.5.2-T1:67 pattern). Consent carries `If-Match` and no key; on a lost response the client refetches instead of resubmitting (§4 UC-T8).
 - **Audit**: consent is audited server-side (`publishing.consented`, 07 D5); this folder emits no client audit and no analytics.
 
 ## 9. Test plan
 
-Projects: Vitest + Angular TestBed for components/stores (D15: hand-written `fake-*` repositories from `NightTales.TestKit`-style fakes — **no mocking library**), Playwright + axe for e2e (10.1.5-T1's `e2e.yml`, WR3), and the existing CSP fixture (10.1.6-T1) and per-route budget check (`tools/web/check-gzip-budget.mjs`, FC8 — the assertion for the `tiktok` chunk is 10.10.1-T2's).
+Projects: Vitest + Angular TestBed for components/stores (D15: hand-written `fake-*` repositories from `NightTales.TestKit`-style fakes — **no mocking library**), Playwright + axe for e2e (10.1.5-T1's `e2e.yml`, WR3), and the existing CSP fixture (10.1.6-T1) and per-route budget check (`tools/web/check-gzip-budget.mjs`, FC8).
 
 | Level | Spec | Behaviour asserted |
 |---|---|---|
@@ -233,13 +233,13 @@ Test data: creator info with `privacyLevelOptions: ['SELF_ONLY']` and one public
 
 | Task | Size | Area | Phase | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 10.7.3-T0 | S (0.5) | UX | S · R2 | 10.1.3-T1, 07.2.1-T1 (soft) | 10.7.3-T1, 10.7.3-T2 |
-| 10.7.3-T1 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 07.1.2-T1, 07.1.2-T2 (soft), 10.7.1-T1, 06.5.2-T1, 07.2.1-T1 | 10.7.3-T2, 07.4.1-T1 |
-| 10.7.3-T2 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 10.7.3-T1, 07.2.1-T1, 07.2.2-T1 (soft), 07.3.1-T1 (soft), 07.3.2-T1 (soft), 10.7.4-T1 | 07.4.1-T1 |
+| 10.7.3-T0 | S (0.5) | UX | P · R2 | 10.1.3-T1, 07.2.1-T1 (soft) | 10.7.3-T1, 10.7.3-T2 |
+| 10.7.3-T1 | M (1.0) | FE | P · R2 · flag `tiktok_publish` | 10.7.3-T0, 07.1.2-T1, 07.1.2-T2 (soft), 10.7.1-T1, 07.2.1-T1 (06.5.2-T1 dropped by DEC 10.14) | 10.7.3-T2, 07.4.1-T1 |
+| 10.7.3-T2 | M (1.0) | FE | P · R2 · flag `tiktok_publish` | 10.7.3-T0, 10.7.3-T1, 07.2.1-T1, 07.2.2-T1 (soft), 07.3.1-T1 (soft), 07.3.2-T1 (soft), 10.7.4-T1 | 07.4.1-T1 |
 
 2.0 raw + 0.5 design = **2.5** (§C9 `:776`; the high-level L of `plans/10-web-ui.md:381` splits into two M per 10 CR-24 with the total unchanged). No task exceeds L; nothing here is sequential beyond T0 → T1 → T2.
 
-Interfaces this folder produces for others: the `tiktok` i18n scope, `TikTokPostInput`/`TikTokCreatorInfo`, `TikTokRepository` + `HttpTikTokRepository` + `FakeTikTokRepository`, `TikTokStore`/`TikTokComposerStore` and the composer route — consumed by 07.4.1-T1 (audit evidence, which depends on T2) and audited by 10.10.1-T2 (publishing screens + per-route budget).
+Interfaces this folder produces for others: the `tiktok` i18n scope, `TikTokPostInput`/`TikTokCreatorInfo`, `TikTokRepository` + `HttpTikTokRepository` + `FakeTikTokRepository`, `TikTokStore`/`TikTokComposerStore` and the composer route — consumed by 07.4.1-T1 (audit evidence, which depends on T2).
 
 Open items to close at DoR ([OPEN], no invented contract):
 1. **[OPEN] `?connected=tiktok` reader.** SD10 (`:673`) and 07 D12 fix the callback redirect to `/channels?connected=tiktok` with five error codes, but §C1/§C3 assign that page's query reading to 10.7.1-T1, whose closed code set covers only YouTube. This plan therefore specifies a **minimal additive edit** to 10.7.1-T1's `channels.store.ts`/`ChannelResult` (accept `'tiktok'` and `tiktok_scope_missing`, no behaviour change for the YouTube values) and records it in T1's Changed list with the owner notified (WT-W6/WT-W10 precedent). TL confirmation requested — reported with the README lines.
@@ -251,10 +251,10 @@ Open items to close at DoR ([OPEN], no invented contract):
 
 ## 11. Rollout
 
-1. **Gate check (blocking).** Timeline facts: 07.1.2-T1/T2 + 07.2.1-T1/T2 + 07.3.1-T1/T2 merged, `06.5.2-T1` exists and `tiktok_publish` is settable (`nts-worker flags set tiktok_publish true` for the owner), 10.1.3-T1 (theme + UI kit) and 10.7.1-T1 (`/channels`, `ChannelRepository`, `index.ts`, `publishing.routes.ts`) merged. Without 07.2.1-T1 the creator-info contract is a stub and T0's design cannot be signed (`10.7.3-T0 Depends on 07.2.1-T1`, §C8.1).
-2. **Order**: `10.7.3-T0` (design, in parallel with 10.7.3-T1's read-only prep) → **owner approval recorded in §6** → `10.7.3-T1` → `10.7.3-T2` → `07.4.1-T1` (audit evidence/screencast) → `10.10.1-T2` (axe + per-route budget). Nothing here blocks the M2 exit (§C5 step 6).
+1. **Gate check (blocking).** Timeline facts: 07.1.2-T1/T2 + 07.2.1-T1/T2 + 07.3.1-T1/T2 merged, `tiktok_publish` is settable (the S gate task `06.5.2-T1` is dropped by DEC 10.14, so the flag has no rollout-rule gate) (`nts-worker flags set tiktok_publish true` for the owner), 10.1.3-T1 (theme + UI kit) and 10.7.1-T1 (`/channels`, `ChannelRepository`, `index.ts`, `publishing.routes.ts`) merged. Without 07.2.1-T1 the creator-info contract is a stub and T0's design cannot be signed (`10.7.3-T0 Depends on 07.2.1-T1`, §C8.1).
+2. **Order**: `10.7.3-T0` (design, in parallel with 10.7.3-T1's read-only prep) → **owner approval recorded in §6** → `10.7.3-T1` → `10.7.3-T2` → `07.4.1-T1` (audit evidence/screencast). Nothing here blocks the M2 exit (§C5 step 6).
 3. **Rollout state**: the flag ships **off**; enabled first for the owner's own account only (07 D4/CR-6), then for the `approved` audit state via 07.4.1-T2. A rollback is `nts-worker flags set tiktok_publish false`: nav entry, the composer route and the `/channels` TikTok section disappear; existing TikTok publications stay visible through 10.7.4-T1's panel (they are ordinary publications) and in-flight server jobs keep running (07 D16).
-4. **Post-deploy checks**: connect → callback → connected card on the real sandbox (or 07's stubs, §C7 R2 exit); composer against a private test account with `privacy = SELF_ONLY`; the R2 exit checklist of §C7 signed; 10.10.1-T2's axe + budget rows for `/channels` and `/episodes/:id/publish/tiktok` in the release report.
+4. **Post-deploy checks**: connect → callback → connected card on the real sandbox (or 07's stubs, §C7 R2 exit); composer against a private test account with `privacy = SELF_ONLY`; the R2 exit checklist of §C7 signed; axe (WCAG 2.2 AA) and gzip-budget checks for `/channels` and `/episodes/:id/publish/tiktok` recorded in the release report.
 
 ## 12. Angular implementation amendment (2026-10-02)
 

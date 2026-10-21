@@ -3,13 +3,13 @@
 > One-page map of how the project works: phases, system, content pipeline, background jobs, compliance flow and the engineering workflow.
 > This file **summarises**; it does not decide. Sources of truth: `DECISIONS.md` (product decisions), `plans/00-overview.md` (shared contracts, estimates), `plans/01`–`13` (high-level plans), `plans/features/` (detailed feature plans). If this file disagrees with them, they win — fix this file.
 > Legend: ✅ verified from an official source · ⚠️ unverified · [DECISION] · [OPEN] needs the owner.
-> Full diagram set (19 diagrams, with SVG exports in `docs/diagrams/`): `DIAGRAMS.md`.
+> Full diagram set (17 diagrams, with SVG exports in `docs/diagrams/`): `DIAGRAMS.md`.
 
 ---
 
 ## 1. The product in one paragraph
 
-Night Tales Studio turns ghost, spiritual and true-crime story ideas into faceless narrated videos in Vietnamese and English and publishes them to YouTube (TikTok later). The owner first runs **their own channel fully automatically** (personal phase, P). A public SaaS for other creators (S) is built only if the channel proves the idea (Gate 2).
+Night Tales Studio turns ghost, spiritual and true-crime story ideas into faceless narrated videos in Vietnamese and English and publishes them to YouTube and TikTok. The owner first runs **their own channel fully automatically** (personal phase, P). There is no public SaaS: the owner alone uses it, with no sign-up, credits or payments (DEC 10.14).
 
 | Layer | Choice |
 |---|---|
@@ -28,21 +28,17 @@ flowchart LR
   M0["M0 Trial on the Mac (01-05)"] -->|"Gate 1: quality + cost OK"| M1["M1 Personal studio (P epics)"]
   M1 --> AUD["YouTube audit filed (M1)"]
   AUD -->|"audit approved (unknown wait)"| CH["Channel phase: autopilot, at least 12 weeks"]
-  CH -->|"Gate 2: SaaS go/no-go"| M2["M2 Closed beta (S epics)"]
-  M2 --> M3["M3 Public launch"]
-  M3 --> R2["R2 TikTok"]
+  CH --> M3["M3 Steady autopilot operation (daily publishing)"]
 ```
 
 | Step | What happens | Exit / gate |
 |---|---|---|
 | **M0 Trial** | Prove the pipeline locally; measure time and cost per video; 05.4 worker-contract spike | **Gate 1:** quality acceptable and cost per video known, else stop or change approach |
 | **M1 Personal studio** | Backend + web end to end, one owner account with MFA, autopilot, YouTube API publishing (private until audit), privacy/terms pages, deletion jobs | Autopilot publishes on its cadence with no manual step (true-crime after approval); **YouTube audit filed** |
-| **Channel phase** | Run the flagship channel on autopilot ≥ 12 weeks after the audit allows public uploads; weekly KPI sheet | **Gate 2 [OPEN]:** owner decides from channel results, cost per video, time per episode |
-| **M2 Closed beta** | Sign-up, account security, admin, credits and payments, multi-user publishing extensions, compliance, lawyer review | 10 beta users; OAuth verification filed; audit extended for SaaS |
-| **M3 Launch** | Public sign-up once audit + quota extension are approved | Load test, runbooks |
-| **R2** | TikTok publishing (needs a TikTok audit; an own-accounts tool is not an accepted use ✅) | TikTok audit approved |
+| **Channel phase** | Run the flagship channel on autopilot ≥ 12 weeks after the audit allows public uploads; weekly metrics sheet | Audit approved; autopilot publishes without a manual step |
+| **M3 Steady operation** | Daily autopilot publishing on YouTube and TikTok, runbooks, cost watch | No gate: the product is personal (DEC 10.14) — no public launch, no closed beta, no SaaS phase |
 
-Estimates (buffered person-days, one developer): **P 236.7 (≈ 11.8 months)**, **S 105.0 (≈ 5.3 months)**, total 341.7 (10 CR-31, 10 CR-22, 13 CR-9, 09 W3 CR-6, 10 CR-39/40, 11 CR-15) — `plans/00-overview.md` §4.1, §13. External waits (audits, lawyer, payment onboarding) are not included.
+Estimates: **208.0 raw / 249.6 buffered person-days ≈ 12.5 months** for one developer at ~20 productive days/month — the sum of the twelve plan §11 totals, one phase (P) only (plan 12 and the SaaS column are gone, DEC 10.14) — `plans/00-overview.md` §4.1, §13. External waits (audits, lawyer) and the Channel phase's ≥ 12 publishing weeks are not included.
 
 ## 3. System map
 
@@ -58,10 +54,9 @@ flowchart LR
   MPT -->|"egress allow-list"| OAI2["OpenAI image API"]
   W --> S3[("S3-compatible storage")]
   W --> YT["YouTube Data API"]
-  W -. "R2" .-> TT["TikTok Content Posting API"]
+  W -. "TikTok (P)" .-> TT["TikTok Content Posting API"]
   FT["fetcher container (fetch queue)"] -->|"narrow internal API"| API
   FT --> WEB(("Allow-listed public pages"))
-  PAY["Payment provider (S)"] -->|"POST /billing/webhooks/{provider}"| API
 ```
 
 Rules that shape the map [DECISION]:
@@ -160,11 +155,9 @@ A publication **never** leaves `awaiting_consent` without a consent record for t
 | Render | `SubmitRenderJob`, `PollRenderJob`, `IngestRenderOutputJob` | outbox `RenderRequested` / every 10 s while active |
 | YouTube | `PublishYouTubeJob`, `PollYouTubeProcessingJob`, `PublicationGoLiveJob`, `TokenHealthJob` | consent / after upload / publishAt / daily |
 | Data duties | `DataDeletionJob` (7- and 30-day YouTube duties ✅), `RetentionSweepJob` | hourly / daily |
-| Settings (S) | `SettingChangeApplyJob`, `OwnerActionApplyJob`, `SettingSecretPurgeJob` | every 1 min / daily |
-| Billing (S) | `CreditReconciliationJob`, `PaymentStatusSyncJob`, `CreditExpiryJob`, `LowBalanceNotifierJob`, `FundingRunwayJob`, `PaymentAnomalyJob`, `CreditsMintedDigestJob` | see 12 §5.1 |
-| TikTok (R2) | `PublishTikTokJob`, `PollTikTokStatusJob` | 07 |
+| TikTok (P) | `PublishTikTokJob`, `PollTikTokStatusJob` | 07 |
 
-Full table with retry and idempotency rules: `plans/09-backend-api.md` §5.3. In the personal phase, credit calls go through an `ICreditLedger` port with a metering-only implementation; the 12 ledger replaces it at M2.
+Full table with retry and idempotency rules: `plans/09-backend-api.md` §5.3. Nothing is sold (DEC 10.14): `ICreditLedger` keeps only its metering implementation, which writes `usage_records` cost rows, and it is never replaced by a real ledger.
 
 ## 7. YouTube compliance flow
 
@@ -180,7 +173,7 @@ flowchart LR
 
 Key facts (`DECISIONS.md` §5.5, §10.12):
 - Uploads from unaudited API projects created after 28 July 2020 are **private only** ✅. Only the **API compliance audit** lifts this.
-- **OAuth verification is a separate gate.** It controls the unverified-app screen and the 100-user cap; it is needed only for the SaaS. The owner's app runs "In production" without verification, because Testing status expires tokens after 7 days ✅.
+- **OAuth verification is not needed.** It only lifts the unverified-app screen and the 100-user cap, which mattered for a public product; there is no public sign-up any more (DEC 10.14), and the owner's app runs "In production" without verification, because Testing status expires tokens after 7 days ✅.
 - The client must have its own terms and privacy policy (Developer Policies III.A ✅). Users must keep "final control over the data that will be published" (III.C.3 ✅); the veto window supports this.
 - [OPEN] If the audit rejects series-level authorization, the owner decides before filing: one-tap "Approve now" per video, or stay private-only.
 
@@ -198,11 +191,11 @@ flowchart LR
 ```
 
 - **No feature is built from a high-level plan alone.** Template and process: `plans/00-overview.md` §10.1 and `plans/features/README.md`.
-- Security review is required for auth, admin, billing and data features.
+- Security review is required for auth, provider credentials and data features.
 - **Contract changes go to `plans/00-overview.md` first**: domain names, states, routes, tables. Product decisions go to `DECISIONS.md`.
 - **Definition of Ready:** user value, Given/When/Then acceptance, dependencies known, estimate ≤ XL, reviewed feature plan, and for web/UI work an approved UI design linked.
 - **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on.
-- **Per-task QA and tiered review before push (owner rules 2026-09-25, tiered 2026-09-30):** reviews by risk tier, T3 taking precedence over size — T3 (auth, tenant filter, migrations, secrets, billing, external input, file/process, network; any size): separate code, performance and security reviews; T2 (M+, no T3 area): code + one perf+security review; T1 (XS/S, no T3 area): one combined review; T0 (docs/plans only): one doc review, no QA agent. For T1–T3 a separate QA agent runs first, never in parallel with the reviews. Fixes are re-tested and recorded in `STATUS.md` **before** the commit is pushed. A task is not `done` until its tier's gates are closed. Contract: `plans/00-overview.md` §10.
+- **Per-task QA and tiered review before push (owner rules 2026-09-25, tiered 2026-09-30):** reviews by risk tier, T3 taking precedence over size — T3 (auth, tenant filter, migrations, secrets, external input, file/process, network; any size): separate code, performance and security reviews; T2 (M+, no T3 area): code + one perf+security review; T1 (XS/S, no T3 area): one combined review; T0 (docs/plans only): one doc review, no QA agent. For T1–T3 a separate QA agent runs first, never in parallel with the reviews. Fixes are re-tested and recorded in `STATUS.md` **before** the commit is pushed. A task is not `done` until its tier's gates are closed. Contract: `plans/00-overview.md` §10.
 - **Definition of Done:** code reviewed, **a separate QA agent (not the author) re-read the plan, feature and task files and ran every acceptance check plus negative and edge cases against the implementation, reporting pass/fail with command output** (owner rule 2026-09-25, `~/.omp/agent/RULES.md` "Mandatory QA test pass"), CI green, unit tests for domain rules and use cases, integration test per endpoint (real PostgreSQL 17, `PostgresFixture`), strings in vi + en, logs and metrics for new jobs, OpenAPI/runbook updated.
 
 ### 8.2 Branch → production
@@ -210,7 +203,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   PRB["Pull request"] --> CI["CI: backend build/test, web lint/test/build, e2e with mock-mpt"]
-  CI --> MN["Merge to main"] --> IMG["Images tagged with git SHA + digest (signing and SBOM in S)"]
+  CI --> MN["Merge to main"] --> IMG["Images tagged with git SHA + digest (signing and SBOM were to be 11.5.3-T2, dropped by DEC 10.14)"]
   IMG --> MIG["EF migration bundle (expand, then contract)"] --> STG["Deploy to staging (automatic)"]
   STG --> PRD["Deploy to production (manual approval)"]
   MN --> NB["node.yml: node bundle + SHA256SUMS"] --> ND["nts-node deploy (operator, VPN): drain, install, smoke, activate"]
@@ -227,9 +220,9 @@ Source: `plans/11-worker-deployment.md` 11.5.
 
 - **IDs:** story `<plan>.<epic>.<story>` (for example `06.2.2`); task `<story>-T<n>`.
 - **Sizes:** XS 0.25 · S 0.5 · M 1 · L 2 · XL 3 person-days, plus a 20 % buffer. Each plan's §11 epic rows equal the sum of its §6 tasks.
-- **Phase tag:** every task is P or S (the S list is in `plans/00-overview.md` §4.1).
+- **Phase tag:** every task is P (one phase only, DEC 10.14; `plans/00-overview.md` §4.1).
 - **Evidence:** ✅ only with an opened official source; otherwise ⚠️, [INFERENCE] or [OPEN]. Never invent facts.
-- **Licences:** commercial SaaS use required (no AGPL, RPL or non-commercial). OpenAI is the only paid provider.
+- **Licences:** permissive licences only (no AGPL, RPL or non-commercial), so a future hosted variant would stay possible. OpenAI is the only paid provider.
 - **Languages:** plan files are English; the UI is vi + en.
 
 ## 9. Open decisions (owner)
@@ -237,11 +230,10 @@ Source: `plans/11-worker-deployment.md` 11.5.
 | # | Decision | Needed by |
 |---|---|---|
 | 1 | Audit fallback: one-tap approval per video vs private-only | Before filing 13.4.2 |
-| 2 | Gate 2 criteria (subscribers, watch hours, monetization, cost per video) | Before the Channel phase |
+| 2 | Channel-phase targets (subscribers, watch hours, cost per video) — targets, not a go/no-go gate (DEC 10.14) | Before the Channel phase |
 | 3 | Hosting provider/region for API and GPU node | M0 → M1 (11.2.1) |
 | 4 | ✅ Decided 2026-09-24: Hangfire LGPL-3.0 accepted, unmodified NuGet packages (09 README O1) | — |
-| 5 | Payment provider; lawyer (credit expiry, refunds); accountant (VAT e-invoices) | Gate 2 |
-| 6 | SaaS review rule for other users (checkpoints vs autopilot) | Gate 2 |
+| 5 | Lawyer review of the privacy policy, ToS and content policy | Before the first real upload |
 
 ## 10. Where to find things
 
@@ -252,12 +244,11 @@ Source: `plans/11-worker-deployment.md` 11.5.
 | Environment and M0 trial | `plans/01`–`05` |
 | Story writing, research, autopilot | `plans/02-story-writing.md` (Epics 02.5, 02.7, 02.8) |
 | YouTube publishing and consent | `plans/06-youtube-posting.md` |
-| TikTok (R2) | `plans/07-tiktok-posting.md` |
+| TikTok (P) | `plans/07-tiktok-posting.md` |
 | Channel operation, runbooks | `plans/08-90-day-operations.md` |
-| Backend skeleton, jobs, security, admin | `plans/09-backend-api.md` |
+| Backend skeleton, jobs, security | `plans/09-backend-api.md` |
 | Screens | `plans/10-web-ui.md` |
 | GPU node, environments, CI/CD | `plans/11-worker-deployment.md` |
-| Credits and payments (S) | `plans/12-billing-credits.md` |
 | Legal pages, deletion, audits | `plans/13-compliance.md` |
 | Detailed feature plans | `plans/features/` |
 | Diagrams (architecture, flows, states, data model) | `DIAGRAMS.md`, `docs/diagrams/*.svg` |

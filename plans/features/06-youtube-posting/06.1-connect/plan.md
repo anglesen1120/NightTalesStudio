@@ -10,7 +10,7 @@
 
 **Out (other folders, same plan).** `DELETE /channels/{id}` + revoke + deletion request (06.4.1-T1), `TokenHealthJob` and the 25-day data refresh (06.4.2-T1/T2), publications/consent/veto (06.2.x), quota ledger (06.3.1-T1), the upload client half of `IYouTubeClient` (06.2.3-T1), `platform_incidents` (06.2.3-T3) and `OAuthErrorClassifier` (06.2.3-T3/T1).
 
-**Out (S phase, Gate 2).** Multi-client settings from 09.10, the client-removal guard and per-client connection counts (06.1.2-T3, F19); TikTok (07); every legal text (13.1.x) and the acceptance endpoints/UI (13.2.1-T1).
+**Out (S phase, Gate 2).** Multi-client settings, the client-removal guard and per-client connection counts (dropped by DEC 10.14); TikTok (07); every legal text (13.1.x) and the acceptance endpoints/UI (13.2.1-T1).
 
 **Explicit non-goal.** No outbox/realtime event is raised by the two connect calls **except** `channel_connection_changed.v1` on a successful callback (§5.3): the browser already navigates to a freshly fetched `/channels`, so a realtime frame would be a second mechanism for the same fact.
 
@@ -325,11 +325,11 @@ Manual staging check (D19): connect a real test channel (private only), confirm 
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 06.1.1-T1 | Google Cloud projects, consent screens, OAuth clients (staging + prod) | S (0.5) | 10.3.1-T1 (soft), 13.1.1-T1 (soft), 13.1.2-T1 (soft) | 13.4.1-T1 (13 CR-17) |
+| 06.1.1-T1 | Google Cloud projects, consent screens, OAuth clients (staging + prod) | S (0.5) | 10.3.1-T1 (soft), 13.1.1-T1 (soft), 13.1.2-T1 (soft) | — (Google OAuth verification dropped by DEC 10.14) |
 | 06.1.2-T1 | Connect + callback: state/PKCE store, re-auth, legal gate, token exchange | M (1.0) | 06.1.1-T1 (soft), 09.3.2-T1, 09.10.4-T1, 09.9.4-T1, 09.9.2-T2, 13.2.1-T1 | 06.1.2-T2, 10.7.1-T1 (10 CR-15), 07.1.2-T1 (07 CR-11), 10.7.1-T0 |
-| 06.1.2-T2 | Channel fetch, `ChannelConnection` aggregate, pinned client resolver, connect e-mail, channel list | M (1.0) | 06.1.2-T1, 09.2.6-T3 | 06.2.1-T1, 06.2.3-T1, 06.4.1-T1, 10.7.1-T1 (10 CR-15), 08.4.1-T1 (08 CR-5), 07.1.2-T1, 07.1.2-T2 (07 CR-11), 06.1.2-T3 (06 CR-18) |
+| 06.1.2-T2 | Channel fetch, `ChannelConnection` aggregate, pinned client resolver, connect e-mail, channel list | M (1.0) | 06.1.2-T1, 09.2.6-T3 | 06.2.1-T1, 06.2.3-T1, 06.4.1-T1, 10.7.1-T1 (10 CR-15), 08.4.1-T1 (08 CR-5), 07.1.2-T1, 07.1.2-T2 (07 CR-11) |
 
-The header cells of the three task files repeat these rows verbatim (`| Story | Size | Area | Depends on | Blocks | Phase / flag |` in each file, cell 1 = `06.1.1`/`06.1.2`). Folder total **2.5 d**, equal to README §9's "06.1 setup + connect 2.5" (2.0 high-level + 0.5 for the P half of 06.1.2-T3 taken by 06.1.2-T2, F19). No re-estimate change is requested by this folder.
+The header cells of the three task files repeat these rows verbatim (`| Story | Size | Area | Depends on | Blocks | Phase / flag |` in each file, cell 1 = `06.1.1`/`06.1.2`). Folder total **2.5 d**, equal to README §9's "06.1 setup + connect 2.5" (2.0 high-level + 0.5 for re-auth, client pinning and the connect e-mail in 06.1.2-T2, F19). No re-estimate change is requested by this folder.
 
 Ordering inside the folder is strict: 06.1.2-T1 needs the client ids and both endpoints (06.1.1-T1 soft — its acceptance run needs the real project, development can use a local redirect URI + `FakeGoogleServer`); 06.1.2-T2 needs the exchanged tokens and the channel fetch from 06.1.2-T1. Both task files' `Depends on` cells are the README §8.1 rows and are not rewritable here.
 
@@ -337,8 +337,8 @@ Ordering inside the folder is strict: 06.1.2-T1 needs the client ids and both en
 
 1. **Before any deploy.** 06.1.1-T1 on staging first: separate Google Cloud projects (G10), consent screen with the privacy/terms URLs from 13.1.1-T1/13.1.2-T1 (soft) rendered by 10.3.1-T1, redirect URI `https://<staging origin>/api/v1/channels/youtube/callback`, both scopes only, the owner listed as a test user. Prod project "In production" unverified (G2 → private-only uploads, which is exactly C4's pre-audit mode). Client secrets go to the secret manager as `nts/<env>/api/YOUTUBE_CLIENT_SECRET` (A3/A12) — never into the repo, never into an env file.
 2. **Deploy order.** Migrations first (`_06_OAuthStates`, `_06_ChannelConnections` are expand-only, safe to apply before the code), then Api (the callback and both routes live there; the Worker has no part in connect). `YouTube:ActiveClientId` must be set or startup validation fails (D11).
-3. **Flag.** `youtube_publish` ships **off**: both routes answer 404 `feature_disabled` (A6). Turn it on for the owner only (P has one user; the S-phase rollout rules are 06.5.2-T1).
+3. **Flag.** `youtube_publish` ships **off**: both routes answer 404 `feature_disabled` (A6). Turn it on for the owner only (P has one user; rollout rules were dropped with phase S, DEC 10.14).
 4. **Staging smoke (gate `06-connect`, README §7).** Re-auth → legal acceptance → connect → Google consent → callback → one `channel_connections` row `active` with ciphertext, `GET /channels` shows it, the connect e-mail arrives in the configured SMTP sink, then 06.4.1-T1 disconnects and Google revoke succeeds. Re-run the callback URL twice: the second must redirect `?error=oauth_state_invalid` and change nothing.
 5. **Prod.** After the staging smoke: prod project, prod redirect URI, prod secret, flag on for the owner. Expect the first upload to be `private` until the audit (13.4.2-T1) — that is the pre-audit path (C4), not a bug of this folder.
-6. **Rollback.** Turn `youtube_publish` off (routes 404 within 30 s, A6): no code rollback, no data unwind, no second mechanism. Existing connections stay valid for the S-phase multi-client work (06.1.2-T3). Expired `oauth_states` rows are inert (10 min) and are purged on the user's next connect.
-7. **Secret rotation.** `YOUTUBE_CLIENT_SECRET` rotation keeps the same client id → existing connections keep refreshing (D5); only a new **client id** needs the S-phase settings path and the removal guard (06.1.2-T3).
+6. **Rollback.** Turn `youtube_publish` off (routes 404 within 30 s, A6): no code rollback, no data unwind, no second mechanism. Existing connections stay valid (no multi-client work follows; DEC 10.14). Expired `oauth_states` rows are inert (10 min) and are purged on the user's next connect.
+7. **Secret rotation.** `YOUTUBE_CLIENT_SECRET` rotation keeps the same client id → existing connections keep refreshing (D5); only a new **client id** would need a settings-backed source and a removal guard, neither of which exists (DEC 10.14).

@@ -1,4 +1,4 @@
-# 11.2.1, 11.2.2, 11.2.3 — Cloud environments: provider decision, staging IaC and the production account
+# 11.2.1, 11.2.2 — Cloud environments: provider decision, staging IaC and the production account
 
 > Parent: [`../README.md`](../README.md) — plan 11 review, findings F01–F28, decisions D1–D19, §8.1 canonical task dependencies. High-level: [`../../../11-worker-deployment.md`](../../../11-worker-deployment.md) §4 (Epic 11.2), §5.1, §5.6, §6. Layout: [`../../../00-overview.md`](../../../00-overview.md) §10.1, §4.1.
 >
@@ -10,7 +10,6 @@
 |---|---|---|---|
 | 11.2.1 | Hosting evaluation — provider chosen on evidence | P · M0 | S |
 | 11.2.2 | Staging environment from IaC (+ fetcher subnet, + SignalR LB, + prod instance) | P · M1 | M |
-| 11.2.3 | Production on its own account and OAuth projects | S · M2 | M |
 
 **In scope**
 
@@ -19,7 +18,7 @@
 - **11.2.2-T2** — the `fetcher` subnet, implementing the container/network table 02.5.2-T3 owns (P11) and proving it with that table's egress test.
 - **11.2.2-T3** — LB routing for SignalR: WebSockets only for `/hubs/*`; sticky sessions only as the documented fallback (E5, P10).
 - **11.2.2-T4** — `prod` from the same module in the same account (F08, O2): GPU node count 1, the two production OpenAI projects consumed as values, staging GPU count 0.
-- **11.2.3-T1** (S) — prod on its own account/project set with its own keys; separate Google/TikTok OAuth projects (06/07).
+- ~~Prod on its own account/project set~~ — dropped with phase S (DEC 10.14); one account serves prod.
 
 **Out of scope (owned elsewhere — do not duplicate)**
 
@@ -43,7 +42,7 @@
 
 | Id | Obligation for this folder | Evidence |
 |---|---|---|
-| D1 | one module for `staging`+`prod` with per-env variables; staging has no GPU node by default (mock-mpt is its render node); a staging node is on demand for upgrades; P = everything except 11.2.3-T1 | `../README.md` D1 ✅ |
+| D1 | one module for `staging`+`prod` with per-env variables; staging has no GPU node by default (mock-mpt is its render node); a staging node is on demand for upgrades; P = every task in this folder (phase S dropped, DEC 10.14) | `../README.md` D1 ✅ |
 | D15 | OpenTofu (MPL-2.0); state in the `pg` backend, database `nts_tofu` (T76 — no object storage is used, 11 CR-15); `infra/modules/platform` + `infra/envs/{staging,prod}`; GPU node as `infra/modules/render-node` per node (count 0 staging); resource list; secret paths `nts/<env>/<NAME>` with the per-service split `nts/<env>/{api,worker,fetcher,shared}/<NAME>`, `nts/<env>/node/<name>/<NAME>` (D20 H3/T51) and `nts/<env>/storage/<NAME>` (storage hosts only, 11 CR-15, T91) | `../README.md` D15 ✅ |
 | D17 | managed PITR (WAL 7 d, snapshots 30 d); `nt-media-<env>` copied to `nt-backup-<env>` with deleted objects aging out within 30 d of their delete (T87); OTLP to a Collector in the app network; backend chosen in 11.2.1, never self-hosted AGPL | `../README.md` D17; E10, E11, E12, O6 ✅ (11 CR-15) |
 | D21 | self-hosted SeaweedFS in every env (owner O7): this folder builds `storage-<env>` + `storage-backup-<env>` (VMs in their own `storage` subnet (T77), encrypted block volume `prevent_destroy`, `storage-sg`/`storage-backup-sg` (T78/T86), DNS `storage-<env>.internal`/`storage-backup-<env>.internal`, the internal root CA (T81), daily snapshots 7 d on the primary volume only — the backup volume is not snapshotted (T87), sizing) and the LB route `media.<domain>` / `media.staging.<domain>` (`GET`/`HEAD` only, T83); **no managed object storage and no object-storage product is scored**; buckets are created by 11.4.1-T1 through the S3 API, not as IaC resources; 11.4.1-T2 installs SeaweedFS on the hosts; live gateway/bucket/media proofs are 11.4.1-T2's/T1's (T90) | `../README.md` D21 ✅ (11 CR-15) |
@@ -52,7 +51,6 @@
 | D11 | node TLS/keys/egress live on the node; this folder only builds the network carrying them (render subnet; Worker → node 8090; no node → app connections); FQDN egress rules only if 11.2.1 proves support | `../README.md` D11, F14 ✅ |
 | D13 | `RenderNodes:Nodes[i]` = `{ Name, BaseUrl, Capacity, TlsCertSha256, GpuModel }`; key `RENDER_NODE_<NAME>_API_KEY`; dispatch needs Worker → node health 200 over pinned TLS | `../README.md` D13 ✅ |
 | D16 | `deploy.yml` builds `sha-<git sha>` images → registry → staging rollout → prod behind the `production` environment; OIDC to env-scoped roles | `../README.md` D16; E13 ✅ |
-| F08, O2 | 11.2.2-T4 (P): `prod` from the same module, same account; 11.2.3 (S) moves prod to its own account | `../README.md` F08, O2 ✅ |
 | F14 | egress allow-lists are per-unit systemd/nftables, not an egress proxy; provider FQDN egress support ⚠️ until 11.2.1 | `../README.md` F14 ✅ |
 | F16, E12 | no self-hosted AGPL anywhere: MinIO, Garage, Grafana, Renovate are AGPL → telemetry backend must be provider-native or hosted | `../README.md` F16, D17 ✅ |
 | F28 | GPU ≥ 16 GB VRAM required, 24 GB preferred, one GPU per node | `../README.md` F28, D9 ✅ |
@@ -62,7 +60,7 @@
 | P12 | 11.2 high-level 3.25 d (P 2.25, S 1.0); detailed 3.75 d (P 2.75, S 1.0); +0.5 d from F08 | `../README.md` P12, §9 ✅ |
 | 11 §5.1 | topology, incl. fetcher internet-only egress with no route to PostgreSQL/storage/render/metadata and no DB/storage credentials; SignalR WebSockets-only or sticky | `../../../11-worker-deployment.md` §5.1 ✅ |
 | 11 §5.6 | checklist: GPU types + VRAM, hourly/monthly price from a dated official page, billing granularity, stop/start, region + latency to VN/OpenAI/YouTube, managed PostgreSQL with PITR, attachable encrypted block volumes with snapshots and a GB-month price in two zones and an internet egress price for `media.<domain>` (T74; no object-storage product, 11 CR-15), private networking, data terms/GDPR/VN rules ⚠️, support, VN payment options | `../../../11-worker-deployment.md` §5.6 ✅ |
-| 11 §4 (11.2.3) | separate accounts/keys, separate Google/TikTok OAuth projects (06/07), separate text OpenAI project with a hard budget, second project for node image generation | `../../../11-worker-deployment.md` §4 ✅ |
+| 11 §4 (former 11.2.3) | separate accounts/keys and OAuth projects — dropped with phase S (DEC 10.14); the separate text OpenAI project with a hard budget stays a P config duty of 11.2.2-T1 | `../../../11-worker-deployment.md` §4 ✅ |
 | E10 | PostgreSQL 17 PITR = base backup + continuous WAL archive → the managed offering must state both | `../README.md` E10 ✅ |
 | E11 | OpenTofu MPL-2.0 acceptable; OTel Collector, Prometheus, Alertmanager, Jaeger Apache-2.0 | `../README.md` E11 ✅ |
 | 00 §13 | M0 is a parallel lane; 11.2.1-T1 is an external wait | `../README.md` §5 ✅ |
@@ -110,7 +108,6 @@ Not to be assumed: provider FQDN egress support (F14 ⚠️), two-zone/location 
 | UC-3 | Auditor (11.2.2-T2) | after UC-2 | the 02.5.2-T3 egress matrix holds inside the fetcher host (see §9 check 15) |
 | UC-4 | Developer / 10 e2e | after UC-2 | WebSocket upgrade on `/hubs/*` → 101 with `skipNegotiation`, no affinity; the sticky rule exists but is off |
 | UC-5 | Operator | after 11.5.1-T1 exists | `tofu -chdir=infra/envs/prod apply` with `gpu_node_count = 1`; prod renders on the real node (`11-node` gate); `app.<domain>` serves |
-| UC-6 | Owner (11.2.3-T1) | R2 planning | prod re-created in its own account with its own keys/registry/buckets/DNS zone; OAuth clients separate from staging |
 | UC-7 | Operator | drift or disaster | `tofu plan` on an applied env is empty; `tofu destroy` on `staging` leaves `prod` untouched (separate state) |
 
 ## 5. API and events
@@ -202,7 +199,6 @@ Checks needing a live account are ⚠️ and run at implementation; the rest run
 | 14 | ⚠️ `psql "$(secret nts/staging/DB_CONNECTION)" -c 'select 1'` from an app host / from the fetcher host | ok / refused |
 | 15 | ⚠️ `infra/checks/check-egress.sh` from a probe sidecar on the fetcher host with `--network container:<fetcher>` (the shipped image has no shell, D20 H13) | the 02.5.2-T3 matrix: `api:8081` ok; `https://example.com` ok; `postgres:5432` fail; storage endpoint fail; render address fail; `169.254.169.254` fail (IMDS off / `DOCKER-USER` drop, D20 H10); app-subnet port other than 8081 fail |
 | 16 | ⚠️ `tofu destroy -chdir=infra/envs/staging` after lifting the `prevent_destroy` guards on the disposable staging storage volumes (`infra/envs/<env>` guards the volumes only; the PG guard lives in `infra/bootstrap`, T90; D21, 11 CR-15), then `tofu plan` on prod | staging gone; prod plan still empty |
-| 17 | ⚠️ 11.2.3-T1: apply in account B, then `tofu plan` in account A; move DNS | account A unchanged; `app.<domain>` still 200 after the move |
 | 18 | ⚠️ `curl -sS -o /dev/null -w '%{http_code}' -X PUT https://media.staging.<domain>/nt-public-staging/probe` (unsigned) | PUT → 405 (the LB carries `GET`/`HEAD` only, T75); the live GET media proof is 11.4.1-T1's acceptance — this folder's checks stay infrastructure-only (T83, T90, 11 CR-15) |
 
 #8, #16, #17 are destructive by design on `staging` (and on the new prod account) — the reason `prod` keeps its own state. No check in this folder runs a build, a test suite or a render.
@@ -215,8 +211,7 @@ Checks needing a live account are ⚠️ and run at implementation; the rest run
 | 11.2.2-T1 | `platform` + `render-node` modules and the `staging` environment | Ops | M (1.0) | 11.2.1-T1 | 11.2.2-T2, 11.2.2-T3, 11.2.2-T4, 11.3.2-T1, 11.4.1-T2 (11 CR-15), 11.5.1-T1, 11.5.2-T1 |
 | 11.2.2-T2 | Fetcher subnet with internet-only egress | Ops | S (0.5) | 11.2.2-T1, 02.5.2-T3 | — |
 | 11.2.2-T3 | Load balancer: WebSockets only for `/hubs/*` | Ops | XS (0.25) | 11.2.2-T1 | — |
-| 11.2.2-T4 | `prod` from the same module, GPU node count 1 | Ops | S (0.5) | 11.2.2-T1, 11.5.2-T1 | 11.5.1-T1, 11.6.1-T1, 11.2.3-T1, 11.4.1-T2 (11 CR-15) |
-| 11.2.3-T1 | Prod on its own account and its own OAuth/OpenAI projects (S) | Ops | M (1.0) | 11.2.2-T4, 11.5.3-T1 | — |
+| 11.2.2-T4 | `prod` from the same module, GPU node count 1 | Ops | S (0.5) | 11.2.2-T1, 11.5.2-T1 | 11.5.1-T1, 11.6.1-T1, 11.4.1-T2 (11 CR-15) |
 
 Total **3.75 d** (P 2.75, S 1.0) against the high-level 3.25 d (P 2.25, S 1.0): the +0.5 d is F08's `prod`-in-P work, matching `../README.md` §9.
 
@@ -227,7 +222,6 @@ Total **3.75 d** (P 2.75, S 1.0) against the high-level 3.25 d (P 2.25, S 1.0): 
 3. Resolved in part (11.2.1-T1, **proposed** 2026-09-29): the provider is chosen — Azure `southeastasia` (Singapore), with GCP `asia-southeast1` as the only other non-excluded finalist (blocked on the PostgreSQL PITR evidence) and AWS scored but ineligible under the locked D21 "no AWS account" decision — and the provider-native names (Azure) for network/subnets/NSGs, managed PostgreSQL, the two storage VMs, their managed disks, the snapshot policy, the internal CA (T81 offline root), registry, secret manager, Application Gateway/DNS and VPN/bastion are listed in `DECISIONS.md` §10.4.1 and `infra/scoring/README.md`. The tables above stay generic until the TL applies them in the same pass as 11.2.2-T1; the ⚠️ provider question is closed by that block, whose latency line is the pre-apply check for 11.2.2-T1 step 1.
 4. [RULED — README §10 T76/T83 (supersedes T15), 11 CR-15] State lives in the `pg` backend, database `nts_tofu`; the backend locks, so T15's object-storage locking scheme is superseded. `infra/bootstrap` creates the env's PostgreSQL instance + `nts_tofu` (the platform module references the instance and creates only the app database/roles, T83); bootstrap's local state is encrypted with OpenTofu state encryption ⚠️ (verified in 11.2.2-T1 step 1) and kept offline by the owner.
 5. [RULED — README §10 T25: 11.2.2-T1 owns the static hosting/CDN resource, 10.1.5 the build] 11 §5.1 shows a CDN for web static but D15's resource list has none and no owner is named. Candidate: 10.1.5 or 11.5.1-T1.
-6. Contradiction found: `plans/11-worker-deployment.md` §4 (Epic 11.2.3) puts the two prod OpenAI projects in **S**, while P8/F08/§8.1 put `prod` in **P** (11.2.2-T4). Resolution used here: `nts-text-prod`/`nts-images-prod` are referenced by 11.2.2-T4 in P; 11.2.3-T1 in S only moves accounts/keys and creates the Google/TikTok OAuth projects.
 7. [RULED — README §10 T58 / D20 H13] The fetcher image has no shell (02.5.2-T3), so live check #15 runs from a probe sidecar on the fetcher host with `--network container:<fetcher>`; the probe is not part of the shipped image.
 
 ## 11. Rollout
@@ -236,5 +230,5 @@ Total **3.75 d** (P 2.75, S 1.0) against the high-level 3.25 d (P 2.25, S 1.0): 
 - **M1 order:** `infra/bootstrap` (T76: the PostgreSQL instance + `nts_tofu`, local state encrypted and offline) → 11.2.2-T1 → (11.2.2-T2 after 02.5.2-T3 lands its table; 11.2.2-T3 after T1 to avoid a write conflict on the same files) → 11.2.2-T4 after 11.5.2-T1 has filled the secret paths → then 11.5.1-T1 builds `deploy.yml` against the outputs.
 - **Flags (module inputs, not app feature flags):** `gpu_node_count` (staging 0, prod 1), the node list (name + GPU type), the telemetry backend from 11.2.1-T1, and `enable_prod` = the existence of `infra/envs/prod`.
 - **Gates:** `11-M0` (§10 item 1); `11-M1` "staging deploys automatically, prod by approval" needs T1 + T4 + 11.5.1-T1 (`../README.md` §7).
-- **Rollback:** staging is disposable (`tofu destroy`, own state); prod changes go through a reviewed plan diff attached to the change; the storage volumes carry `lifecycle { prevent_destroy = true }` [INFERENCE: an IaC detail, not a contract; the buckets are not IaC resources, D21, so the guard is on the volumes — `infra/envs/<env>` guards the volumes only while the PG instance guard lives in `infra/bootstrap`, T90, 11 CR-15] and the PG instance carries it in the `infra/bootstrap` state (T83), so a destroy of prod state cannot delete data (11 CR-15); the prod DNS record is the cutover lever for 11.2.3-T1 (short TTL, e.g. 300 s [INFERENCE]) and flipping it back is that task's rollback.
+- **Rollback:** staging is disposable (`tofu destroy`, own state); prod changes go through a reviewed plan diff attached to the change; the storage volumes carry `lifecycle { prevent_destroy = true }` [INFERENCE: an IaC detail, not a contract; the buckets are not IaC resources, D21, so the guard is on the volumes — `infra/envs/<env>` guards the volumes only while the PG instance guard lives in `infra/bootstrap`, T90, 11 CR-15] and the PG instance carries it in the `infra/bootstrap` state (T83), so a destroy of prod state cannot delete data (11 CR-15); the prod DNS record keeps a short TTL (e.g. 300 s [INFERENCE]) so any future cutover stays cheap, although no account move is planned (DEC 10.14).
 - **Hand-over:** after `apply`, the operator copies the render-node tuple into D13's `RenderNodes:Nodes[i]` and `RENDER_NODE_<NAME>_API_KEY` values into the secret manager (11.5.2-T1's runbook) — the boundary between this folder and the node work (11.3.x).

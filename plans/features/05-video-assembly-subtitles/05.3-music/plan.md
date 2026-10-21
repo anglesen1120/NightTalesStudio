@@ -22,7 +22,7 @@
 | M2 | `bgm_type = ""` or `bgm_volume ≤ 0` → no music; `bgm_file` resolves in `storage/bgm` then `resource/songs`; `bgm_type = "random"` (the schema default) picks any file in both dirs | C18 ✅ |
 | M3 | YouTube Audio Library music is copyright-safe **on YouTube**, not claimed through Content ID, monetisable in YPP; CC tracks need description credit; "Attribution not required" = standard licence; off-platform use not covered [INFERENCE] | L2 ✅ |
 | M4 | 01.2.2-T3 `strip-bundled-music.sh [--check] [--mpt-root DIR]` keeps only files whose sha256 is in `worker-node/music/LICENSES.csv`; `install-music.sh [--mpt-root DIR] [--source DIR]` copies CSV rows into `resource/songs`; "05.3.2 extends the file without renaming columns" | P1 ✅, 01.2.2-T3 ✅ |
-| M5 | `music_tracks` is owned by plan **05**; `render_jobs` by 09.6.1; `worker_nodes` by 09.10.1/11 | P5 ✅ |
+| M5 | `music_tracks` is owned by plan **05**; `render_jobs` by 09.6.1; `worker_nodes` by `WorkerNodeSeeder`/11 (the former 09.10.1 admin platform was dropped by DEC 10.14) | P5 ✅ |
 | M6 | D8 rules: id pattern (= file stem), licence enum, attribution iff `CC-BY-4.0`, scope↔licence, six-mood vocabulary (1–3), `durationSec ≥ 60`, extension, gain formula, topic → moods, `MusicBedLufs = −34` [target] | D8 ✅ |
 | M7 | Selector: active ∧ moods ∩ topic moods ≠ ∅ ∧ scope allowed; drop the series' last `Music:AvoidRecent` (3) ids, keep them if that empties the set; order by `id` ordinal; stable index from `SHA256(episodeId)`; none → `null` → no music, hint `music_none` | D8 ✅ |
 | M8 | D3: `bgm_type = "custom"` + `bgm_file = <file>` + `bgm_volume = <track bgmVolume>`, or `""` / `""` / `0`; **never `random`** | D3 ✅, F13 ✅ |

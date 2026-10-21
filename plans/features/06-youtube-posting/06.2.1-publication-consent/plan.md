@@ -20,7 +20,7 @@ Out of scope (owned elsewhere, listed so no reader guesses):
 - Quota ledger implementation and the ETA endpoint — `06.3.1-T1`; this folder only calls `IQuotaLedger.ReleaseAsync`.
 - Pre-audit privacy mapping, `publishAt` omission, go-live, `PollYouTubeProcessingJob`, `PublicationGoLiveJob`, `published_at` — `06.2.4-T1` / `06.2.5-T1` (D12).
 - Disconnect, token health, deletion handlers — `06.4-*`.
-- Multi-client settings/removal guard (`06.1.2-T3`, S), fairness (S), evidence pack (`06.5.1-T1`, BA).
+- Fairness queue and multi-client settings/removal guard (dropped with phase S, DEC 10.14); the audit evidence pack (`06.5.1-T1`, BA).
 
 High-level sections refined: `../../06-youtube-posting.md` L61-70 (06.2.1, 06.2.2), L86-88 (06.2.6); re-estimate per `../README.md` §9.
 
@@ -318,7 +318,7 @@ e2e: none here (Playwright owns the UI paths in 11.5.1-T1).
 | 06.2.1-T1 | Publication aggregate, create command, YouTube limits, attribution, ETag, episode summary | M (1.0) | 06.1.2-T2, 09.5.3-T1, 09.7.1-T1, 05.3.2-T3 (soft) | 06.2.2-T1, 02.8.3-T3, 10.7.2-T1 (10 CR-15), 07.2.2-T1 (07 CR-11), 10.7.2-T0 |
 | 06.2.2-T1 | Consent command + domain guard (`pc.v1` text, If-Match) | S (0.5) | 06.2.1-T1 | 06.2.2-T2, 06.2.6-T1, 06.2.3-T2, 10.7.2-T1 (10 CR-15), 07.2.2-T1 (07 CR-11) |
 | 06.2.2-T2 | Consent e-mail, veto notice e-mail with single-use cancel link, cancel-by-link route | S (0.5) | 06.2.2-T1, 09.2.6-T3, 09.3.3-T1 | 06.2.2-T3, 10.7.4-T2 (10 CR-15), 07.2.2-T2 (07 CR-11) |
-| 06.2.6-T1 | Cancel command (before upload) + quota release | S (0.5) | 06.2.2-T1, 06.3.1-T1 | 06.4.1-T1, 10.7.4-T1 (10 CR-15), 13.3.2-T1 (13 CR-17) |
+| 06.2.6-T1 | Cancel command (before upload) + quota release | S (0.5) | 06.2.2-T1, 06.3.1-T1 | 06.4.1-T1, 10.7.4-T1 (10 CR-15) |
 
 The table is identical to `../README.md` §8.1 (canonical). Folder total 2.0 d.
 

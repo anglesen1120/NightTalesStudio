@@ -27,7 +27,7 @@ Two rule changes from the high-level plan are load-bearing here and are taken fr
 | O7 | `omni-moderation-latest` is free; 13 categories; no text-length limit found ⚠️ | ✅/⚠️ README O7 (moderation guide) |
 | P1 | `09.5.2-T1` plans `ICreditLedger` with a metering-only P implementation; `09 §5.1` and `12.2.1` call the same port `ICreditService` → CR-2 renames it | ✅ README P1; `../../../09-backend-api.md` §5.1 L309 still says `ICreditService` — follow D1, CR-2 fixes the plan text |
 | P3 | `00 §7` returns a failed generation to the previous state; the true-crime guard sits on `draft → story_generating` | ✅ README P3; `../../../00-overview.md` L313–318 |
-| P6 | Reserve upper bound: input ≤ UTF-8 bytes of the prompt, output ≤ `max_output_tokens`; tiers Short/Standard/Long | ✅ README P6; `../../../12-billing-credits.md` 12.1.1 |
+| P6 | Reserve upper bound: input ≤ UTF-8 bytes of the prompt, output ≤ `max_output_tokens`; tiers Short/Standard/Long | ✅ README P6; `02.2.4-T1` (`price_versions` P subset, metering only — plan 12, the former price/cost authority, is deleted by DEC 10.14) |
 | F04 | The high-level "second invalid output → `story_review` with `story_invalid_output`" breaks `00 §7` from `draft` | ✅ README F04 → the error lives on the run; the episode returns to `previous_episode_status` |
 | F06 | The limit needs a definition of "day" and of what counts, plus a per-attempt record to show errors | ✅ README F06 → D2 `generation_runs` + the rolling 24 h rule |
 | F16 | The worst case is 4 calls (writer + review + revision + review #2); a 120 s p95 is unrealistic for Long | ✅ README F16/CR-6 → §7.4 latency budget; Long is measured, not gated |
@@ -454,12 +454,12 @@ post:
 
 ## 6. UI
 
-Reference stories — this backend designs no screen: **10.5.2** (new episode + generate, S), **10.5.3** (story editor, L), **10.5.10** (hints/highlights/conflicts, L), **10.8.4** (paused-processing states, S). What this plan must supply:
+Reference stories — this backend designs no screen: **10.5.2** (new episode + generate, S), **10.5.3** (story editor, L), **10.5.10** (hints/highlights/conflicts, L). What this plan must supply:
 
 | UI state | Backend source | Notes |
 |---|---|---|
 | generating (live) | `EpisodeUpdated` → `generation.stage` | 10.5.2 "after click the page shows the generating state live (SignalR) and becomes the editor when done" |
-| paused | `processingPaused` on `GET /episodes/{id}` / `EpisodeUpdated` | 10.8.4: "Processing is paused. Your credits are reserved, not charged yet" — shown instead of an error |
+| paused | `processingPaused` on `GET /episodes/{id}` / `EpisodeUpdated` | shown instead of an error; the copy names the pause only — no credits copy in P (DEC 10.14: cost metering is owner-only) |
 | failed | `generation.errorCode` + `moderationCategories` | the run is the only place the code lives (F04/F06); the UI must also offer "Try again" from `draft`/`story_review` |
 
 Copy keys the UI needs (vi/en), all under the `story.generation.*` namespace; the backend returns **codes**, the UI resolves the key (no prose from the API, D19):
@@ -476,7 +476,7 @@ Copy keys the UI needs (vi/en), all under the `story.generation.*` namespace; th
 | `story.generation.error.story_generation_failed` | `Không tạo được kịch bản. Vui lòng thử lại.` | `The story could not be generated. Please try again.` |
 | `story.generation.error.story_generation_limit` | `Đã đạt giới hạn 5 lần tạo mỗi ngày cho tập này. Còn {{seconds}} giây.` | `This episode reached its 5 generations for today. {{seconds}}s left.` |
 | `story.generation.error.spend_cap_reached` | `Đã chạm hạn mức chi tiêu. Vui lòng thử lại sau.` | `The spending cap was reached. Please try again later.` |
-| `story.generation.paused.provider_funds_exhausted` | `Tạm dừng xử lý. Tín dụng đã được giữ, chưa trừ.` | `Processing is paused. Your credits are reserved, not charged yet.` |
+| `story.generation.paused.provider_funds_exhausted` | `Tạm dừng xử lý. Vui lòng thử lại sau.` | `Processing is paused. Please try again later.` |
 | `story.generation.moderation.brief` | `Ý tưởng chưa phù hợp. Hãy bỏ các chi tiết bị đánh dấu và thử lại.` | `The idea is not suitable. Remove the flagged details and try again.` |
 | `story.generation.moderation.child_safety` | `Không được có nội dung liên quan đến trẻ em.` | `Content involving minors is not allowed.` |
 | `story.generation.moderation.graphic_violence` | `Giảm mô tả bạo lực chi tiết.` | `Reduce graphic violence.` |
@@ -712,7 +712,7 @@ Manual / M1: `OPENAI_LIVE_TESTS=1` runs one real `WriteAsync` + one `ReviewAsync
 |---|---|---|---|---|
 | 02.2.2-T1 | `story_versions` + `generation_runs` + `Episode` methods + migration | M 1.0 | 09.2.2 (initial migration), 09.5.1 (`Episode` aggregate), 02.1.1-T0 (D3/D4 types) | T2, T3, 02.5.3-T2, 02.8.1-T1 |
 | 02.2.2-T2 | `GenerateStoryCommand` + endpoint + idempotency + `IBudgetGuard` + `ICreditLedger` | S 0.5 | T1, 09.1.3 (behaviours), 02.2.4-T1 (`IStoryCostEstimator`), 02.4.2-T1; 02.5.5-T1 soft (CR-24) | 02.3.1-T1, 02.5.5-T1 (port, CR-24) |
-| 02.2.2-T3 | `GenerateStoryJob` + stages + settle/refund + timeout + `StaleGenerationSweeperJob` | M 1.0 | T1, T2, 02.2.1-T2 (`IStoryWriter`), 02.2.3-T2 (assembler), 02.4.1-T1, 02.6.1-T1 (`ReviewAsync`) | 02.3.2-T1, 12.2.4-T1 (12: story command wiring; 09.5.2-T1 withdrawn, 09 W2 CR-3) |
+| 02.2.2-T3 | `GenerateStoryJob` + stages + settle/refund + timeout + `StaleGenerationSweeperJob` | M 1.0 | T1, T2, 02.2.1-T2 (`IStoryWriter`), 02.2.3-T2 (assembler), 02.4.1-T1, 02.6.1-T1 (`ReviewAsync`) | 02.3.2-T1 (09.5.2-T1 withdrawn, 09 W2 CR-3; 12.2.4-T1 deleted by DEC 10.14) |
 | 02.4.1-T1 | `IContentModerator` + `OpenAiContentModerator` + refusal mapping + `moderation_events` | S 0.5 | T1 (`error_code` column), 02.2.4-T1 (`IUsageMeter`) | T3, 02.8.2-T2 |
 | 02.4.2-T1 | Rolling-24 h generation limit + 429 + `Retry-After` + row lock | XS 0.25 | T1 (`generation_runs` + the counting rule) | T2 (calls it) |
 | **Total** | | **3.25 d** | | |

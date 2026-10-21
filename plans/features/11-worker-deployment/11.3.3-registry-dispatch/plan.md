@@ -234,7 +234,7 @@ No GPU, no real node, no network in CI (D18); every HTTP test uses a scripted ha
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 11.3.3-T1 | `worker_nodes` registry, pinned-TLS connection factory and health poller | BE | M (1.0) | 09.2.2-T2, 11.3.5-T1, 09.3.6-T1 (09 W2 CR-8) | 11.3.3-T2, 11.3.1-T3, 09.6.2-T1, 12.8.3-T3 |
+| 11.3.3-T1 | `worker_nodes` registry, pinned-TLS connection factory and health poller | BE | M (1.0) | 09.2.2-T2, 11.3.5-T1, 09.3.6-T1 (09 W2 CR-8) | 11.3.3-T2, 11.3.1-T3, 09.6.2-T1 |
 | 11.3.3-T2 | `INodeSelector` dispatch rules and node metrics | BE | S (0.5) | 11.3.3-T1 | 09.6.3-T1, 11.6.2-T1 |
 
 **Re-estimate: 1.5 d raw** (T1 1.0 + T2 0.5, unchanged from the README §8 mapping "11.3.3-T1 M → T1 M + T2 S (new)"), **1.8 d buffered** at the README's 1.2 factor. No new external dependency, licence or price; plan 11's 17.75 → 23.0 d re-estimate is unaffected by this folder.

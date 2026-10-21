@@ -1,6 +1,6 @@
 # 07.3 — Publish (TikTok Direct Post init, status poll, caps and errors)
 
-Phase **S · R2**, flag `tiktok_publish` (owner-only until 07.4.1-T2, CR-6). Three tasks, **M + M + S = 2.5 d raw / 3.0 buffered**. Contract: `../README.md` (§1 K/C/U, §2 F01–F25, §3 D1–D19, §8.1, §10 TT1–TT12). This folder turns a consented TikTok publication into one post exactly once, tracks it to a terminal state, and owns the cap/error/alert surface. **No UI work** (10.7.3-T0/T1); backend tasks state which screen surface consumes them.
+Phase **P · R2**, flag `tiktok_publish` (owner-only until 07.4.1-T2, CR-6). Three tasks, **M + M + S = 2.5 d raw / 3.0 buffered**. Contract: `../README.md` (§1 K/C/U, §2 F01–F25, §3 D1–D19, §8.1, §10 TT1–TT12). This folder turns a consented TikTok publication into one post exactly once, tracks it to a terminal state, and owns the cap/error/alert surface. **No UI work** (10.7.3-T0/T1); backend tasks state which screen surface consumes them.
 
 ## 1. Scope
 
@@ -180,9 +180,9 @@ Quality gates tested positively: a `FakeTikTokServer` request counter asserts **
 
 | Task | Size | Area | Phase | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 07.3.1-T1 | M (1.0) | BE | S · R2 · flag `tiktok_publish` | 07.2.2-T1, 06.2.3-T2, 09.7.2-T1 | 07.3.2-T1, 07.3.3-T1 |
-| 07.3.2-T1 | M (1.0) | BE | S · R2 · flag `tiktok_publish` | 07.3.1-T1, 09.8.1-T1 | 07.3.3-T1, 07.4.1-T1 |
-| 07.3.3-T1 | S (0.5) | BE | S · R2 · flag `tiktok_publish` | 07.3.1-T1, 07.3.2-T1, 11.6.2-T1 (soft) | 07.4.1-T1 |
+| 07.3.1-T1 | M (1.0) | BE | P · R2 · flag `tiktok_publish` | 07.2.2-T1, 06.2.3-T2, 09.7.2-T1 | 07.3.2-T1, 07.3.3-T1 |
+| 07.3.2-T1 | M (1.0) | BE | P · R2 · flag `tiktok_publish` | 07.3.1-T1, 09.8.1-T1 | 07.3.3-T1, 07.4.1-T1 |
+| 07.3.3-T1 | S (0.5) | BE | P · R2 · flag `tiktok_publish` | 07.3.1-T1, 07.3.2-T1, 11.6.2-T1 (soft) | 07.4.1-T1 |
 | **Folder total** | **2.5 raw / 3.0 buffered** | | | | |
 
 Re-estimate vs the high-level plan (`plans/07-tiktok-posting.md` §11): 3.0 → **2.5** raw — 07.3.1-T1 −1.0 because `PULL_FROM_URL` removes the chunked uploader (F01/O1, CR-1) and the presigned URL is one store method (CR-4); 07.3.2-T1 stays at 1.0 in this recomposition (the `fail_reason` map, retry classes and reconciliation are real work, F11). This matches `../README.md` §9 ("07.3 posting 3.0 → 2.5") and the S total 7.75 / 9.3 that needs no CR to `00 §4.1` (O2).

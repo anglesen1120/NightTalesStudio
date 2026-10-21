@@ -18,7 +18,7 @@
 - Fetcher isolation (02 CR-19);
 - a ban on `AddDbContextPool` (09.2.1 decision).
 
-**Out of scope.** Rules that need runtime data, such as the cross-tenant route table (09.2.3-T2). Rules that belong to later waves are defined here but only become active when their types exist (the rules are written against namespaces and markers, so an empty set passes).
+**Out of scope.** Rules that need runtime data, such as the cross-tenant route table (phase S, dropped by DEC 10.14). Rules that belong to later waves are defined here but only become active when their types exist (the rules are written against namespaces and markers, so an empty set passes).
 
 ## 2. Confirmed facts
 

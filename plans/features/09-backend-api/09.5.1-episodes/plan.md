@@ -142,7 +142,7 @@ Integration (postgres `PostgresFixture` + `ApiFactory`, `TestAuthHandler`) and u
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.5.1-T1 | Episode aggregate, commands/queries, cursor pagination, retention event | M (1.0) | 09.4.1-T1, 09.2.4-T1, 09.1.3-T2, 09.1.4-T1 | 09.5.3-T1, 02 M1 development, 09.6.1-T1 (09 W2 CR-9), 10.5.1-T1 (10 CR-8), 09.3.6-T2 soft (09 W3 CR-17) |
+| 09.5.1-T1 | Episode aggregate, commands/queries, cursor pagination, retention event | M (1.0) | 09.4.1-T1, 09.2.4-T1, 09.1.3-T2, 09.1.4-T1 | 09.5.3-T1, 02 M1 development, 09.6.1-T1 (09 W2 CR-9), 10.5.1-T1 (10 CR-8) |
 
 Story total: **M 1.0** (README §9: `09.5.1-T1 M 1.0`, unchanged from the high-level estimate). No new S work.
 

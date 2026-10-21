@@ -135,7 +135,7 @@ None (backend only): the persistence layer has no user-visible surface; every DT
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.1-T1 | `AppDbContext`/`ReadDbContext`, shared model pipeline, `AddPersistence`, `ToJson()` spike | M (1.0) | 09.1.1-T1 | 09.2.1-T2, 09.2.2-T1, 09.1.3-T2, 09.2.6-T1, 09.9.4-T1, 09.7.2-T1 (09 W2 CR-9), 12.2.1-T1, 07.2.1-T1 |
+| 09.2.1-T1 | `AppDbContext`/`ReadDbContext`, shared model pipeline, `AddPersistence`, `ToJson()` spike | M (1.0) | 09.1.1-T1 | 09.2.1-T2, 09.2.2-T1, 09.1.3-T2, 09.2.6-T1, 09.9.4-T1, 09.7.2-T1 (09 W2 CR-9), 07.2.1-T1 |
 | 09.2.1-T2 | `NightTales.TestKit` harness: `PostgresFixture`, `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `FakeClock`, builders | S (0.5) | 09.2.1-T1; 09.1.1-T2 (soft) | 09.1.5-T1, every integration test of this wave |
 
 Total **1.5 d** — matches README §9 (`09.2.1-T1` M 1.0, `09.2.1-T2` S 0.5 new). No change to the plan-09 total.

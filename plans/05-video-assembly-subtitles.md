@@ -2,7 +2,7 @@
 
 > Contracts: `00-overview.md` §8 (backend → MPT). Facts: `../DECISIONS.md` §5.4, §5.5, §10.2. This plan owns **MPT render configuration, subtitle and music quality, and the written MPT API contract** used by 09 (`IRenderClient`) and 11 (`mock-mpt`).
 > Level: **high-level plan — not the final plan.** It fixes scope, contracts, key decisions, risks and rough estimates only. Every feature in it will still get (1) a review of the relevant sections and (2) its own **detailed feature plan** in `plans/features/`, reviewed again before implementation (process and template: `00-overview.md` §10.1). Details and estimates here may change in that step.
-> Delivery phase (personal-first, `00-overview.md` §4.1): all P; 05.4 is Gate 1. Where this plan says M1 for an S item, read M2.
+> Delivery phase (personal-only, `00-overview.md` §4.1, DEC 10.14): all P; 05.4 is Gate 1.
 
 ## 1. Purpose and scope
 
