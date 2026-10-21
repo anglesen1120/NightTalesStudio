@@ -105,7 +105,7 @@ public sealed partial class AutopilotPlanJob(
     private partial void LogAdvanceFailed(string exceptionType);
 
     [LoggerMessage(
-        EventId = 6530,
+        EventId = 6694,
         Level = LogLevel.Information,
         Message = "autopilot_plan_tick planned={Planned} advanced={Advanced}")]
     private partial void LogTickCompleted(int planned, int advanced);

@@ -25,10 +25,11 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <b>Ownership.</b> This step is the caller the <see cref="IIdeaPlanner"/> contract asks for: it inserts and
 /// commits the <c>generation_runs</c> row (<c>kind = ideas</c>, <c>episode_id = NULL</c>,
 /// <c>counts_toward_limit = false</c>, <c>trigger = autopilot</c>, key <c>autopilot:{seriesId}:{slotAt:O}:idea</c>),
-/// reserves the credit and prices the bound — and then pays, holding no transaction across the call. The one
-/// <see cref="IAppDbContext.SaveChangesAsync"/> in this file is that insert: every other write of the step (the
-/// generation run's outcome and the run's own advance) rides the orchestrator's single save, which is what keeps
-/// the run's <c>xmin</c> compare-and-set meaningful.
+/// reserves the credit and prices the bound — and then pays, holding no transaction across the call. The insert is
+/// the step's own <see cref="IAppDbContext.SaveChangesAsync"/>; every other write of the step (the generation run's
+/// outcome and the run's own advance) rides the orchestrator's single save, which is what keeps the run's
+/// <c>xmin</c> compare-and-set meaningful. The one exception is the row of a paid call that threw: the orchestrator
+/// never saves after a throwing handler, so that row fails under the step's second save (D-3).
 /// </para>
 /// <para>
 /// <b>Single flight.</b> Before paying, the step reads the row its idempotency key already committed. A row that
@@ -108,6 +109,15 @@ public sealed partial class PlanIdeaStep(
         if (context.Now < run.StartAt)
         {
             return StepResult.Idle;
+        }
+
+        // An archived series produces nothing again (F16), so this dispatch ends the run `failed` with
+        // `series_archived` instead of reserving — the same stop/fail semantic AutopilotStepSupport.SeriesMaySpendAsync
+        // gives every other paid step (SEC-1, PF-5, D-1). The guard sits ahead of the switch-off branch below because
+        // that branch answers Idle: an archived series must not keep paying for a planned run up to its slot buffer.
+        if (context.Series.ArchivedAt is not null)
+        {
+            return Fail(context, ErrorCodes.SeriesArchived);
         }
 
         if (!context.Series.AutopilotEnabled || context.Series.AutopilotPausedAt is not null)
@@ -264,7 +274,8 @@ public sealed partial class PlanIdeaStep(
         if (queued.IsError)
         {
             // The row that would carry the reservation was refused, so nothing can spend it: release it before the
-            // run fails (PF-13). This exit and the save below are the only two between the reserve and the call.
+            // run fails (PF-13). This exit, the save below and the paid call's own exception are the three ways out
+            // between the reserve and the pick.
             await RefundAsync(context, reservation.Value, queued.FirstError.Code, ct).ConfigureAwait(false);
 
             return Fail(context, queued.FirstError.Code);
@@ -303,9 +314,26 @@ public sealed partial class PlanIdeaStep(
             Attempt: 1,
             priceText);
 
-        var pick = await planner
-            .ProposeAndPickAsync(run.SeriesId, run.SlotAt, facts, ct)
-            .ConfigureAwait(false);
+        ErrorOr<IdeaPick> pick;
+        try
+        {
+            pick = await planner
+                .ProposeAndPickAsync(run.SeriesId, run.SlotAt, facts, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // A planner that throws leaves a committed row and a held reservation behind, and the orchestrator never
+            // saves after a throwing handler: the row must fail and the reservation must go back here, or every later
+            // tick adopts the queued row as in flight until the slot is missed (D-3). The exception is rethrown, so the
+            // tick's failure path still decides the retry.
+            await AbandonAsync(context, queued.Value, reservation.Value, ErrorCodes.IdeasGenerationFailed)
+                .ConfigureAwait(false);
+
+            LogPlannerThrew(run.Id, exception.GetType().Name);
+
+            throw;
+        }
 
         if (pick.IsError)
         {
@@ -463,6 +491,36 @@ public sealed partial class PlanIdeaStep(
         return Fail(context, code);
     }
 
+    /// <summary>
+    /// Closes the committed row and releases its reservation after the paid seam threw (D-3): the row exists, so its
+    /// failure needs the step's own save — the orchestrator's save never runs for a throwing handler — and the refund
+    /// runs on <see cref="CancellationToken.None"/> because a cancelled tick is one of the ways to land here. Neither
+    /// write replaces the caller's exception: a failing save is logged and the refund still happens.
+    /// </summary>
+    /// <param name="context">The run and the tick's clock reading.</param>
+    /// <param name="row">The committed <c>generation_runs</c> row of the call that threw.</param>
+    /// <param name="reservation">The reservation the call held.</param>
+    /// <param name="code">The code the row and the refund record.</param>
+    private async ValueTask AbandonAsync(
+        AutopilotStepContext context,
+        GenerationRun row,
+        ReservationId reservation,
+        string code)
+    {
+        row.Fail(code, detail: null, countsTowardLimit: false, context.Now);
+
+        try
+        {
+            await db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            LogRowNotCommitted(context.Run.Id, exception.GetType().Name);
+        }
+
+        await RefundAsync(context, reservation, code, CancellationToken.None).ConfigureAwait(false);
+    }
+
     /// <summary>Releases the reservation of a slot that produced nothing; a ledger error never replaces the outcome.</summary>
     private async ValueTask RefundAsync(
         AutopilotStepContext context,
@@ -586,6 +644,12 @@ public sealed partial class PlanIdeaStep(
         Level = LogLevel.Error,
         Message = "autopilot_idea_row_not_committed runId={RunId} exceptionType={ExceptionType}")]
     private partial void LogRowNotCommitted(Guid runId, string exceptionType);
+
+    [LoggerMessage(
+        EventId = 6613,
+        Level = LogLevel.Error,
+        Message = "autopilot_idea_planner_threw runId={RunId} exceptionType={ExceptionType}")]
+    private partial void LogPlannerThrew(Guid runId, string exceptionType);
 
     [LoggerMessage(
         EventId = 6547,

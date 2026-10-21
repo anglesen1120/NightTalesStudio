@@ -76,6 +76,13 @@ public sealed partial class AutopilotRunOrchestrator(
     /// does not need is a write that can make a concurrent tick's save lose the race. The rotation stamp therefore
     /// belongs to the due scan alone (<see cref="AdvanceDueAsync"/>); an outbox-driven or direct
     /// <see cref="AdvanceAsync"/> leaves the row exactly as the handler did.
+    /// <para>
+    /// <b>The stamp does bump <c>xmin</c>.</b> The statement is a plain <c>UPDATE</c>, so a concurrent outbox-driven
+    /// <see cref="AdvanceAsync"/> that loaded the run just before can lose its compare-and-set and answer
+    /// <c>concurrency_lost</c>. That is benign: the loser writes nothing, the scan already did the run's move or
+    /// stamped it, and the event is re-polled. The stamp itself is what keeps a poison run (one whose handler keeps
+    /// throwing or whose series is not visible) from holding the head of every pass (D-8).
+    /// </para>
     /// </remarks>
     /// <param name="runId">The run.</param>
     /// <param name="userId">Its owner, from the event or the scan.</param>
@@ -131,6 +138,10 @@ public sealed partial class AutopilotRunOrchestrator(
             {
                 LogSeriesMissing(runId, run.SeriesId, run.State);
 
+                // A run whose series is not visible can never move, so it must not keep the head of every pass: the
+                // scan stamps it like the other idle exits and it rotates behind the rows nobody has looked at (D-8).
+                await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
+
                 return Error.Failure(StepFailedCode, "The run's series is not visible to its owner.");
             }
 
@@ -185,6 +196,12 @@ public sealed partial class AutopilotRunOrchestrator(
             {
                 // Type only: a handler's message could quote a story, a brief or a source URL (D19).
                 LogStepFailed(runId, originalState, exception.GetType().Name);
+
+                // A poison run would otherwise keep its updated_at and the head of its pass every tick, starving the
+                // rows behind it once enough of them throw (D-8): the scan stamps it exactly as it stamps an idle
+                // exit, so it rotates to the back. The stamp bumps xmin, which a concurrent outbox-driven advance
+                // answers as concurrency_lost — a benign no-op the event re-polls.
+                await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
 
                 return Error.Failure(StepFailedCode, "The autopilot step failed; the next tick retries.");
             }
@@ -576,19 +593,19 @@ public sealed partial class AutopilotRunOrchestrator(
     private partial void LogSeriesMissing(Guid runId, Guid seriesId, AutopilotRunState state);
 
     [LoggerMessage(
-        EventId = 6513,
+        EventId = 6691,
         Level = LogLevel.Warning,
         Message = "autopilot_run_settings_invalid runId={RunId} seriesId={SeriesId} code={Code}")]
     private partial void LogSettingsInvalid(Guid runId, Guid seriesId, string code);
 
     [LoggerMessage(
-        EventId = 6514,
+        EventId = 6692,
         Level = LogLevel.Warning,
         Message = "autopilot_run_step_failed runId={RunId} state={State} exceptionType={ExceptionType}")]
     private partial void LogStepFailed(Guid runId, AutopilotRunState state, string exceptionType);
 
     [LoggerMessage(
-        EventId = 6515,
+        EventId = 6693,
         Level = LogLevel.Warning,
         Message = "autopilot_run_concurrency_violation runId={RunId} seriesId={SeriesId} at={At}")]
     private partial void LogConcurrencyViolation(Guid runId, Guid seriesId, DateTimeOffset at);

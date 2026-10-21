@@ -157,6 +157,42 @@ public sealed class AutopilotSettingsValidatorTests
     }
 
     /// <summary>
+    /// The tzdata build directories are not zone names (SEC-7, D-7): on a tzdata host the loader resolves
+    /// <c>posix/…</c>, <c>right/…</c> and <c>SystemV/…</c> as paths, so before this rule they passed validation and
+    /// widened the metric tag with a second spelling of a zone the plain id already names. The boundary is the
+    /// directory prefix, in any case; the plain IANA ids keep passing beside it.
+    /// </summary>
+    [Fact]
+    public void AutopilotSettingsValidator_TimeZone_RefusesTzdataDirectories()
+    {
+        string[] refused =
+        [
+            "posix/Asia/Ho_Chi_Minh",
+            "right/Asia/Ho_Chi_Minh",
+            "SystemV/EST5",
+            "POSIX/America/Argentina/ComodRivadavia",
+            "Systemv/Etc/GMT+5",
+        ];
+
+        foreach (var id in refused)
+        {
+            var result = Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", $"\"{id}\""));
+
+            // The new rule answers, not the loader: the message names the directories, so a host that happens to
+            // resolve the path cannot make this pass for the wrong reason.
+            result.IsError.ShouldBeTrue($"{id} is a tzdata directory entry, not an IANA zone id");
+            Fields(result).ShouldHaveSingleItem().ShouldBe("cadence.time_zone");
+            result.FirstError.Description.ShouldContain("directory entry");
+        }
+
+        // The nearest neighbours of those ids stay valid: the rule is the prefix, not the containing zone.
+        Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"Asia/Ho_Chi_Minh\"")).IsError.ShouldBeFalse();
+        Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"America/Argentina/ComodRivadavia\""))
+            .IsError.ShouldBeFalse();
+        Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"Etc/GMT+5\"")).IsError.ShouldBeFalse();
+    }
+
+    /// <summary>
     /// The gate-profile ref is a bounded slug: the cap is inclusive, and whitespace or punctuation outside
     /// <c>_</c>, <c>-</c> and <c>.</c> is a field error rather than a stored value the profile resolver cannot mean.
     /// </summary>

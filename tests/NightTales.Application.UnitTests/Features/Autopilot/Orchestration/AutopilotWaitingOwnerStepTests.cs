@@ -227,6 +227,32 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
     }
 
     /// <summary>
+    /// A run waiting on the video whose episode is still in a story state (CR-4, D-9): the video answer belongs to a
+    /// render the owner approved, and a story-state episode has none, so the wait stays idle and sends nothing — no
+    /// render, no story, no publication. The resume-render branch that used to answer here is the dead path this
+    /// pins down: it re-dispatched a render for an episode that never finished its story.
+    /// </summary>
+    [Fact]
+    public async Task WaitingOwner_VideoWaitOnAStoryStateEpisode_IsIdleAndSendsNothing()
+    {
+        var world = await SeedAsync(status: EpisodeStatus.StoryApproved);
+        await using var db = Open(world, Now);
+
+        // Inside the slot's create window and well inside the 48 h expiry, so neither guard decides for the step.
+        var now = Now.AddHours(10);
+        var run = await AddRunAsync(db, world, Now, WaitingFor.Video, AutopilotRunStep.VideoGate);
+        var sender = new RecordingSender();
+        var step = Step(sender, db);
+
+        var result = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, now), Ct);
+
+        result.Kind.ShouldBe(StepResultKind.Idle);
+        run.State.ShouldBe(AutopilotRunState.WaitingOwner);
+        run.WaitingFor.ShouldBe(WaitingFor.Video);
+        sender.Sent.ShouldBeEmpty("a story-state episode has no video to publish and no render to resume");
+    }
+
+    /// <summary>
     /// The owner approved a story whose text trips the 03.2.2-T2 keyword lint: the render is refused on every tick, so
     /// the run ends <c>failed</c> with the render step's own diagnostic code instead of retrying for ever.
     /// </summary>

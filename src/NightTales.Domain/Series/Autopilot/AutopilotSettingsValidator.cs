@@ -121,6 +121,12 @@ public static class AutopilotSettingsValidator
         ["sun"] = DayOfWeek.Sunday,
     };
 
+    /// <summary>
+    /// The tzdata build directories the loader accepts as paths but this build refuses as a <c>cadence.time_zone</c>
+    /// value, lowercased (the check compares case-insensitively; SEC-7, D-7).
+    /// </summary>
+    private static readonly string[] TzdataDirectories = ["posix/", "right/", "systemv/"];
+
     /// <summary>Reads and validates one <c>series.autopilot_settings</c> document.</summary>
     /// <param name="json">The stored jsonb text; absent or blank is an error, not a default document.</param>
     /// <returns>The settings, or every rule the document breaks as <c>autopilot_settings_invalid</c>.</returns>
@@ -459,10 +465,10 @@ public static class AutopilotSettingsValidator
     /// <remarks>
     /// The guard exists because the id is resolved with <see cref="TimeZoneInfo.FindSystemTimeZoneById(string)"/>,
     /// which on a tzdata host accepts any path below the zone directory (<c>posix/…</c>, <c>right/…</c>) and can
-    /// throw for a value it considers a malformed path. Capping the length and allowing only the characters real
-    /// IANA ids use (<c>America/Argentina/ComodRivadavia</c>, <c>Etc/GMT+5</c>) keeps the stored document inside
-    /// the vocabulary the metric tag and the logs can hold, and turns an oversized value into a plain validation
-    /// error instead of an exception escaping the validator.
+    /// throw for a value it considers a malformed path. Capping the length, allowing only the characters real
+    /// IANA ids use (<c>America/Argentina/ComodRivadavia</c>, <c>Etc/GMT+5</c>) and refusing the tzdata build
+    /// directories keeps the stored document inside the vocabulary the metric tag and the logs can hold, and turns
+    /// an oversized value into a plain validation error instead of an exception escaping the validator (SEC-7).
     /// </remarks>
     private static string? ReadTimeZone(JsonElement cadence, List<Error> errors)
     {
@@ -483,6 +489,16 @@ public static class AutopilotSettingsValidator
         if (!IsTimeZoneId(id))
         {
             errors.Add(Violation(Field, "must be a time zone id of letters, digits, '/', '_', '-' or '+'."));
+
+            return null;
+        }
+
+        // tzdata ships its variants in sibling directories, and the loader accepts them as paths: a `posix/…`,
+        // `right/…` or `SystemV/…` id is a second spelling of a real zone (or a legacy one), so it adds tag
+        // cardinality without naming anything new. Refused here, before the loader sees it (SEC-7, D-7).
+        if (IsTzdataDirectoryEntry(id))
+        {
+            errors.Add(Violation(Field, "must name an IANA zone, not a posix/, right/ or SystemV/ directory entry."));
 
             return null;
         }
@@ -610,6 +626,26 @@ public static class AutopilotSettingsValidator
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Whether the id is a tzdata build directory entry (<c>posix/…</c>, <c>right/…</c>, <c>SystemV/…</c>, any case):
+    /// the loader resolves those as paths, but they only re-spell a zone the plain id already names, so storing one
+    /// buys nothing and widens the metric tag (SEC-7, D-7).
+    /// </summary>
+    /// <param name="value">A time zone id that already passed the charset guard.</param>
+    /// <returns>True for the three tzdata directories, false for a real IANA id.</returns>
+    private static bool IsTzdataDirectoryEntry(string value)
+    {
+        foreach (var directory in TzdataDirectories)
+        {
+            if (value.StartsWith(directory, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? ReadTone(JsonElement root, List<Error> errors)

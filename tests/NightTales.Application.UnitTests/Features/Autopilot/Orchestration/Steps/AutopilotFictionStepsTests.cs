@@ -376,6 +376,75 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         planner.Calls.ShouldBe(0, "the paid call runs only after the row committed");
     }
 
+    /// <summary>
+    /// An archived series buys nothing (F16, SEC-1, PF-5, D-1): the slot buffer can hold planned runs of a series
+    /// archived afterwards, and each of them used to reserve and pay one ideas call that <c>create_episode</c> then
+    /// refused with <c>series_archived</c>. The run ends <c>failed</c> with that code before any reservation, exactly
+    /// as <c>AutopilotStepSupport.SeriesMaySpendAsync</c> ends it in the other paid steps.
+    /// </summary>
+    [Fact]
+    public async Task PlanIdeaStep_ArchivedSeries_BuysNothing()
+    {
+        var planner = new RecordingPlanner();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+
+        series.Archive(Now).IsError.ShouldBeFalse();
+
+        // Every money and channel seam throws: the guard must answer before the reservation, the price and the call.
+        var step = new PlanIdeaStep(
+            db,
+            new NoChannelReader(),
+            planner,
+            new NoPrices(),
+            new NoIdeaCosts(),
+            new NoBudget(),
+            new NoLedger(),
+            NullLogger<PlanIdeaStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(ErrorCodes.SeriesArchived);
+        run.State.ShouldBe(AutopilotRunState.Failed);
+        run.Outcome.ShouldBe(AutopilotRunOutcome.Failed);
+        planner.Calls.ShouldBe(0, "an archived series never buys an idea");
+        (await db.GenerationRuns.CountAsync(row => row.SeriesId == series.Id, CancellationToken.None))
+            .ShouldBe(0, "no row carries a reservation for a series that may produce nothing again");
+    }
+
+    /// <summary>
+    /// The paid call itself throws after the row committed (D-3): the row must end <c>failed</c> and the reservation
+    /// must go back exactly once, or every later tick adopts the queued row as in flight and the slot idles until
+    /// <c>slot_missed</c> holds its credits. The exception is not swallowed — the tick's failure path still sees it.
+    /// </summary>
+    [Fact]
+    public async Task PlanIdeaStep_PlannerThrows_RefundsTheReservationAndFailsTheRow()
+    {
+        var ledger = new RecordingLedger();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        var step = PayingIdeaStep(db, new ThrowingPlanner(new InvalidOperationException("the provider gave up")), ledger);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None).AsTask());
+
+        ledger.Reserved.Count.ShouldBe(1);
+        ledger.Refunded.Count.ShouldBe(1, "the reservation may not outlive a call that threw");
+        ledger.Refunded[0].Reservation.Value.ShouldBe(ledger.Reservation.Value);
+        ledger.Refunded[0].Reason.ShouldBe(ErrorCodes.IdeasGenerationFailed);
+        ledger.Settled.ShouldBeEmpty();
+
+        // The orchestrator never saves after a throwing handler, so the step's own save is what a later tick reads.
+        var row = await db.GenerationRuns
+            .AsNoTracking()
+            .SingleAsync(candidate => candidate.SeriesId == series.Id, CancellationToken.None);
+
+        row.Status.ShouldBe(GenerationRunStatus.Failed, "a queued row would be adopted as in flight for ever");
+        row.ErrorCode.ShouldBe(ErrorCodes.IdeasGenerationFailed);
+        run.State.ShouldBe(AutopilotRunState.Planned, "the slot is the tick's to retry, so the run is not failed here");
+    }
+
     [Fact]
     public async Task PlanIdeaStep_AdoptsACrashedRow_CompletesItAndSettlesOnce()
     {
@@ -748,6 +817,20 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
 
         public ValueTask<ErrorOr<Success>> MarkUsedAsync(Guid ideaId, Guid episodeId, CancellationToken ct) =>
             ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+    }
+
+    /// <summary>The paid seam that throws instead of answering: the call's own failure exit (D-3).</summary>
+    private sealed class ThrowingPlanner(Exception failure) : IIdeaPlanner
+    {
+        public ValueTask<ErrorOr<IdeaPick>> ProposeAndPickAsync(
+            Guid seriesId,
+            DateTimeOffset slotAt,
+            RunContext run,
+            CancellationToken ct) =>
+            throw failure;
+
+        public ValueTask<ErrorOr<Success>> MarkUsedAsync(Guid ideaId, Guid episodeId, CancellationToken ct) =>
+            throw new NotSupportedException("the throwing case never marks an idea used.");
     }
 
     /// <summary>The gate seam: one scripted verdict, no provider and no command.</summary>

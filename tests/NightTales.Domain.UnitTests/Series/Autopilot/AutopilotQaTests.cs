@@ -153,12 +153,20 @@ public sealed class AutopilotQaTests
         }
     }
 
+    private static AutopilotRun PausedAtStoryGate()
+    {
+        var run = AutopilotRunScenario.StoryGate();
+        run.Pause(AutopilotPauseReason.OwnerPaused, AutopilotRunScenario.Now);
+
+        return run;
+    }
+
     [Fact]
     public void Qa_Run_PausedRun_ResumesOnlyToTheStateItsStepImplies()
     {
         // Paused from `story_gate` with no render spent: the only non-terminal target the ladder allows is
         // StoryGate, every other non-terminal state throws even though CanTransition admits the family.
-        var run = AutopilotRunScenario.RunAt(AutopilotRunState.Paused);
+        var run = PausedAtStoryGate();
 
         foreach (var target in Enum.GetValues<AutopilotRunState>())
         {
@@ -167,7 +175,7 @@ public sealed class AutopilotQaTests
                 continue;
             }
 
-            var copy = AutopilotRunScenario.RunAt(AutopilotRunState.Paused);
+            var copy = PausedAtStoryGate();
 
             if (target == AutopilotRunState.StoryGate)
             {
@@ -184,7 +192,11 @@ public sealed class AutopilotQaTests
                 $"a run paused at step '{copy.Step}' may not resume straight into {target}");
         }
 
-        Should.Throw<InvalidOperationException>(() => run.Resume(AutopilotRunScenario.Now.AddMinutes(1)));
+        run.Resume(AutopilotRunScenario.Now.AddMinutes(1));
+        run.State.ShouldBe(AutopilotRunState.StoryGate);
+
+        // A run that is not paused has no pause to resume.
+        Should.Throw<InvalidOperationException>(() => run.Resume(AutopilotRunScenario.Now.AddMinutes(2)));
     }
 
     [Fact]
