@@ -266,6 +266,8 @@ Rules that hold for every row:
 | 16 | Owner pressed Pause | `POST /series/{id}/autopilot/pause` | `owner_paused` | the series | none (no e-mail; the owner just did it) |
 | 17 | Authorization revoked | `current_autopilot_authorization_id` null/revoked (§3.5) | — (state `awaiting_authorization`, **not** a pause) | production stops; the series is not marked paused, and the UI shows "re-accept the authorization" | `autopilot.authorization_required` (banner, no e-mail) |
 
+**(02.8.3-T1 S71 deviation) — row 17:** shipped code pauses the run with `owner_paused` instead (`AutopilotStepSupport.SeriesMaySpendAsync`), because §3.5 can reach `awaiting_authorization` only from `planned`. Kept as shipped under a deferred owner review (STATUS S71-43, 2026-10-21); the rejected alternative was to move the run to `awaiting_authorization` and re-gate.
+
 Alert e-mail (all rows except 16/17) — one outbox message per pause event, template `autopilot_alert` (vi/en), sent by `SendEmailJob` (09.2.6):
 
 ```
