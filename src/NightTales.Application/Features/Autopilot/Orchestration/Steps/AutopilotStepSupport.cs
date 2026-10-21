@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Common.Errors;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories.Generation;
 using SeriesAggregate = NightTales.Domain.Series.Series;
@@ -68,6 +69,107 @@ internal static class AutopilotStepSupport
     /// <summary>The wire value of <see cref="WaitingFor.Story"/> (the <c>autopilot_runs.waiting_for</c> column).</summary>
     internal const string WaitingForStory = "story";
 
+    /// <summary>
+    /// Whether the run may make its next paid dispatch (task file rows SEC-1, PF-5; plan §3.6): the series still
+    /// exists, is not archived, its autopilot is on and not paused, and its current authorization is a live revision
+    /// of <b>this</b> series.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every step that buys something (an idea, a story, its one regeneration, a fact sheet, a source search, a
+    /// render, or a command an owner answer triggers) asks this first, because the guards of the earlier steps run
+    /// once: without it a run that already passed <c>idea</c> keeps spending after the owner revokes the
+    /// authorization, disables autopilot or the series is archived (02.8.3-T4 owns the series-level trigger and the
+    /// alert; this helper owns the run).
+    /// </para>
+    /// <para>
+    /// The decision moves the run itself, so a step cannot forget the move: an archived series fails the run with
+    /// <c>series_archived</c> (nothing may be produced for it again), a switched-off or paused autopilot pauses it
+    /// with the series' own reason — the owner paused it, so no alert copy is owed — and a missing, revoked or
+    /// foreign current authorization pauses it, because the §3.5 table has no <c>→ awaiting_authorization</c> row
+    /// outside <c>planned</c> and the step must not guess one. The pause is the one the owner clears with
+    /// <c>POST /series/{id}/autopilot/resume</c> after re-accepting.
+    /// </para>
+    /// </remarks>
+    /// <param name="db">The scope's context (the tenant filter is the owner's).</param>
+    /// <param name="context">The run, its series and the tick's clock reading.</param>
+    /// <param name="ct">Cancels the authorization read.</param>
+    /// <returns>The spend decision; a stop is already recorded on the run, so the step only returns its result.</returns>
+    internal static async Task<SeriesSpendDecision> SeriesMaySpendAsync(
+        IAppDbContext db,
+        AutopilotStepContext context,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var series = context.Series;
+
+        if (series.ArchivedAt is not null)
+        {
+            context.Run.Fail(ErrorCodes.SeriesArchived, context.Now);
+
+            return new SeriesSpendDecision(StepResult.Stopped(ErrorCodes.SeriesArchived), ErrorCodes.SeriesArchived);
+        }
+
+        if (!series.AutopilotEnabled || series.AutopilotPausedAt is not null)
+        {
+            var reason = SeriesPauseReason(series);
+
+            context.Run.Pause(reason, context.Now);
+
+            var code = PauseReasonWire(reason);
+
+            return new SeriesSpendDecision(StepResult.Stopped(code), code);
+        }
+
+        if (await CurrentAuthorizationAsync(db, series, ct).ConfigureAwait(false) is null)
+        {
+            context.Run.Pause(SeriesPauseReason(series), context.Now);
+
+            return new SeriesSpendDecision(
+                StepResult.Stopped(ErrorCodes.AutopilotAuthorizationRequired),
+                ErrorCodes.AutopilotAuthorizationRequired);
+        }
+
+        return new SeriesSpendDecision(Stop: null, Code: string.Empty);
+    }
+
+    /// <summary>
+    /// The §3.6 reason a series carries, mapped back from its stored wire value; <see cref="AutopilotPauseReason.OwnerPaused"/>
+    /// when the series records none (an autopilot that is merely switched off, or a text this build does not know).
+    /// </summary>
+    /// <param name="series">The run's series.</param>
+    /// <returns>The pause reason to record on the run.</returns>
+    private static AutopilotPauseReason SeriesPauseReason(SeriesAggregate series)
+    {
+        if (string.IsNullOrEmpty(series.AutopilotPauseReason))
+        {
+            return AutopilotPauseReason.OwnerPaused;
+        }
+
+        foreach (var candidate in Enum.GetValues<AutopilotPauseReason>())
+        {
+            if (string.Equals(PauseReasonWire(candidate), series.AutopilotPauseReason, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return AutopilotPauseReason.OwnerPaused;
+    }
+
+    /// <summary>
+    /// The stored form of a pause reason: the snake_case member name, except <see cref="AutopilotPauseReason.ChannelUnsupported"/>
+    /// whose §3.6 row 6b wire value is <c>autopilot_channel_unsupported</c>.
+    /// </summary>
+    /// <param name="reason">The reason.</param>
+    /// <returns>The wire value the column, the <c>CHECK</c> and the alert copy key use.</returns>
+    internal static string PauseReasonWire(AutopilotPauseReason reason) =>
+        reason == AutopilotPauseReason.ChannelUnsupported
+            ? AutopilotStepCodes.ChannelUnsupported
+            : AutopilotRunMetrics.Wire(reason.ToString());
+
     /// <summary>Is the run still before its video, i.e. is a missed slot a failed slot for it (plan §3.4)?</summary>
     /// <param name="run">The tracked run.</param>
     /// <returns>
@@ -117,8 +219,14 @@ internal static class AutopilotStepSupport
 
     /// <summary>
     /// The series' current authorization, if it is still valid (plan §3.7): the revision
-    /// <c>series.current_autopilot_authorization_id</c> names, provided that row exists and was never revoked.
+    /// <c>series.current_autopilot_authorization_id</c> names, provided that row exists, was never revoked and belongs
+    /// to <paramref name="series"/>.
     /// </summary>
+    /// <remarks>
+    /// The <c>SeriesId</c> column is filtered rather than trusted (S71 SEC-5): the pointer is a column the owner's
+    /// writes set, so a stale or cross-series id must not authorize a paid dispatch. The tenant filter alone would let
+    /// another series' live revision of the same owner pass.
+    /// </remarks>
     /// <param name="db">The scope's context (the tenant filter is the owner's).</param>
     /// <param name="series">The run's series.</param>
     /// <param name="ct">Cancels the read.</param>
@@ -136,10 +244,11 @@ internal static class AutopilotStepSupport
             return null;
         }
 
-        // The revocation is a column of the same row, so one read answers both questions: the revision must exist
-        // and must not have been revoked. A series naming a revision that is gone is not authorized either.
+        // The revocation is a column of the same row, so one read answers both questions: the revision must exist,
+        // belong to this series and must not have been revoked. A series naming a revision that is gone is not
+        // authorized either.
         var row = await db.SeriesAutopilotAuthorizations
-            .Where(candidate => candidate.Id == authorizationId)
+            .Where(candidate => candidate.Id == authorizationId && candidate.SeriesId == series.Id)
             .Select(candidate => new { candidate.Id, candidate.RevokedAt })
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
@@ -172,4 +281,17 @@ internal static class AutopilotStepSupport
                 && candidate.IdempotencyKey == key,
             ct);
     }
+}
+
+/// <summary>
+/// The answer of <see cref="AutopilotStepSupport.SeriesMaySpendAsync"/>: <see cref="Stop"/> is the result the step
+/// returns when the run may not spend (the move is already recorded on the run), and <see langword="null"/> when the
+/// paid dispatch may happen. <see cref="Code"/> is the closed code the step logs, empty when the dispatch is allowed.
+/// </summary>
+/// <param name="Stop">The stopped result to return, or <see langword="null"/> when the dispatch is allowed.</param>
+/// <param name="Code">The stop's code (<c>series_archived</c>, a §3.6 pause reason, <c>autopilot_authorization_required</c>).</param>
+internal readonly record struct SeriesSpendDecision(StepResult? Stop, string Code)
+{
+    /// <summary>Whether the step may make its paid dispatch.</summary>
+    public bool MaySpend => Stop is null;
 }

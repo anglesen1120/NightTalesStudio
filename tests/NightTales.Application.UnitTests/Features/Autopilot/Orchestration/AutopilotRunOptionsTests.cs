@@ -23,7 +23,7 @@ public sealed class AutopilotRunOptionsTests
         options.WaitingOwnerExpiryHours.ShouldBe(48);
         options.StuckRunMinutes.ShouldBe(60);
         options.MaxStepsPerTick.ShouldBe(6);
-        options.PlanJobMaxRunsPerTick.ShouldBe(50);
+        options.PlanJobMaxRunsPerTick.ShouldBe(200);
         options.PublicationCreateMarginMinutes.ShouldBe(10);
         options.RenderEstimateMinutes.ShouldBe(15);
         options.StoryEstimateMinutes.ShouldBe(10);
@@ -41,6 +41,40 @@ public sealed class AutopilotRunOptionsTests
         AutopilotRunOptions.SectionName.ShouldBe("Autopilot:Run");
     }
 
+    /// <summary>
+    /// The shipped per-tick run budget (200) and its ceiling (2000): the 10 000-series planner needs the headroom
+    /// (review finding PF-3), and a value past the ceiling is still refused by name.
+    /// </summary>
+    /// <summary>
+    /// A zero creation margin is legal (plan §3.4: the publication is created exactly at its slot), so the sweep that
+    /// rejects zero leaves this value out; a negative margin is still refused by name.
+    /// </summary>
+    [Fact]
+    public void Validate_AcceptsAZeroCreationMargin_AndRejectsANegativeOne()
+    {
+        var options = new AutopilotRunOptions { PublicationCreateMarginMinutes = 0 };
+        AutopilotRunOptions.Validate(options).ShouldBeEmpty();
+
+        options.PublicationCreateMarginMinutes = -1;
+
+        AutopilotRunOptions.Validate(options)
+            .ShouldHaveSingleItem()
+            .ShouldContain("Autopilot:Run:PublicationCreateMarginMinutes");
+    }
+
+    [Fact]
+    public void PlanJobMaxRunsPerTick_HasTheWidenedThroughputRange()
+    {
+        var options = new AutopilotRunOptions { PlanJobMaxRunsPerTick = 2000 };
+        AutopilotRunOptions.Validate(options).ShouldBeEmpty();
+
+        options.PlanJobMaxRunsPerTick = 2001;
+
+        AutopilotRunOptions.Validate(options)
+            .ShouldHaveSingleItem()
+            .ShouldContain("Autopilot:Run:PlanJobMaxRunsPerTick");
+    }
+
     /// <summary>Each impossible value names its own key and leaves the rest alone (one message per problem).</summary>
     /// <param name="change">The single value to break.</param>
     /// <param name="key">The key the message must name.</param>
@@ -50,7 +84,6 @@ public sealed class AutopilotRunOptionsTests
     [InlineData(nameof(AutopilotRunOptions.StuckRunMinutes), "Autopilot:Run:StuckRunMinutes")]
     [InlineData(nameof(AutopilotRunOptions.MaxStepsPerTick), "Autopilot:Run:MaxStepsPerTick")]
     [InlineData(nameof(AutopilotRunOptions.PlanJobMaxRunsPerTick), "Autopilot:Run:PlanJobMaxRunsPerTick")]
-    [InlineData(nameof(AutopilotRunOptions.PublicationCreateMarginMinutes), "Autopilot:Run:PublicationCreateMarginMinutes")]
     [InlineData(nameof(AutopilotRunOptions.RenderEstimateMinutes), "Autopilot:Run:RenderEstimateMinutes")]
     [InlineData(nameof(AutopilotRunOptions.StoryEstimateMinutes), "Autopilot:Run:StoryEstimateMinutes")]
     [InlineData(nameof(AutopilotRunOptions.MaxBufferDays), "Autopilot:Run:MaxBufferDays")]

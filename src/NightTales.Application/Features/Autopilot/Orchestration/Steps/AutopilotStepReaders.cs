@@ -91,6 +91,19 @@ public interface IAutopilotStepReader
     /// </returns>
     ValueTask<AutopilotChannelSnapshot?> FindChannelAsync(Guid? authorizationId, CancellationToken ct);
 
+    /// <summary>
+    /// Resolves the series' current authorization: the revision <c>series.current_autopilot_authorization_id</c>
+    /// names, provided that row exists, was never revoked and belongs to this series (plan §3.7, S71 SEC-5).
+    /// </summary>
+    /// <param name="series">The run's series, with its current pointer.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns>
+    /// The authorized revision, or <see langword="null"/> when the series has none to publish under.
+    /// </returns>
+    ValueTask<Guid?> FindCurrentAuthorizationAsync(
+        NightTales.Domain.Series.Series series,
+        CancellationToken ct);
+
     /// <summary>Reads the publication a run attached.</summary>
     /// <param name="publicationId">The publication id.</param>
     /// <param name="ct">The caller's cancellation token.</param>
@@ -158,6 +171,13 @@ internal sealed class EfAutopilotStepReader(IAppDbContext db) : IAutopilotStepRe
             ? null
             : new AutopilotChannelSnapshot(connection.Id, connection.Platform, connection.Status);
     }
+
+    /// <inheritdoc />
+    public ValueTask<Guid?> FindCurrentAuthorizationAsync(
+        NightTales.Domain.Series.Series series,
+        CancellationToken ct) =>
+        // One implementation of the §3.7 rule: the run's own guard reads the same filtered pointer.
+        new(AutopilotStepSupport.CurrentAuthorizationAsync(db, series, ct));
 
     /// <inheritdoc />
     public async ValueTask<AutopilotPublicationSnapshot?> FindPublicationAsync(

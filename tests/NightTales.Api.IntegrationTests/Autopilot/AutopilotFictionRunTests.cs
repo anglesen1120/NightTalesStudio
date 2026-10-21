@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.Autopilot.Orchestration;
+using NightTales.Application.Features.Autopilot.Orchestration.Steps;
 using NightTales.Application.Publishing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -613,6 +614,200 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
         (await LoadEpisodeAsync(owner, episodeId)).Status.ShouldBe(EpisodeStatus.Ready);
     }
 
+    /// <summary>
+    /// A replay of a stop verdict the gate already committed — a dry run, whose notice went out with the verdict —
+    /// must not be read as an approval: the run moves to <c>waiting_owner</c> and publishes nothing (S71 SEC-3,
+    /// CR-5: the stored <c>video</c> block exists for every verdict, so key presence is not approval).
+    /// </summary>
+    [Fact]
+    public async Task Run_VideoGateReplayedDryRunVerdict_KeepsWaitingWithoutPublishing()
+    {
+        await using var harness = await StartAsync(services => ReplaceGate(services, new UnreachableGate()));
+
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var world = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+        var episodeId = await harness.CreateEpisodeAsync(owner, world.SeriesId, EpisodeStatus.VideoReview, Ct);
+
+        var run = await harness.CreateRunAsync(
+            owner,
+            world.SeriesId,
+            slotAt: WorkedSlot,
+            startAt: WorkedStart,
+            authorizationId: world.AuthorizationId,
+            state: AutopilotRunState.VideoGate,
+            step: AutopilotRunStep.VideoGate,
+            episodeId: episodeId,
+            attempt: 1,
+            renderAttempts: 1,
+            ct: Ct);
+        await WriteGateResultsAsync(run.Id, mode: "dry_run", pass: true);
+
+        // Inside the create window: a step that read the stored block as an approval would create the publication here.
+        harness.Clock.Set(WorkedPublicationCreate);
+        var result = await harness.AdvanceAsync(run.Id, owner, Ct);
+
+        result.IsError.ShouldBeFalse(
+            result.IsError ? string.Join(", ", result.Errors.Select(error => error.Code)) : "step");
+        result.Value.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Value.Code.ShouldBe(OwnerActionReasons.DryRun);
+
+        var waiting = await harness.RunAsync(owner, run.Id, Ct);
+        waiting.State.ShouldBe(AutopilotRunState.WaitingOwner);
+        waiting.WaitingFor.ShouldBe(WaitingFor.Video);
+        waiting.PublicationId.ShouldBeNull("a dry run publishes nothing");
+        (await PublicationsOfAsync(episodeId)).ShouldBeEmpty();
+        (await LoadEpisodeAsync(owner, episodeId)).Status.ShouldBe(EpisodeStatus.VideoReview);
+    }
+
+    /// <summary>
+    /// A replay of a live pass the gate already approved goes on to the create — without evaluating the gate a second
+    /// time — and creates exactly one publication (S71 SEC-3).
+    /// </summary>
+    [Fact]
+    public async Task Run_VideoGateReplayedApprovedVerdict_CreatesThePublicationOnce()
+    {
+        await using var harness = await StartAsync(services => ReplaceGate(services, new UnreachableGate()));
+
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var world = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+        var episodeId = await harness.CreateEpisodeAsync(owner, world.SeriesId, EpisodeStatus.Ready, Ct);
+
+        var run = await harness.CreateRunAsync(
+            owner,
+            world.SeriesId,
+            slotAt: WorkedSlot,
+            startAt: WorkedStart,
+            authorizationId: world.AuthorizationId,
+            state: AutopilotRunState.VideoGate,
+            step: AutopilotRunStep.VideoGate,
+            episodeId: episodeId,
+            attempt: 1,
+            renderAttempts: 1,
+            ct: Ct);
+        await WriteGateResultsAsync(run.Id, mode: "live", pass: true);
+
+        harness.Clock.Set(WorkedPublicationCreate);
+        var result = await harness.AdvanceAsync(run.Id, owner, Ct);
+
+        result.IsError.ShouldBeFalse(
+            result.IsError ? string.Join(", ", result.Errors.Select(error => error.Code)) : "step");
+        result.Value.Kind.ShouldBe(StepResultKind.Advanced);
+
+        var created = await harness.RunAsync(owner, run.Id, Ct);
+        created.State.ShouldBe(AutopilotRunState.PublicationCreated);
+        created.PublicationId.ShouldNotBeNull();
+        created.AuthorizationId.ShouldBe(world.AuthorizationId, "the create stamps the revision it published under");
+        (await PublicationsOfAsync(episodeId)).Count.ShouldBe(1);
+
+        // Every later tick re-enters the post-publication steps; none of them may create a second row.
+        await harness.AdvanceAsync(run.Id, owner, Ct);
+        (await PublicationsOfAsync(episodeId)).Count.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// An owner waiting on the video who has not approved it yet keeps waiting: the create is never sent for a
+    /// <c>video_review</c> episode, so the run no longer ends <c>publication_create_failed</c> when the window opens
+    /// (S71 SEC-3, path 2).
+    /// </summary>
+    [Fact]
+    public async Task Run_WaitingForVideoBeforeTheOwnerApproves_StaysWaiting()
+    {
+        await using var harness = await StartAsync(services => ReplaceGate(services, new UnreachableGate()));
+
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var world = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+        var episodeId = await harness.CreateEpisodeAsync(owner, world.SeriesId, EpisodeStatus.VideoReview, Ct);
+
+        harness.Clock.Set(WorkedPublicationCreate);
+        var run = await harness.CreateRunAsync(
+            owner,
+            world.SeriesId,
+            slotAt: WorkedSlot,
+            startAt: WorkedStart,
+            authorizationId: world.AuthorizationId,
+            state: AutopilotRunState.VideoGate,
+            step: AutopilotRunStep.VideoGate,
+            episodeId: episodeId,
+            attempt: 1,
+            renderAttempts: 1,
+            ct: Ct);
+        await Database.ExecuteAsync(
+            $"UPDATE autopilot_runs SET state = 'waiting_owner', step = 'video_gate', waiting_for = 'video' "
+            + $"WHERE id = '{run.Id}'",
+            Ct);
+
+        var result = await harness.AdvanceAsync(run.Id, owner, Ct);
+
+        result.IsError.ShouldBeFalse(
+            result.IsError ? string.Join(", ", result.Errors.Select(error => error.Code)) : "step");
+        result.Value.Kind.ShouldBe(StepResultKind.Idle);
+
+        var waiting = await harness.RunAsync(owner, run.Id, Ct);
+        waiting.State.ShouldBe(AutopilotRunState.WaitingOwner);
+        waiting.WaitingFor.ShouldBe(WaitingFor.Video);
+        waiting.PublicationId.ShouldBeNull();
+        (await PublicationsOfAsync(episodeId)).ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The consent the create relies on is the series' current authorization, never the run's idea-time snapshot: a
+    /// series whose pointer was cleared publishes nothing, even though the run still names a live revision
+    /// (S71 SEC-5).
+    /// </summary>
+    [Fact]
+    public async Task Run_VideoGateLivePassWithNoCurrentAuthorization_PublishesNothing()
+    {
+        await using var harness = await StartAsync(services => ReplaceGate(services, new UnreachableGate()));
+
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var world = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+        var episodeId = await harness.CreateEpisodeAsync(owner, world.SeriesId, EpisodeStatus.Ready, Ct);
+
+        var run = await harness.CreateRunAsync(
+            owner,
+            world.SeriesId,
+            slotAt: WorkedSlot,
+            startAt: WorkedStart,
+            authorizationId: world.AuthorizationId,
+            state: AutopilotRunState.VideoGate,
+            step: AutopilotRunStep.VideoGate,
+            episodeId: episodeId,
+            attempt: 1,
+            renderAttempts: 1,
+            ct: Ct);
+        await WriteGateResultsAsync(run.Id, mode: "live", pass: true);
+        await harness.UpdateSeriesAsync(world.SeriesId, "current_autopilot_authorization_id = NULL", Ct);
+
+        harness.Clock.Set(WorkedPublicationCreate);
+        var result = await harness.AdvanceAsync(run.Id, owner, Ct);
+
+        result.IsError.ShouldBeFalse(
+            result.IsError ? string.Join(", ", result.Errors.Select(error => error.Code)) : "step");
+        result.Value.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Value.Code.ShouldBe(AutopilotStepCodes.ChannelMissing);
+
+        var ended = await harness.RunAsync(owner, run.Id, Ct);
+        ended.State.ShouldBe(AutopilotRunState.Failed);
+        ended.PublicationId.ShouldBeNull();
+        (await PublicationsOfAsync(episodeId)).ShouldBeEmpty();
+    }
+
+    /// <summary>Writes the <c>gates.v1</c> document the video gate would have committed for the run.</summary>
+    private Task WriteGateResultsAsync(Guid runId, string mode, bool pass) =>
+        Database.ExecuteAsync(
+            "UPDATE autopilot_runs SET gate_results = '"
+            + "{\"schema_version\":\"gates.v1\",\"mode\":\"" + mode + "\",\"profile\":\"default\","
+            + "\"evaluated_at\":\"" + Instant(WorkedStart) + "\",\"video\":{\"pass\":"
+            + (pass ? "true" : "false")
+            + ",\"render_job_id\":\"" + Guid.Empty + "\",\"asset_id\":\"" + Guid.Empty
+            + "\",\"checks\":[],\"failures\":[]}}'::jsonb "
+            + $"WHERE id = '{runId}'",
+            Ct);
+
+    /// <summary>Every <c>publications</c> row of one episode, by id.</summary>
+    private Task<IReadOnlyList<string>> PublicationsOfAsync(Guid episodeId) =>
+        Database.QueryStringsAsync($"SELECT id::text FROM publications WHERE episode_id = '{episodeId}'", Ct);
+
     /// <summary>The worked example's planning options: the shipped <c>Autopilot:Run</c>/<c>YouTube</c> defaults.</summary>
     private static AutopilotTimingOptions TimingOptions() => new(
         PublishLeadMinutes: 120,
@@ -622,8 +817,8 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
         StoryEstimateMinutes: 10,
         MaxBufferDays: 7);
 
-    /// <summary>Replaces the harness's story gate with the fiction gate of a case.</summary>
-    private static void ReplaceGate(IServiceCollection services, ScriptedFictionGate gate)
+    /// <summary>Replaces the harness's story gate with the gate of a case.</summary>
+    private static void ReplaceGate(IServiceCollection services, IAutoApprovalGate gate)
     {
         services.RemoveAll<IAutoApprovalGate>();
         services.AddSingleton<IAutoApprovalGate>(gate);
@@ -962,6 +1157,21 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
 
         /// <summary>The seeded instant every gate approval stamps; the cases assert states, not the approval time.</summary>
         private static readonly DateTimeOffset AutopilotRunBuilderClock = Planned;
+    }
+
+    /// <summary>
+    /// A gate that must never run: the run already holds the verdict the case seeded, so any call means the step
+    /// re-evaluated (and would approve and notify twice) instead of replaying what the gate committed (S71 SEC-3).
+    /// </summary>
+    private sealed class UnreachableGate : IAutoApprovalGate
+    {
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<StoryGateOutcome>> EvaluateStoryAsync(Guid runId, int attempt, CancellationToken ct) =>
+            throw new InvalidOperationException("The story gate must not be evaluated: the run already holds its verdict.");
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<VideoGateOutcome>> EvaluateVideoAsync(Guid runId, CancellationToken ct) =>
+            throw new InvalidOperationException("The video gate must not be evaluated: the run already holds its verdict.");
     }
 
     /// <summary>The platform spend cap, always refusing: the row <c>Budget refusal at any paid dispatch</c>.</summary>

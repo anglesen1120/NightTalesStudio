@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Stories.Gates;
 
 namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 
@@ -16,9 +17,12 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <b>The gate is evaluated once per run.</b> <c>video_gate</c> has no self-transition, so the run cannot record a
 /// step name while it waits for the create window to open; the marker is the run's own <c>gates.v1</c> document,
 /// which the gate writes before it answers (<see cref="GateResultWriter.VideoKeyName"/>). A tick that finds the
-/// video half already stored goes straight to the create decision instead of evaluating, approving and notifying a
-/// second time — which also keeps <c>ApproveVideoCommand</c> at one call per run (S67-8/S67-9: no duplicate notice,
-/// and an already-approved cut is not approved again).
+/// video half already stored never evaluates, approves or notifies a second time — which also keeps
+/// <c>ApproveVideoCommand</c> at one call per run (S67-8/S67-9: no duplicate notice, and an already-approved cut is
+/// not approved again). What it does depends on the stored verdict, read as a verdict and not as key presence
+/// (S71 SEC-3, CR-5): a stored stop finishes that stop's move — the gate committed the verdict and the notice, only
+/// the run's save was lost — and a stored live pass goes on to the create, where the episode's <c>ready</c> state is
+/// what proves the approval landed.
 /// </para>
 /// <para>
 /// <b>The gate owns the notice.</b> A stop is recorded by <c>GateOutcomeRecorder</c>, which raises
@@ -79,7 +83,8 @@ public sealed partial class VideoGateStep : IAutopilotStepHandler
             return StepResult.Stopped(AutopilotStepCodes.SlotMissed);
         }
 
-        if (!HasVideoVerdict(run.GateResults))
+        var stored = StoredVideoVerdict.Read(run.GateResults);
+        if (stored is not { } known)
         {
             var verdict = await _gate.EvaluateVideoAsync(run.Id, ct).ConfigureAwait(false);
             if (verdict.IsError)
@@ -96,6 +101,16 @@ public sealed partial class VideoGateStep : IAutopilotStepHandler
             }
 
             LogApproved(run.Id);
+        }
+        else if (!known.Passed)
+        {
+            // The gate committed this verdict — and the notice that goes with it — but the run's own move did not
+            // land (a crash or a lost save between the two writes). Re-evaluating would approve and notify a second
+            // time, so the tick finishes the move the gate already decided (S71 SEC-3, CR-5).
+            var reasonCode = ReasonCodeOf(known.Reason);
+            LogReplayedStop(run.Id, reasonCode);
+
+            return StopForOwner(run, known.Reason, now);
         }
 
         return await _creator.TryCreateAsync(context, ct).ConfigureAwait(false);
@@ -137,27 +152,70 @@ public sealed partial class VideoGateStep : IAutopilotStepHandler
     };
 
     /// <summary>
-    /// Whether the run already carries the video half of its <c>gates.v1</c> document, i.e. the gate evaluated this
-    /// run's render at least once. An unreadable document counts as absent, so the gate re-evaluates (fail closed).
+    /// What the run's stored <c>gates.v1</c> document says about the video gate (S71 SEC-3, CR-5): absent or
+    /// unreadable, a stop the gate committed, or a live pass — the only shape that approved the cut.
     /// </summary>
-    private static bool HasVideoVerdict(string? gateResults)
+    /// <remarks>
+    /// Key presence is not approval: <see cref="GateResultWriter.WriteVideoAsync"/> writes the <c>video</c> block for
+    /// every verdict, including a dry run, a failing check list and a refused approval. The two facts that turn a
+    /// verdict into an approval are the block's own <c>pass</c> and the document's <c>mode</c>, so a replay reads
+    /// both. A live pass still does not prove the approval landed — the episode's <c>ready</c> state is that proof,
+    /// and <see cref="AutopilotPublicationCreator.TryCreateAsync"/> is the one place that reads it.
+    /// </remarks>
+    /// <param name="Passed">Whether the stored verdict is a live pass.</param>
+    /// <param name="Reason">
+    /// Why the stored verdict stopped, or <see cref="GateStopReason.None"/> exactly when <paramref name="Passed"/>.
+    /// </param>
+    private readonly record struct StoredVideoVerdict(bool Passed, GateStopReason Reason)
     {
-        if (string.IsNullOrWhiteSpace(gateResults))
+        private const string PassedKeyName = "pass";
+
+        /// <summary>Reads the video half of a stored document.</summary>
+        /// <param name="gateResults">The run's <c>gate_results</c>.</param>
+        /// <returns>
+        /// The verdict, or <see langword="null"/> when the document is missing, unreadable or holds no video block —
+        /// all of which mean "the gate has not committed a verdict", so the caller evaluates it.
+        /// </returns>
+        internal static StoredVideoVerdict? Read(string? gateResults)
         {
-            return false;
+            if (string.IsNullOrWhiteSpace(gateResults))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(gateResults);
+
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object
+                    || !root.TryGetProperty(GateResultWriter.VideoKeyName, out var video)
+                    || video.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                if (!video.TryGetProperty(PassedKeyName, out var pass) || pass.ValueKind != JsonValueKind.True)
+                {
+                    return new StoredVideoVerdict(Passed: false, GateStopReason.FailedChecks);
+                }
+
+                // A pass in dry-run mode is recorded and approves nothing. A document whose mode is missing or not
+                // the live wire value is read the same way: the owner decides, and nothing is published.
+                return IsLiveMode(root)
+                    ? new StoredVideoVerdict(Passed: true, GateStopReason.None)
+                    : new StoredVideoVerdict(Passed: false, GateStopReason.DryRun);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
-        try
-        {
-            using var document = JsonDocument.Parse(gateResults);
-
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty(GateResultWriter.VideoKeyName, out _);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
+        private static bool IsLiveMode(JsonElement root) =>
+            root.TryGetProperty(GateResultWriter.ModeKeyName, out var mode)
+            && mode.ValueKind == JsonValueKind.String
+            && string.Equals(mode.GetString(), GateMode.Live.ToWire(), StringComparison.Ordinal);
     }
 
     [LoggerMessage(
@@ -189,4 +247,10 @@ public sealed partial class VideoGateStep : IAutopilotStepHandler
         Level = LogLevel.Warning,
         Message = "Autopilot run {RunId} missed its slot at the video gate; the run ends slot_missed.")]
     private partial void LogSlotMissed(Guid runId);
+
+    [LoggerMessage(
+        EventId = 6650,
+        Level = LogLevel.Information,
+        Message = "Autopilot run {RunId} replayed the video verdict the gate already committed ({ReasonCode}); the run moves instead of evaluating again.")]
+    private partial void LogReplayedStop(Guid runId, string reasonCode);
 }

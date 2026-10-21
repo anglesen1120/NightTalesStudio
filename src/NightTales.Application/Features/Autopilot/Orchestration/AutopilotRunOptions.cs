@@ -59,8 +59,8 @@ public sealed class AutopilotRunOptions
     /// <summary>The shipped <see cref="MaxStepsPerTick"/>: one run may walk this many steps in one tick.</summary>
     public const int DefaultMaxStepsPerTick = 6;
 
-    /// <summary>The shipped <see cref="PlanJobMaxRunsPerTick"/> (task file Steps 9: 50).</summary>
-    public const int DefaultPlanJobMaxRunsPerTick = 50;
+    /// <summary>The shipped <see cref="PlanJobMaxRunsPerTick"/> (plan §7.1: 200).</summary>
+    public const int DefaultPlanJobMaxRunsPerTick = 200;
 
     /// <summary>The shipped <see cref="PublicationCreateMarginMinutes"/> (plan §3.4: 10).</summary>
     public const int DefaultPublicationCreateMarginMinutes = 10;
@@ -106,9 +106,16 @@ public sealed class AutopilotRunOptions
     public int MaxStepsPerTick { get; set; } = DefaultMaxStepsPerTick;
 
     /// <summary>
-    /// How many due runs one tick advances at all (<c>Autopilot:PlanJob:MaxRunsPerTick</c>, 50). The planner
-    /// creates rows regardless; a run past the budget waits for the next tick.
+    /// How many due runs one tick handles at all (<c>Autopilot:PlanJob:MaxRunsPerTick</c>, 200). The planner
+    /// creates rows regardless; a run past the budget waits for the next tick, and the due scan of the next tick
+    /// starts with the runs it has not looked at for longest, so nothing inside the budget starves.
     /// </summary>
+    /// <remarks>
+    /// The shipped 200 against the 15-minute tick is 19 200 run visits a day, which covers
+    /// <see cref="Planning.AutopilotSlotPlanner"/>'s 10 000-series batch across a cluster of evening publish
+    /// times (review finding PF-3). A tick whose first pass fills the budget logs
+    /// <c>autopilot_tick_truncated</c>, which is the signal to raise it.
+    /// </remarks>
     public int PlanJobMaxRunsPerTick { get; set; } = DefaultPlanJobMaxRunsPerTick;
 
     /// <summary>
@@ -221,7 +228,7 @@ public sealed class AutopilotRunOptions
         Check(options.WaitingOwnerExpiryHours is >= 1 and <= 720, Key(nameof(WaitingOwnerExpiryHours)), "must be between 1 and 720 hours", problems);
         Check(options.StuckRunMinutes is >= 1 and <= 1440, Key(nameof(StuckRunMinutes)), "must be between 1 and 1440 minutes", problems);
         Check(options.MaxStepsPerTick is >= 1 and <= 50, Key(nameof(MaxStepsPerTick)), "must be between 1 and 50", problems);
-        Check(options.PlanJobMaxRunsPerTick is >= 1 and <= 1000, Key(nameof(PlanJobMaxRunsPerTick)), "must be between 1 and 1000", problems);
+        Check(options.PlanJobMaxRunsPerTick is >= 1 and <= 2000, Key(nameof(PlanJobMaxRunsPerTick)), "must be between 1 and 2000", problems);
         Check(options.PublicationCreateMarginMinutes is >= 0 and <= 1440, Key(nameof(PublicationCreateMarginMinutes)), "must be between 0 and 1440 minutes", problems);
         Check(options.RenderEstimateMinutes is >= 1 and <= 240, Key(nameof(RenderEstimateMinutes)), "must be between 1 and 240 minutes", problems);
         Check(options.StoryEstimateMinutes is >= 1 and <= 240, Key(nameof(StoryEstimateMinutes)), "must be between 1 and 240 minutes", problems);
@@ -246,18 +253,15 @@ public sealed class AutopilotRunOptions
     }
 
     /// <summary>
-    /// The task-file key's value, or <paramref name="canonicalValue"/> when either the alias or the canonical
-    /// key is absent — the canonical key wins whenever it is present.
+    /// Reads the canonical <c>Autopilot:Run</c> key, then the task file's dotted alias, then keeps the bound value.
     /// </summary>
-    private static int Alias(Func<string, string?> readValue, string aliasKey, string canonicalKey, int canonicalValue)
-    {
-        if (readValue(canonicalKey) is not null)
-        {
-            return canonicalValue;
-        }
-
-        return ReadInt(readValue, aliasKey) ?? canonicalValue;
-    }
+    /// <param name="readValue">The deployment's configuration reader.</param>
+    /// <param name="aliasKey">The task file's dotted key (a fall-back only).</param>
+    /// <param name="canonicalKey">The <c>Autopilot:Run</c> key the class owns.</param>
+    /// <param name="canonicalValue">The value already bound to <see cref="SectionName"/> or the default.</param>
+    /// <returns>The value the deployment configured.</returns>
+    private static int Alias(Func<string, string?> readValue, string aliasKey, string canonicalKey, int canonicalValue) =>
+        ReadInt(readValue, canonicalKey) ?? ReadInt(readValue, aliasKey) ?? canonicalValue;
 
     private static int? ReadInt(Func<string, string?> readValue, string key) =>
         int.TryParse(readValue(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)

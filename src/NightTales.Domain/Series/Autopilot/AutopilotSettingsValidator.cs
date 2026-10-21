@@ -61,6 +61,20 @@ public static class AutopilotSettingsValidator
     /// <summary>The longest tone brief, in characters (plan §3.1).</summary>
     public const int ToneMaxChars = 500;
 
+    /// <summary>
+    /// The longest <c>gate_thresholds_ref</c> this build accepts, in characters. The value is a profile name from
+    /// the gate options (<c>default</c> is the shipped one), so a short slug is the whole of its vocabulary; the cap
+    /// keeps a stored document from carrying a value the gate resolver and the logs never meant to hold.
+    /// </summary>
+    public const int GateThresholdsRefMaxChars = 64;
+
+    /// <summary>
+    /// The longest <c>cadence.time_zone</c> id this build accepts, in characters. The longest id in the IANA
+    /// database is 32 characters (<c>America/Argentina/ComodRivadavia</c>); the cap is checked before the runtime
+    /// resolves the id, so an oversized value is a validation error instead of a loader exception.
+    /// </summary>
+    public const int TimeZoneMaxChars = 64;
+
     private const int DailyCapMin = 1;
     private const int DailyCapMax = 5;
     private const int BufferDaysMin = 1;
@@ -160,7 +174,7 @@ public static class AutopilotSettingsValidator
             var preAuditMode = ReadPreAuditMode(root, errors);
             var preAuditPauseAfter = ReadInt(
                 root, "pre_audit_pause_after", "pre_audit_pause_after", PreAuditPauseAfterMin, PreAuditPauseAfterMax, errors);
-            var gateThresholdsRef = ReadText(root, "gate_thresholds_ref", "gate_thresholds_ref", errors);
+            var gateThresholdsRef = ReadGateThresholdsRef(root, errors);
             var tone = ReadTone(root, errors);
             var bannedThemes = ReadBannedThemes(root, errors);
             var renderLeadMinutes = ReadOptionalInt(
@@ -439,12 +453,37 @@ public static class AutopilotSettingsValidator
             int.Parse(text.AsSpan(3, 2), NumberStyles.None, CultureInfo.InvariantCulture));
     }
 
+    /// <summary>
+    /// The <c>cadence.time_zone</c> id: a length and charset guard first, then the runtime's own resolution.
+    /// </summary>
+    /// <remarks>
+    /// The guard exists because the id is resolved with <see cref="TimeZoneInfo.FindSystemTimeZoneById(string)"/>,
+    /// which on a tzdata host accepts any path below the zone directory (<c>posix/…</c>, <c>right/…</c>) and can
+    /// throw for a value it considers a malformed path. Capping the length and allowing only the characters real
+    /// IANA ids use (<c>America/Argentina/ComodRivadavia</c>, <c>Etc/GMT+5</c>) keeps the stored document inside
+    /// the vocabulary the metric tag and the logs can hold, and turns an oversized value into a plain validation
+    /// error instead of an exception escaping the validator.
+    /// </remarks>
     private static string? ReadTimeZone(JsonElement cadence, List<Error> errors)
     {
         const string Field = "cadence.time_zone";
 
         if (!TryText(cadence, "time_zone", Field, errors, out var id))
         {
+            return null;
+        }
+
+        if (RuneCount(id) > TimeZoneMaxChars)
+        {
+            errors.Add(Violation(Field, Invariant($"must be at most {TimeZoneMaxChars} characters.")));
+
+            return null;
+        }
+
+        if (!IsTimeZoneId(id))
+        {
+            errors.Add(Violation(Field, "must be a time zone id of letters, digits, '/', '_', '-' or '+'."));
+
             return null;
         }
 
@@ -511,14 +550,66 @@ public static class AutopilotSettingsValidator
         return null;
     }
 
-    private static string? ReadText(JsonElement parent, string name, string field, List<Error> errors)
+    /// <summary>
+    /// The <c>gate_thresholds_ref</c> profile name: bounded and restricted to the characters a profile key uses,
+    /// because the value selects a gate profile and reaches the gate evaluators' diagnostics.
+    /// </summary>
+    private static string? ReadGateThresholdsRef(JsonElement root, List<Error> errors)
     {
-        if (!TryText(parent, name, field, errors, out var value))
+        const string Field = "gate_thresholds_ref";
+
+        if (!TryText(root, Field, Field, errors, out var reference))
         {
             return null;
         }
 
-        return value;
+        if (RuneCount(reference) > GateThresholdsRefMaxChars)
+        {
+            errors.Add(Violation(Field, Invariant($"must be at most {GateThresholdsRefMaxChars} characters.")));
+
+            return null;
+        }
+
+        if (!IsProfileName(reference))
+        {
+            errors.Add(Violation(Field, "must be a profile name of letters, digits, '_', '-' or '.'."));
+
+            return null;
+        }
+
+        return reference;
+    }
+
+    /// <summary>Whether every character is one a gate-profile key uses (ASCII letters, digits, <c>_</c>, <c>-</c>, <c>.</c>).</summary>
+    private static bool IsProfileName(string value)
+    {
+        foreach (var character in value)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character is not ('_' or '-' or '.'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether every character is one an IANA id uses (ASCII letters, digits, <c>/</c>, <c>_</c>, <c>-</c>,
+    /// <c>+</c>): the separators of <c>America/Argentina/ComodRivadavia</c>, <c>Asia/Ho_Chi_Minh</c> and
+    /// <c>Etc/GMT+5</c>, and nothing path-like or whitespace.
+    /// </summary>
+    private static bool IsTimeZoneId(string value)
+    {
+        foreach (var character in value)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character is not ('/' or '_' or '-' or '+'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string? ReadTone(JsonElement root, List<Error> errors)

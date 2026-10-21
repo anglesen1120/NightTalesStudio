@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq.Expressions;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,7 +65,30 @@ public sealed partial class AutopilotRunOrchestrator(
     public const string ProducingRunAheadCode = "producing_run_ahead";
 
     /// <inheritdoc />
-    public async Task<ErrorOr<AdvanceResult>> AdvanceAsync(Guid runId, Guid userId, CancellationToken ct)
+    public Task<ErrorOr<AdvanceResult>> AdvanceAsync(Guid runId, Guid userId, CancellationToken ct) =>
+        AdvanceCoreAsync(runId, userId, markChecked: false, ct);
+
+    /// <summary>
+    /// One step of one run.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why the check stamp is opt-in.</b> The row's <c>xmin</c> is its compare-and-set token, so a write this call
+    /// does not need is a write that can make a concurrent tick's save lose the race. The rotation stamp therefore
+    /// belongs to the due scan alone (<see cref="AdvanceDueAsync"/>); an outbox-driven or direct
+    /// <see cref="AdvanceAsync"/> leaves the row exactly as the handler did.
+    /// </remarks>
+    /// <param name="runId">The run.</param>
+    /// <param name="userId">Its owner, from the event or the scan.</param>
+    /// <param name="markChecked">
+    /// Stamp <c>updated_at</c> when nothing moved, so the owner's due scan rotates (PF-1, SEC-2).
+    /// </param>
+    /// <param name="ct">Cancels the step and its save.</param>
+    /// <returns>What the step did, or why it could not.</returns>
+    private async Task<ErrorOr<AdvanceResult>> AdvanceCoreAsync(
+        Guid runId,
+        Guid userId,
+        bool markChecked,
+        CancellationToken ct)
     {
         if (userId == Guid.Empty)
         {
@@ -98,6 +122,8 @@ public sealed partial class AutopilotRunOrchestrator(
                 return new AdvanceResult(run.State, StepResultKind.Idle, null);
             }
 
+            var now = clock.UtcNow;
+
             var series = await db.Series
                 .SingleOrDefaultAsync(candidate => candidate.Id == run.SeriesId, ct)
                 .ConfigureAwait(false);
@@ -114,25 +140,28 @@ public sealed partial class AutopilotRunOrchestrator(
                 // A settings document that fails validation is a skip, not a pause (task file §Failure handling):
                 // the series' planner/owner must fix it and the tick re-reads it next time.
                 LogSettingsInvalid(runId, run.SeriesId, parsed.FirstError.Code);
+                await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
 
                 return new AdvanceResult(run.State, StepResultKind.Idle, ErrorCodes.AutopilotSettingsInvalid);
             }
 
             if (!handlers.TryGetValue(run.State, out var handler))
             {
-                // Waiting states the orchestrator does not own (awaiting_authorization, paused, …) stand idle
-                // until their own event or the owner's resume drives them.
+                // A non-terminal state no handler claims (the aggregate's own states aside) keeps its place in the
+                // rotation but cannot move here.
+                await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
+
                 return new AdvanceResult(run.State, StepResultKind.Idle, null);
             }
 
             var originalState = run.State;
-            var now = clock.UtcNow;
 
             if (AutopilotRunStateMachine.IsProducing(run.State)
                 && await IsBehindAnotherProducingRunAsync(db, run, ct).ConfigureAwait(false))
             {
                 metrics.ConcurrencyViolation();
                 LogConcurrencyViolation(run.Id, run.SeriesId, now);
+                await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
 
                 return new AdvanceResult(originalState, StepResultKind.Idle, ProducingRunAheadCode);
             }
@@ -191,6 +220,7 @@ public sealed partial class AutopilotRunOrchestrator(
 
                 default:
                     LogIfStuck(run, result.Kind, now);
+                    await NoteCheckedAsync(db, runId, now, markChecked, ct).ConfigureAwait(false);
 
                     return new AdvanceResult(run.State, result.Kind, result.Code);
             }
@@ -208,10 +238,27 @@ public sealed partial class AutopilotRunOrchestrator(
     }
 
     /// <inheritdoc />
-    public async Task<ErrorOr<AdvanceResult>> AdvanceWhileProgressingAsync(
+    public Task<ErrorOr<AdvanceResult>> AdvanceWhileProgressingAsync(
         Guid runId,
         Guid userId,
         int maxSteps,
+        CancellationToken ct) =>
+        AdvanceWhileProgressingCoreAsync(runId, userId, maxSteps, markChecked: false, ct);
+
+    /// <summary>
+    /// Walks up to <paramref name="maxSteps"/> steps of one run, stopping at the first step that did not advance.
+    /// </summary>
+    /// <param name="runId">The run.</param>
+    /// <param name="userId">Its owner.</param>
+    /// <param name="maxSteps">The chain's budget.</param>
+    /// <param name="markChecked">Stamp <c>updated_at</c> when the chain ends without moving (the due scan only).</param>
+    /// <param name="ct">Cancels the steps and their saves.</param>
+    /// <returns>The chain's last result, or the first error.</returns>
+    private async Task<ErrorOr<AdvanceResult>> AdvanceWhileProgressingCoreAsync(
+        Guid runId,
+        Guid userId,
+        int maxSteps,
+        bool markChecked,
         CancellationToken ct)
     {
         var budget = Math.Max(maxSteps, 1);
@@ -219,7 +266,7 @@ public sealed partial class AutopilotRunOrchestrator(
 
         for (var step = 0; step < budget; step++)
         {
-            var result = await AdvanceAsync(runId, userId, ct).ConfigureAwait(false);
+            var result = await AdvanceCoreAsync(runId, userId, markChecked, ct).ConfigureAwait(false);
             if (result.IsError)
             {
                 return result.Errors;
@@ -238,13 +285,37 @@ public sealed partial class AutopilotRunOrchestrator(
 
     /// <inheritdoc />
     /// <remarks>
-    /// The due scan goes through <see cref="ISystemWorkQuery.PendingAsync{T}"/> (the allow-listed cross-user
-    /// read of 09 README D10): the predicate is "not terminal and <c>start_at &lt;= now</c>", plus "not paused"
-    /// because only the owner's resume drives a paused run. The port has no ordering member, so this takes the
-    /// batch in whatever order the provider returns; a run left past <paramref name="max"/> is picked up by the
-    /// next tick fifteen minutes later. Every run is handled in its own call and a failure is logged and skipped,
-    /// so one bad run never stops the others.
+    /// <para>
+    /// <b>Two passes, actionable first.</b> The scan goes through the ordered
+    /// <see cref="ISystemWorkQuery"/> overload (the allow-listed cross-user read of 09 README D10) in two passes:
+    /// the states whose next move is the tick's own work (<see cref="TickDriven"/>) get the whole budget first, and
+    /// whatever is left goes to the states that wait on an external event and only need a periodic re-read
+    /// (<see cref="ExternalWait"/>). A run that needs the tick is therefore never queued behind an idle-waiting row,
+    /// whatever the tenant mix (review findings PF-1, SEC-2).
+    /// </para>
+    /// <para>
+    /// <b>A rotation, not a heap order.</b> Each pass is ordered by <c>updated_at</c> then id, and the scan re-stamps
+    /// <c>updated_at</c> when a run had nothing to do (the plain <see cref="AdvanceAsync"/> does not write: its row's
+    /// <c>xmin</c> must stay untouched for a concurrent writer). A row that cannot progress this tick therefore moves
+    /// behind every row that has not been looked at, and the id tiebreak keeps the order total.
+    /// </para>
+    /// <para>
+    /// <b>What the rotation promises.</b> While the actionable pass leaves budget, every due row of both classes is
+    /// reached within <c>ceil(class size / budget)</c> ticks. When the actionable rows alone fill the budget the
+    /// waiting pass gets nothing that tick — those runs are being overtaken by work that must happen, which is the
+    /// intended priority — and the scan says so with <c>autopilot_tick_truncated</c>.
+    /// </para>
+    /// <para>
+    /// Every run is handled in its own call and a failure is logged and skipped, so one bad run never stops the
+    /// others. A pass that returns exactly the budget it asked for is logged
+    /// (<c>autopilot_tick_truncated</c>), which is what tells "the budget was exactly full" from "the budget could
+    /// not keep up" (PF-3).
+    /// </para>
     /// </remarks>
+    /// <param name="now">The tick's clock reading.</param>
+    /// <param name="max">The budget of runs this tick.</param>
+    /// <param name="ct">Cancels the scan and every run.</param>
+    /// <returns>The due runs handled without an error; a failing run is logged and skipped.</returns>
     public async Task<int> AdvanceDueAsync(DateTimeOffset now, int max, CancellationToken ct)
     {
         if (max <= 0)
@@ -254,9 +325,31 @@ public sealed partial class AutopilotRunOrchestrator(
 
         var due = new List<(Guid Id, Guid UserId)>();
 
-        await foreach (var pair in systemWork.PendingAsync<AutopilotRun>(Due(now), max, ct).ConfigureAwait(false))
+        await foreach (var pair in systemWork
+            .PendingAsync<AutopilotRun, DateTimeOffset>(TickDriven(now), run => run.UpdatedAt, max, ct)
+            .ConfigureAwait(false))
         {
             due.Add(pair);
+        }
+
+        var actionable = due.Count;
+        var remaining = max - actionable;
+
+        if (remaining > 0)
+        {
+            await foreach (var pair in systemWork
+                .PendingAsync<AutopilotRun, DateTimeOffset>(ExternalWait(now), run => run.UpdatedAt, remaining, ct)
+                .ConfigureAwait(false))
+            {
+                due.Add(pair);
+            }
+        }
+
+        // Either pass returning exactly the budget it asked for means the queue, not the clock or an empty set,
+        // ended the scan (PF-3).
+        if (actionable == max || (remaining > 0 && due.Count - actionable == remaining))
+        {
+            LogDueTruncated(now, due.Count, max);
         }
 
         var advanced = 0;
@@ -265,7 +358,12 @@ public sealed partial class AutopilotRunOrchestrator(
         {
             try
             {
-                var result = await AdvanceWhileProgressingAsync(runId, userId, options.MaxStepsPerTick, ct)
+                var result = await AdvanceWhileProgressingCoreAsync(
+                        runId,
+                        userId,
+                        options.MaxStepsPerTick,
+                        markChecked: true,
+                        ct)
                     .ConfigureAwait(false);
                 if (result.IsError)
                 {
@@ -297,7 +395,7 @@ public sealed partial class AutopilotRunOrchestrator(
     /// <c>(state, start_at)</c> index serves the scan).
     /// </summary>
     /// <param name="now">The tick's clock reading.</param>
-    /// <returns>The filter for <see cref="ISystemWorkQuery.PendingAsync{T}"/>.</returns>
+    /// <returns>The filter for <see cref="ISystemWorkQuery.PendingAsync{T, TKey}"/>.</returns>
     public static System.Linq.Expressions.Expression<Func<AutopilotRun, bool>> Due(DateTimeOffset now) =>
         run => run.StartAt <= now
             && run.State != AutopilotRunState.Published
@@ -306,6 +404,35 @@ public sealed partial class AutopilotRunOrchestrator(
             && run.State != AutopilotRunState.CancelledByOwner
             && run.State != AutopilotRunState.Failed
             && run.State != AutopilotRunState.Paused;
+
+    /// <summary>
+    /// The due rows whose next move is the tick's own work: the state machine and the in-flight generation the step
+    /// polls are the only thing that advances them, so they are served before anything else.
+    /// </summary>
+    /// <param name="now">The tick's clock reading.</param>
+    /// <returns>The filter of the first scan pass.</returns>
+    public static System.Linq.Expressions.Expression<Func<AutopilotRun, bool>> TickDriven(DateTimeOffset now) =>
+        All(Due(now), run => run.State == AutopilotRunState.Planned
+            || run.State == AutopilotRunState.IdeaPicked
+            || run.State == AutopilotRunState.Researching
+            || run.State == AutopilotRunState.StoryGenerating
+            || run.State == AutopilotRunState.StoryGate
+            || run.State == AutopilotRunState.Rendering
+            || run.State == AutopilotRunState.VideoGate);
+
+    /// <summary>
+    /// The due rows that wait on an external event — the owner's accept or answer, consent, the veto notice, the
+    /// publication row — and need only a periodic re-read. They are served with whatever budget the actionable pass
+    /// leaves, so an owner who never answers cannot starve a run that needs the tick.
+    /// </summary>
+    /// <param name="now">The tick's clock reading.</param>
+    /// <returns>The filter of the second scan pass.</returns>
+    public static System.Linq.Expressions.Expression<Func<AutopilotRun, bool>> ExternalWait(DateTimeOffset now) =>
+        All(Due(now), run => run.State == AutopilotRunState.AwaitingAuthorization
+            || run.State == AutopilotRunState.WaitingOwner
+            || run.State == AutopilotRunState.PublicationCreated
+            || run.State == AutopilotRunState.VetoWindow
+            || run.State == AutopilotRunState.Scheduled);
 
     /// <summary>
     /// Whether another producing run of the same series is not later than <paramref name="run"/> — "not later"
@@ -353,8 +480,85 @@ public sealed partial class AutopilotRunOrchestrator(
         LogRunStuck(run.Id, run.SeriesId, run.State, kind, (long)(now - run.LastTransitionAt).TotalMinutes);
     }
 
+    /// <summary>
+    /// Stamps "the tick looked at this run and had nothing to do": one <c>UPDATE</c> of <c>updated_at</c>, no state
+    /// change and no other tracked entity flushed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This write is what makes the due scan a rotation (PF-1, SEC-2): the scan orders by <c>updated_at</c>, so a run
+    /// that answered idle moves behind every due run that has not been looked at, and a healthy run is reached
+    /// within <c>ceil(due / budget)</c> ticks instead of never. Without it the same idle head would fill the budget
+    /// every tick and a run that needs the tick would reach <c>slot_missed</c>.
+    /// </para>
+    /// <para>
+    /// <see cref="AutopilotRun.LastTransitionAt"/> is deliberately untouched: the stuck-run log and the whole state
+    /// machine read it as "when the run last moved", and a check is not a move.
+    /// </para>
+    /// <para>
+    /// The statement bypasses the change tracker on purpose: a step that returned idle may have left tracked
+    /// entities in the scope, and the tick must not commit them. A write that fails is logged and ignored — the row
+    /// keeps its place in the queue, which costs one tick, not the run.
+    /// </para>
+    /// </remarks>
+    private async Task NoteCheckedAsync(
+        IAppDbContext db,
+        Guid runId,
+        DateTimeOffset now,
+        bool markChecked,
+        CancellationToken ct)
+    {
+        // Only the due scan rotates: see AdvanceCoreAsync's remark on the xmin token.
+        if (!markChecked)
+        {
+            return;
+        }
+
+        try
+        {
+            await db.AutopilotRuns
+                .Where(candidate => candidate.Id == runId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(candidate => candidate.UpdatedAt, now), ct)
+                .ConfigureAwait(false);
+        }
+        catch (DbUpdateException exception)
+        {
+            LogCheckStampFailed(runId, exception.GetType().Name);
+        }
+    }
+
+    /// <summary>One predicate of both <paramref name="left"/> and <paramref name="right"/>, over one parameter.</summary>
+    private static Expression<Func<AutopilotRun, bool>> All(
+        Expression<Func<AutopilotRun, bool>> left,
+        Expression<Func<AutopilotRun, bool>> right)
+    {
+        var parameter = left.Parameters[0];
+        var body = Expression.AndAlso(left.Body, new Rebind(right.Parameters[0], parameter).Visit(right.Body)!);
+
+        return Expression.Lambda<Func<AutopilotRun, bool>>(body, parameter);
+    }
+
+    /// <summary>Replaces one lambda parameter with another, so two predicates can share one expression.</summary>
+    private sealed class Rebind(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) =>
+            node == from ? to : base.VisitParameter(node);
+    }
+
     [LoggerMessage(
-        EventId = 6510,
+        EventId = 6610,
+        Level = LogLevel.Warning,
+        Message = "autopilot_tick_truncated at={At} scanned={Scanned} max={Max}")]
+    private partial void LogDueTruncated(DateTimeOffset at, int scanned, int max);
+
+    [LoggerMessage(
+        EventId = 6611,
+        Level = LogLevel.Warning,
+        Message = "autopilot_run_check_stamp_failed runId={RunId} exceptionType={ExceptionType}")]
+    private partial void LogCheckStampFailed(Guid runId, string exceptionType);
+
+    [LoggerMessage(
+        EventId = 6690,
         Level = LogLevel.Warning,
         Message = "autopilot_run_user_required runId={RunId}")]
     private partial void LogUserRequired(Guid runId);

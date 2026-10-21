@@ -82,7 +82,9 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
 
         result.Kind.ShouldBe(StepResultKind.Idle);
         run.State.ShouldBe(AutopilotRunState.WaitingOwner);
-        run.Outcome.ShouldBeNull();
+        // `AdvanceTo` stamps the stop outcome of the state it enters, so a run still waiting reports
+        // `WaitingOwner` rather than no outcome: the plan §3.5 ladder treats that outcome as a stop, not a terminal.
+        run.Outcome.ShouldBe(AutopilotRunOutcome.WaitingOwner);
     }
 
     /// <summary>
@@ -225,35 +227,6 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
     }
 
     /// <summary>
-    /// The story changed while the run waited for a video: the run resumes <c>rendering</c> with the wait cleared, and
-    /// no publication is created from a story state.
-    /// </summary>
-    /// <remarks>
-    /// The aggregate cannot produce this wait today — the <c>rendering → waiting_owner</c> row is reverted, so a
-    /// keyword-flagged render ends the run <c>failed</c> instead of parking it here. The test covers the routing the
-    /// TL open item ("hold a refused render for the owner") would need, not a live path.
-    /// </remarks>
-    [Fact]
-    public async Task WaitingOwner_StoryRegeneratedWhileWaitingForVideo_ResumesTheRender()
-    {
-        var world = await SeedAsync(status: EpisodeStatus.StoryApproved);
-        await using var db = Open(world, Now);
-        var run = await AddRunAsync(db, world, Now, WaitingFor.Video, step: null);
-        var sender = new RecordingSender();
-        var step = Step(sender, db);
-
-        var result = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, Now), Ct);
-
-        result.Kind.ShouldBe(StepResultKind.Advanced);
-        run.State.ShouldBe(AutopilotRunState.Rendering);
-        run.WaitingFor.ShouldBeNull();
-        run.Step.ShouldBe(
-            AutopilotRunStep.Idea,
-            "AdvanceTo(step: null) keeps the stored step, so the run is still behind the render and the tick re-dispatches it");
-        sender.Sent.ShouldBeEmpty("a story state never publishes a video that does not exist");
-    }
-
-    /// <summary>
     /// The owner approved a story whose text trips the 03.2.2-T2 keyword lint: the render is refused on every tick, so
     /// the run ends <c>failed</c> with the render step's own diagnostic code instead of retrying for ever.
     /// </summary>
@@ -273,6 +246,72 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
         run.State.ShouldBe(AutopilotRunState.Failed);
         run.Outcome.ShouldBe(AutopilotRunOutcome.Failed);
         sender.Single<RenderEpisodeCommand>().EpisodeId.ShouldBe(world.EpisodeId);
+    }
+
+    /// <summary>
+    /// The owner answers a story wait after the slot is missed (the wait may last up to 48 h): the render is paid, so
+    /// the answer must not dispatch it — the run ends <c>failed</c> with <c>slot_missed</c> and nothing is sent
+    /// (task row SEC-8).
+    /// </summary>
+    [Fact]
+    public async Task WaitingOwner_StoryAnsweredAfterTheSlotIsMissed_BuysNothing()
+    {
+        var world = await SeedAsync(status: EpisodeStatus.StoryApproved);
+        await using var db = Open(world, Now);
+
+        // The slot's cutoff is upload_at - MinVetoWindowHours, i.e. four hours before the slot: a tick one hour before
+        // the slot is past it, and the wait itself is only an hour old.
+        var late = AutopilotStepContexts.DefaultSlotAt.AddHours(-1);
+        var run = await AddRunAsync(db, world, late.AddHours(-1), WaitingFor.Story, AutopilotRunStep.Story);
+        var sender = new RecordingSender();
+        var step = Step(sender, db);
+
+        var result = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, late), Ct);
+
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(AutopilotRun.SlotMissedReason);
+        run.State.ShouldBe(AutopilotRunState.Failed);
+        sender.Sent.ShouldBeEmpty("a slot that can no longer publish must not pay for its render");
+    }
+
+    /// <summary>
+    /// The owner answers while the series is paused (§3.6): the story is paid, so the wait pauses the run with the
+    /// series' reason instead of sending the command (task rows SEC-1, PF-5).
+    /// </summary>
+    [Fact]
+    public async Task WaitingOwner_SeriesPaused_DoesNotBuyTheStory()
+    {
+        var world = await SeedAsync();
+        await using var db = Open(world, Now);
+
+        await using (var pause = Open(world, Now))
+        {
+            AutopilotSeriesSeed.Pause(pause, world.Series, "content_reported", Now);
+        }
+
+        var run = await AddRunAsync(db, world, Now, WaitingFor.FactSheet, AutopilotRunStep.FactSheet);
+        var sender = new RecordingSender();
+        var step = Step(sender, db);
+
+        await new FactSheetBuilder(Database, world.Actor)
+            .CreateVersionAsync(
+                world.UserId,
+                world.EpisodeId,
+                version: 1,
+                facts: [],
+                sourceAliases: new Dictionary<string, Guid>(StringComparer.Ordinal),
+                status: FactSheetStatus.Approved,
+                approvedBy: world.UserId,
+                approvedAt: Now,
+                ct: Ct);
+
+        var result = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, Now), Ct);
+
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe("content_reported");
+        run.State.ShouldBe(AutopilotRunState.Paused);
+        run.PauseReason.ShouldBe(AutopilotPauseReason.ContentReported);
+        sender.Sent.ShouldBeEmpty("a paused series buys no story, whatever the owner answered");
     }
 
     private static WaitingOwnerStep Step(ISender sender, AppDbContext db) =>
@@ -325,9 +364,17 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
         actor.Id = user.Id;
 
-        var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, topic: topic);
+        var series = await new SeriesBuilder(Database, actor)
+            .CreateAsync(user.Id, topic: topic, autopilotEnabled: true, ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, status: status, ct: Ct);
+
+        // The step re-reads the series' authorization before every paid answer (S71 SEC-1, PF-5), so the world
+        // starts with the rows 02.8.3-T3's accept route writes.
+        await using (var authorize = Open(new World(actor, user.Id, series, episode.Id), Now))
+        {
+            await AutopilotSeriesSeed.AcceptAsync(authorize, series, Now, Ct);
+        }
 
         if (withFetchedSource)
         {

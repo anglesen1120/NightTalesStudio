@@ -89,6 +89,36 @@ public sealed class GateFailureStreakReaderTests(TestDatabase database) : Integr
     }
 
     /// <summary>
+    /// A run that stopped without finishing — a buffered slot waiting for the owner's consent, or the whole series
+    /// paused — is not part of the two-row window either, although 02.8.3 writes its <c>outcome</c>: the terminal
+    /// marker is <c>finished_at</c>, and a newer open slot must not hide the two gate failures behind it.
+    /// </summary>
+    [Fact]
+    public async Task StoppedButOpenRunsNewerThanTwoFailures_KeepTheStreak()
+    {
+        var world = await SeedWorldAsync();
+
+        await SeedRunAsync(world, Start, AutopilotRunOutcome.GateFailed);
+        await SeedRunAsync(world, Start.AddMinutes(15), AutopilotRunOutcome.GateFailed);
+
+        // Both are newer than the failures on `slot_at`, which is the column the reader orders by.
+        await SeedRunAsync(
+            world,
+            Start.AddMinutes(30),
+            AutopilotRunOutcome.WaitingOwner,
+            state: AutopilotRunState.WaitingOwner);
+        await SeedRunAsync(
+            world,
+            Start.AddMinutes(45),
+            AutopilotRunOutcome.Paused,
+            state: AutopilotRunState.Paused,
+            pauseReason: AutopilotPauseReason.OwnerPaused);
+
+        (await Reader(world).GetStreakAsync(world.SeriesId, CancellationToken.None))
+            .ShouldBe(GateFailureStreakReader.StreakWindow);
+    }
+
+    /// <summary>
     /// <see cref="IGateFailureStreakReader.GetLatestAsync"/> answers the newest <b>slot</b>, not the row planned last
     /// (STATUS S67-6), and reports the pause trigger as its snake_case wire value — including the one member whose
     /// wire value the plan fixes separately from its name (<c>autopilot_channel_unsupported</c>, 02.8.3 plan §3.6 row

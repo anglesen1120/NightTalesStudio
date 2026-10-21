@@ -65,6 +65,22 @@ public sealed class ResearchStep(ISender sender, IAppDbContext db, ISourceFinder
 
         var run = context.Run;
 
+        // Both dispatches of this state are paid (a source search and a fact sheet), so the series, its autopilot and
+        // its authorization are re-checked here (task rows SEC-1, PF-5) instead of only at the idea step.
+        var spend = await AutopilotStepSupport.SeriesMaySpendAsync(db, context, ct).ConfigureAwait(false);
+
+        if (spend.Stop is { } refusal)
+        {
+            return refusal;
+        }
+
+        // The slot's research must be requested while the slot is still publishable (plan §3.4, task row CR-2): a
+        // source search or a fact sheet bought past the cutoff is thrown away by the next step's own check.
+        if (AutopilotStepSupport.SlotIsMissed(context))
+        {
+            return AutopilotStepSupport.FailSlotMissed(context);
+        }
+
         if (run.EpisodeId is not { } episodeId)
         {
             // Researching is only reachable after the idea step created the episode; a row without one is a bug

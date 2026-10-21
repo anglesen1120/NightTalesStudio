@@ -79,7 +79,7 @@ public sealed partial class AutopilotPlanJobRegistration(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogFlagReadFailed(logger, exception);
+            LogFlagReadFailed(logger, exception.GetType().Name);
 
             return false;
         }
@@ -91,9 +91,13 @@ public sealed partial class AutopilotPlanJobRegistration(
         Message = "jobs.autopilot-plan.disabled")]
     private static partial void LogDisabled(ILogger logger);
 
+    /// <remarks>
+    /// The type name only: the rest of the feature logs an exception the same way
+    /// (<c>AutopilotRunOrchestrator.LogDueRunThrew</c>), because a flag-store failure can carry connection details.
+    /// </remarks>
     [LoggerMessage(
         EventId = 6532,
         Level = LogLevel.Warning,
-        Message = "jobs.autopilot-plan.flag-read-failed")]
-    private static partial void LogFlagReadFailed(ILogger logger, Exception exception);
+        Message = "jobs.autopilot-plan.flag-read-failed exceptionType={ExceptionType}")]
+    private static partial void LogFlagReadFailed(ILogger logger, string exceptionType);
 }

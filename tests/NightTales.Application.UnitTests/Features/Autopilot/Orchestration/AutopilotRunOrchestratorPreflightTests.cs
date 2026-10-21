@@ -78,5 +78,22 @@ public sealed class AutopilotRunOrchestratorPreflightTests
             yield break;
 #pragma warning restore CS0162
         }
+
+        public async IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T, TKey>(
+            Expression<Func<T, bool>> where,
+            Expression<Func<T, TKey>> orderBy,
+            int batch,
+            [EnumeratorCancellation] CancellationToken ct)
+            where T : Entity, IUserOwned
+        {
+            Calls++;
+
+            await Task.CompletedTask;
+
+            throw new InvalidOperationException("AdvanceAsync must refuse before any cross-user read.");
+#pragma warning disable CS0162 // Unreachable code: kept so the method is a valid async iterator.
+            yield break;
+#pragma warning restore CS0162
+        }
     }
 }

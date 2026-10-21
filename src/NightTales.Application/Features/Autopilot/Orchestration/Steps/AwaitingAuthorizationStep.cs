@@ -11,10 +11,13 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The wait is not a pause and has no expiry of its own: a series that never accepts its authorization text has no
-/// publishing right, and the slot dies with the cadence it was planned for (the missed-slot rule then fails it in
-/// the idea step). 02.8.3-T2 accepts and revokes the text; this step only reads
-/// <c>series.current_autopilot_authorization_id</c> and the revision's <c>revoked_at</c>.
+/// <b>The wait has no expiry, the slot does.</b> A series that never accepts its authorization text has no
+/// publishing right, and the slot it was planned for dies with its cadence: once the missed-slot cutoff passes, the
+/// run ends <c>failed</c> with <c>slot_missed</c> exactly as the idea step would have ended it. Without that the
+/// state would hold a due row per day per unauthorized series forever: a run that can never progress would keep
+/// paying a visit every rotation and the backlog would grow without bound (review findings PF-1, SEC-2). 02.8.3-T2
+/// accepts and revokes the text; this step only reads <c>series.current_autopilot_authorization_id</c> and the
+/// revision's <c>revoked_at</c>.
 /// </para>
 /// <para>
 /// Re-entering <see cref="AutopilotRunState.Planned"/> keeps the <c>step</c> column at <c>authorization</c>: that is
@@ -42,6 +45,13 @@ public sealed partial class AwaitingAuthorizationStep(
             return StepResult.Idle;
         }
 
+        if (AutopilotStepSupport.SlotIsMissed(context))
+        {
+            LogSlotMissed(run.Id, run.SeriesId);
+
+            return AutopilotStepSupport.FailSlotMissed(context);
+        }
+
         var authorizationId = await AutopilotStepSupport
             .CurrentAuthorizationAsync(db, context.Series, ct)
             .ConfigureAwait(false);
@@ -65,6 +75,12 @@ public sealed partial class AwaitingAuthorizationStep(
         Level = LogLevel.Debug,
         Message = "autopilot_authorization_waiting runId={RunId} seriesId={SeriesId}")]
     private partial void LogStillWaiting(Guid runId, Guid seriesId);
+
+    [LoggerMessage(
+        EventId = 6609,
+        Level = LogLevel.Warning,
+        Message = "autopilot_authorization_slot_missed runId={RunId} seriesId={SeriesId}")]
+    private partial void LogSlotMissed(Guid runId, Guid seriesId);
 
     [LoggerMessage(
         EventId = 6550,

@@ -1,5 +1,6 @@
 using Mediator;
 using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Rendering.Commands.RenderEpisode;
@@ -51,20 +52,27 @@ public sealed partial class RenderStep : IAutopilotStepHandler
 {
     private readonly ISender _sender;
     private readonly IAutopilotStepReader _reader;
+    private readonly IAppDbContext _db;
     private readonly ILogger<RenderStep> _logger;
 
     /// <summary>Builds the step over the reader port; the only ctor, so dependency injection has no tie.</summary>
     /// <param name="sender">The mediator the render command is sent through.</param>
     /// <param name="reader">The episode read the step decides on.</param>
+    /// <param name="db">
+    /// The scope's context, read only for the series' current authorization before the render is paid for (task row
+    /// SEC-1): the render is the most expensive dispatch of the run, so a revoked authorization must stop it here.
+    /// </param>
     /// <param name="logger">The ids-only log of this step.</param>
-    public RenderStep(ISender sender, IAutopilotStepReader reader, ILogger<RenderStep> logger)
+    public RenderStep(ISender sender, IAutopilotStepReader reader, IAppDbContext db, ILogger<RenderStep> logger)
     {
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(reader);
+        ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(logger);
 
         _sender = sender;
         _reader = reader;
+        _db = db;
         _logger = logger;
     }
 
@@ -78,6 +86,17 @@ public sealed partial class RenderStep : IAutopilotStepHandler
 
         var run = context.Run;
         var now = context.Now;
+
+        // A render is the run's most expensive dispatch, and the series may have been paused, archived or had its
+        // authorization revoked since the story gate (task rows SEC-1, PF-5): the guard runs before it, never after.
+        var spend = await AutopilotStepSupport.SeriesMaySpendAsync(_db, context, ct).ConfigureAwait(false);
+
+        if (spend.Stop is { } refusal)
+        {
+            LogSeriesHeld(run.Id, spend.Code);
+
+            return refusal;
+        }
 
         if (run.EpisodeId is not { } episodeId)
         {
@@ -262,6 +281,12 @@ public sealed partial class RenderStep : IAutopilotStepHandler
 
         return StepResult.Stopped(code);
     }
+
+    [LoggerMessage(
+        EventId = 6649,
+        Level = LogLevel.Warning,
+        Message = "Autopilot run {RunId} held its render: the series may not spend ({Code}).")]
+    private partial void LogSeriesHeld(Guid runId, string code);
 
     [LoggerMessage(
         EventId = 6560,

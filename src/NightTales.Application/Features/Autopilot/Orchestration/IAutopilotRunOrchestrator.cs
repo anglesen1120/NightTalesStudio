@@ -54,9 +54,12 @@ public interface IAutopilotRunOrchestrator
     /// <see cref="AdvanceWhileProgressingAsync"/> with the configured per-run step budget.
     /// </summary>
     /// <param name="now">The tick's clock reading, read once.</param>
-    /// <param name="max">The largest number of runs this tick touches.</param>
+    /// <param name="max">The largest number of runs this tick touches (the actionable pass takes it all first).</param>
     /// <param name="ct">The caller's cancellation token.</param>
-    /// <returns>How many runs the tick advanced without an error; a failing run never stops the others.</returns>
+    /// <returns>
+    /// How many due runs the tick handled without an error (a run that only answered idle is counted); a failing run
+    /// never stops the others.
+    /// </returns>
     Task<int> AdvanceDueAsync(DateTimeOffset now, int max, CancellationToken ct);
 }
 

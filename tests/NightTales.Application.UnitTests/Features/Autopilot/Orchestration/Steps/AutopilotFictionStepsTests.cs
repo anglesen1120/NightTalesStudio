@@ -10,6 +10,7 @@ using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Autopilot.Orchestration;
 using NightTales.Application.Features.Autopilot.Orchestration.Steps;
+using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Publishing;
@@ -109,6 +110,31 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
 
         result.Kind.ShouldBe(StepResultKind.Idle);
         run.State.ShouldBe(AutopilotRunState.AwaitingAuthorization);
+    }
+
+    /// <summary>
+    /// An unauthorized run does not wait forever: once the missed-slot cutoff passes it ends <c>slot_missed</c> like
+    /// every other step before the video, so an owner who never accepts cannot keep a due row per day forever (review
+    /// findings PF-1, SEC-2).
+    /// </summary>
+    [Fact]
+    public async Task AwaitingAuthorizationStep_SlotMissed_FailsTheRun()
+    {
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+
+        run.AdvanceTo(AutopilotRunState.AwaitingAuthorization, AutopilotRunStep.Authorization, Now);
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var step = new AwaitingAuthorizationStep(db, NullLogger<AwaitingAuthorizationStep>.Instance);
+
+        var result = await step.HandleAsync(
+            Context(run, series, clock.UtcNow, uploadAt: Now.AddHours(-1)),
+            CancellationToken.None);
+
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(AutopilotRun.SlotMissedReason);
+        run.State.ShouldBe(AutopilotRunState.Failed);
+        run.PauseReason.ShouldBe(AutopilotPauseReason.SlotMissed);
     }
 
     [Fact]
@@ -234,6 +260,209 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
     }
 
     [Fact]
+    public async Task PlanIdeaStep_FundsExhaustedInThePaidCall_PausesTheRunAndFailsTheRow()
+    {
+        var planner = new RecordingPlanner(
+            Error.Failure(ErrorCodes.ProviderFundsExhausted, "The provider account is out of funds."));
+        var ledger = new RecordingLedger();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        var step = PayingIdeaStep(db, planner, ledger);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        // CR-1 with plan §3.6 row 5 and plan §3.5's `story_generating → paused`: the row records the code the pause
+        // trigger reads and the run is held with the same reason, so no later tick can idle on a queued row until
+        // `slot_missed`. Retry (the old answer) saved neither and the slot could never pay again.
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(ErrorCodes.ProviderFundsExhausted);
+        run.State.ShouldBe(AutopilotRunState.Paused);
+        run.PauseReason.ShouldBe(AutopilotPauseReason.ProviderFundsExhausted);
+        run.Outcome.ShouldBe(AutopilotRunOutcome.Paused);
+
+        // The orchestrator's single save is what persists both writes; the rollback of an unsaved context would
+        // hide exactly the defect this case is about.
+        await db.SaveChangesAsync(CancellationToken.None);
+        await db.Entry(run).ReloadAsync(CancellationToken.None);
+        run.State.ShouldBe(AutopilotRunState.Paused);
+
+        var row = await db.GenerationRuns.SingleAsync(candidate => candidate.SeriesId == series.Id, CancellationToken.None);
+        await db.Entry(row).ReloadAsync(CancellationToken.None);
+        row.Status.ShouldBe(GenerationRunStatus.Failed, "the next tick must see a terminal row, not a queued one");
+        row.ErrorCode.ShouldBe(ErrorCodes.ProviderFundsExhausted);
+
+        ledger.Refunded.Count.ShouldBe(1, "a slot that bought nothing releases its reservation exactly once");
+        ledger.Refunded[0].Reason.ShouldBe(ErrorCodes.ProviderFundsExhausted);
+        ledger.Settled.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task PlanIdeaStep_RefusedGenerationRow_RefundsTheReservation()
+    {
+        var planner = new RecordingPlanner();
+        var ledger = new RecordingLedger();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        // `GenerationRun.Queue` refuses a negative bound; what refuses the row does not matter here, only that the
+        // reservation made for it is released instead of outliving a row that never existed (PF-13).
+        var step = new PlanIdeaStep(
+            db,
+            new ScriptedChannelReader(ChannelConnectionStatus.Active, Platform.YouTube),
+            planner,
+            new PayingPrices(),
+            new FixedIdeaCosts(-1m),
+            new AllowingBudget(),
+            ledger,
+            NullLogger<PlanIdeaStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe("generation_run_cost_invalid");
+        run.State.ShouldBe(AutopilotRunState.Failed);
+
+        ledger.Reserved.Count.ShouldBe(1);
+        ledger.Refunded.Count.ShouldBe(1, "no row was committed, so no call can spend the reservation");
+        ledger.Refunded[0].Reservation.Value.ShouldBe(ledger.Reservation.Value);
+        ledger.Refunded[0].Reason.ShouldBe("generation_run_cost_invalid");
+        ledger.Settled.ShouldBeEmpty();
+
+        planner.Calls.ShouldBe(0, "a slot without its generation row buys nothing");
+        (await db.GenerationRuns.CountAsync(row => row.SeriesId == series.Id, CancellationToken.None))
+            .ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task PlanIdeaStep_LostRowInsert_RefundsTheReservationAndRethrows()
+    {
+        var planner = new RecordingPlanner();
+        var ledger = new RecordingLedger();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        // The overlap PF-13 names: another ideas run of the series is still active, so this tick's insert violates
+        // `ux_generation_runs_active_series` after the reservation was already taken.
+        var competing = GenerationRun.Queue(
+            run.UserId,
+            run.SeriesId,
+            episodeId: null,
+            GenerationKind.Ideas,
+            GenerationTrigger.User,
+            "manual:ideas",
+            previousEpisodeStatus: null,
+            inputFactSheetId: null,
+            reservationId: Guid.CreateVersion7(),
+            worstCaseUsd: 0.20m,
+            now: Now);
+
+        competing.IsError.ShouldBeFalse();
+
+        db.GenerationRuns.Add(competing.Value);
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        var step = PayingIdeaStep(db, planner, ledger);
+
+        // The exception is not swallowed: the tick's own failure path (the orchestrator's) still sees it.
+        await Should.ThrowAsync<DbUpdateException>(
+            () => step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None).AsTask());
+
+        ledger.Reserved.Count.ShouldBe(1);
+        ledger.Refunded.Count.ShouldBe(1, "the reservation may not outlive a row whose insert failed");
+        ledger.Refunded[0].Reservation.Value.ShouldBe(ledger.Reservation.Value);
+        ledger.Refunded[0].Reason.ShouldBe("generation_run_not_committed");
+        ledger.Settled.ShouldBeEmpty();
+        planner.Calls.ShouldBe(0, "the paid call runs only after the row committed");
+    }
+
+    [Fact]
+    public async Task PlanIdeaStep_AdoptsACrashedRow_CompletesItAndSettlesOnce()
+    {
+        var planner = new RecordingPlanner();
+        var ledger = new RecordingLedger();
+        var (run, series, db, clock) = await WorldAsync(AutopilotRunState.Planned, step: null, attempt: 0);
+        await AuthorizeAsync(series, db);
+
+        // CR-8's crash: the planner committed its pick and died before the orchestrator's save, so the row is still
+        // queued although the call it paid for finished. No job follows an ideas row, so adoption is its only writer.
+        var row = GenerationRun.Queue(
+            run.UserId,
+            run.SeriesId,
+            episodeId: null,
+            GenerationKind.Ideas,
+            GenerationTrigger.Autopilot,
+            AutopilotIdempotencyKeys.For(run, AutopilotRunStep.Idea),
+            previousEpisodeStatus: null,
+            inputFactSheetId: null,
+            reservationId: ledger.Reservation.Value,
+            worstCaseUsd: 0.20m,
+            now: Now);
+
+        row.IsError.ShouldBeFalse();
+
+        db.GenerationRuns.Add(row.Value);
+
+        var idea = EpisodeIdea.CreateProposed(
+            series.Id,
+            run.UserId,
+            row.Value.Id,
+            new IdeaCandidate("title", "logline", "hook", "setting", StoryStructureTags.Empty, []),
+            clock);
+
+        idea.MarkPicked(0.5m, clock);
+        db.EpisodeIdeas.Add(idea);
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        // Every guard ahead of the adoption is behind this row already, so no price, budget or channel read happens.
+        var step = new PlanIdeaStep(
+            db,
+            new NoChannelReader(),
+            planner,
+            new NoPrices(),
+            new NoIdeaCosts(),
+            new NoBudget(),
+            ledger,
+            NullLogger<PlanIdeaStep>.Instance);
+
+        var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
+
+        result.Kind.ShouldBe(StepResultKind.Advanced);
+        run.State.ShouldBe(AutopilotRunState.IdeaPicked);
+        run.Step.ShouldBe(AutopilotRunStep.Idea);
+        run.IdeaId.ShouldBe(idea.Id);
+        planner.Calls.ShouldBe(0, "a row that already bought a pick is never paid for twice");
+
+        await db.SaveChangesAsync(CancellationToken.None);
+        await db.Entry(row.Value).ReloadAsync(CancellationToken.None);
+
+        row.Value.Status.ShouldBe(GenerationRunStatus.Succeeded);
+        row.Value.CostUsd.ShouldBe(0m, "no usage row names the reservation yet, so the sum is zero");
+
+        ledger.Settled.Count.ShouldBe(1, "the adopted row's reservation is settled once");
+        ledger.Settled[0].Value.ShouldBe(ledger.Reservation.Value);
+        ledger.Refunded.ShouldBeEmpty("a pick that exists is paid for, not refunded");
+    }
+
+    /// <summary>
+    /// The idea step as the paying cases build it: an active YouTube channel, one price version and a spending
+    /// wallet, so only the seam under test varies.
+    /// </summary>
+    /// <param name="db">The step's context.</param>
+    /// <param name="planner">The paid seam.</param>
+    /// <param name="ledger">The money seam.</param>
+    private static PlanIdeaStep PayingIdeaStep(AppDbContext db, IIdeaPlanner planner, RecordingLedger ledger) =>
+        new(
+            db,
+            new ScriptedChannelReader(ChannelConnectionStatus.Active, Platform.YouTube),
+            planner,
+            new PayingPrices(),
+            new FixedIdeaCosts(0.20m),
+            new AllowingBudget(),
+            ledger,
+            NullLogger<PlanIdeaStep>.Instance);
+
+    [Fact]
     public async Task Run_StoryGenerationFailedPlatform_Attempt1_Regenerates()
     {
         var (run, series, db, clock) = await WorldAsync(
@@ -245,6 +474,9 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         await FailStoryAttemptAsync(db, run, AutopilotRunStep.Story, ErrorCodes.StoryGenerationFailed);
 
         var sender = new RecordingSender();
+        // The spend guard re-reads the series' authorization before the paid dispatch (S71 SEC-1, PF-5).
+        await AuthorizeAsync(series, db);
+
         var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
 
         var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
@@ -271,6 +503,9 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         await FailStoryAttemptAsync(db, run, AutopilotRunStep.Story, ErrorCodes.StoryModerated);
 
         var sender = new RecordingSender();
+        // The spend guard re-reads the series' authorization before the paid dispatch (S71 SEC-1, PF-5).
+        await AuthorizeAsync(series, db);
+
         var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
 
         var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
@@ -295,6 +530,9 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
             episodeStatus: EpisodeStatus.Draft);
 
         var sender = new RefusingSender(ErrorCodes.SpendCapReached);
+        // The spend guard re-reads the series' authorization before the paid dispatch (S71 SEC-1, PF-5).
+        await AuthorizeAsync(series, db);
+
         var step = new GenerateStoryStep(db, sender, NullLogger<GenerateStoryStep>.Instance);
 
         var result = await step.HandleAsync(Context(run, series, clock.UtcNow), CancellationToken.None);
@@ -478,7 +716,8 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
     }
 
     /// <summary>The paid seam: records the calls and answers the scripted pick.</summary>
-    private sealed class RecordingPlanner : IIdeaPlanner
+    /// <param name="refusal">The error the planner answers; null answers a pick, so a guard test reads the same planner.</param>
+    private sealed class RecordingPlanner(Error? refusal = null) : IIdeaPlanner
     {
         public int Calls { get; private set; }
 
@@ -490,17 +729,21 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         {
             Calls++;
 
-            return ValueTask.FromResult<ErrorOr<IdeaPick>>(
-                new IdeaPick(
-                    Guid.CreateVersion7(),
-                    "title",
-                    "logline",
-                    "hook",
-                    "setting",
-                    StoryStructureTags.Empty,
-                    RequiresResearch: false,
-                    Score: 0m,
-                    Similarity: 0m));
+            if (refusal is { } scripted)
+            {
+                return ValueTask.FromResult<ErrorOr<IdeaPick>>(scripted);
+            }
+
+            return ValueTask.FromResult<ErrorOr<IdeaPick>>(new IdeaPick(
+                Guid.CreateVersion7(),
+                "title",
+                "logline",
+                "hook",
+                "setting",
+                StoryStructureTags.Empty,
+                RequiresResearch: false,
+                Score: 0m,
+                Similarity: 0m));
         }
 
         public ValueTask<ErrorOr<Success>> MarkUsedAsync(Guid ideaId, Guid episodeId, CancellationToken ct) =>
@@ -545,6 +788,11 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         public ValueTask<AutopilotChannelSnapshot?> FindChannelAsync(Guid? authorizationId, CancellationToken ct) =>
             throw new NotSupportedException("this case never reaches the channel guard.");
 
+        public ValueTask<Guid?> FindCurrentAuthorizationAsync(
+            NightTales.Domain.Series.Series series,
+            CancellationToken ct) =>
+            throw new NotSupportedException("this case never reaches the authorization read.");
+
         public ValueTask<AutopilotRenderEpisode?> FindEpisodeAsync(Guid episodeId, CancellationToken ct) =>
             throw new NotSupportedException("the idea step never reads an episode.");
 
@@ -569,6 +817,11 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
         public ValueTask<AutopilotChannelSnapshot?> FindChannelAsync(Guid? authorizationId, CancellationToken ct) =>
             ValueTask.FromResult<AutopilotChannelSnapshot?>(
                 new AutopilotChannelSnapshot(Guid.CreateVersion7(), platform, status));
+
+        public ValueTask<Guid?> FindCurrentAuthorizationAsync(
+            NightTales.Domain.Series.Series series,
+            CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never reads the series' authorization pointer.");
 
         public ValueTask<AutopilotRenderEpisode?> FindEpisodeAsync(Guid episodeId, CancellationToken ct) =>
             throw new NotSupportedException("the idea step never reads an episode.");
@@ -627,5 +880,73 @@ public sealed class AutopilotFictionStepsTests(TestDatabase database) : Integrat
 
         public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct) =>
             throw new InvalidOperationException("the idea step must not refund a slot it does not pay for.");
+    }
+
+    /// <summary>One active price version, so the paying cases get a quotable bound.</summary>
+    private sealed class PayingPrices : IPriceCatalog
+    {
+        public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<PriceVersion>>(
+                PriceVersion.Create(1, Now.AddDays(-1), "{}", "{}", "hash", Now.AddDays(-1)));
+
+        public Task<PriceVersion> GetAsync(int version, CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    /// <summary>One fixed bound: the paying cases vary the amount, never the catalogue.</summary>
+    private sealed class FixedIdeaCosts(decimal worstCaseUsd) : IIdeaCostEstimator
+    {
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(worstCaseUsd, 1_000, 1_000));
+
+        public Task<ErrorOr<UsageBound>> NoveltyWorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            throw new NotSupportedException("the idea step never prices the novelty pass.");
+    }
+
+    /// <summary>A spend guard with room left: the paying cases test the ledger, not the caps.</summary>
+    private sealed class AllowingBudget : IBudgetGuard
+    {
+        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null) =>
+            ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+    }
+
+    /// <summary>
+    /// The money seam of the paying cases: it hands out one reservation and records every reserve, settle and refund
+    /// in order, so a reservation that is neither settled nor released is visible in the assertions.
+    /// </summary>
+    private sealed class RecordingLedger : ICreditLedger
+    {
+        public ReservationId Reservation { get; } = new(Guid.CreateVersion7());
+
+        public List<decimal> Reserved { get; } = [];
+
+        public List<ReservationId> Settled { get; } = [];
+
+        public List<(ReservationId Reservation, string Reason)> Refunded { get; } = [];
+
+        public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
+            Guid userId,
+            CreditOperation op,
+            Guid referenceId,
+            UsageBound bound,
+            CancellationToken ct)
+        {
+            Reserved.Add(bound.WorstCaseUsd);
+
+            return ValueTask.FromResult<ErrorOr<ReservationId>>(Reservation);
+        }
+
+        public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct)
+        {
+            Settled.Add(reservationId);
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+
+        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
+        {
+            Refunded.Add((reservationId, reason));
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
     }
 }

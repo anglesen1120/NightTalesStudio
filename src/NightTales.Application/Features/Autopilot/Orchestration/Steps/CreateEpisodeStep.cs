@@ -60,6 +60,18 @@ public sealed partial class CreateEpisodeStep(
 
         var run = context.Run;
 
+        // The series, its autopilot and its authorization are re-read before this state spends anything (task rows
+        // SEC-1, PF-5): the episode's story is paid, and an archived, switched-off, paused or unauthorized series must
+        // not buy one.
+        var spend = await AutopilotStepSupport.SeriesMaySpendAsync(db, context, ct).ConfigureAwait(false);
+
+        if (spend.Stop is { } refusal)
+        {
+            LogSeriesHeld(run.Id, spend.Code);
+
+            return refusal;
+        }
+
         // The slot's story must be requested while the slot is still publishable (plan §3.4).
         if (AutopilotStepSupport.SlotIsMissed(context))
         {
@@ -217,6 +229,12 @@ public sealed partial class CreateEpisodeStep(
 
         return Error.Failure(code, code);
     }
+
+    [LoggerMessage(
+        EventId = 6648,
+        Level = LogLevel.Warning,
+        Message = "autopilot_episode_series_held runId={RunId} code={Code}")]
+    private partial void LogSeriesHeld(Guid runId, string code);
 
     [LoggerMessage(
         EventId = 6551,

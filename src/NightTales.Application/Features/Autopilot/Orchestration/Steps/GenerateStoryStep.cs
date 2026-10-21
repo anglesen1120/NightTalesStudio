@@ -64,6 +64,17 @@ public sealed partial class GenerateStoryStep(
 
         var run = context.Run;
 
+        // The series may have been paused, disabled or archived, or its authorization revoked, since the idea step
+        // (task rows SEC-1, PF-5): the regeneration is paid, so nothing is dispatched until the owner resumes.
+        var spend = await AutopilotStepSupport.SeriesMaySpendAsync(db, context, ct).ConfigureAwait(false);
+
+        if (spend.Stop is { } refusal)
+        {
+            LogSeriesHeld(run.Id, spend.Code);
+
+            return refusal;
+        }
+
         if (AutopilotStepSupport.SlotIsMissed(context))
         {
             LogSlotMissed(run.Id, run.SeriesId);
@@ -183,16 +194,21 @@ public sealed partial class GenerateStoryStep(
 
         if (dispatched is { Status: GenerationRunStatus.Queued, PauseReason: { } pause })
         {
-            // Today the only hold a story run carries is the provider's, and the aggregate has exactly that reason
-            // (plan §3.6 row 5). A future held reason maps here too rather than failing the slot on a transient hold.
-            _ = pause;
-            var reason = AutopilotPauseReason.ProviderFundsExhausted;
+            // The row names the hold, so the run records that hold and not a fixed one (S71 CR-7): a
+            // `spend_cap_reached` row is not a provider-funds outage, and only a hold this ladder knows becomes a
+            // pause — an unmapped code fails closed with the row's own code rather than pausing for an unknown reason.
+            if (HeldReason(pause) is not { } reason)
+            {
+                return Fail(context, code ?? ErrorCodes.StoryGenerationFailed);
+            }
 
             run.Pause(reason, context.Now);
 
-            LogHeld(run.Id, reason.ToString());
+            var wire = AutopilotStepSupport.PauseReasonWire(reason);
 
-            return StepResult.Stopped(reason.ToString());
+            LogHeld(run.Id, wire);
+
+            return StepResult.Stopped(wire);
         }
 
         // Moderation is never retried in the same slot (plan §3.6): the second attempt would buy another flag.
@@ -215,6 +231,20 @@ public sealed partial class GenerateStoryStep(
         return Fail(context, code ?? ErrorCodes.StoryGenerationFailed);
     }
 
+    /// <summary>
+    /// The plan §3.6 reason a held generation row stands for: our own spend cap is row 2, the provider account's funds
+    /// row 5. Anything else is not a §3.6 trigger this build knows, so the caller fails closed instead of inventing a
+    /// pause (S71 CR-7).
+    /// </summary>
+    /// <param name="pause">The hold the queued <c>generation_runs</c> row carries.</param>
+    /// <returns>The pause reason to record on the run, or <see langword="null"/> for a hold nothing maps.</returns>
+    private static AutopilotPauseReason? HeldReason(GenerationPauseReason pause) => pause switch
+    {
+        GenerationPauseReason.SpendCapReached => AutopilotPauseReason.SpendCapReached,
+        GenerationPauseReason.ProviderFundsExhausted => AutopilotPauseReason.ProviderFundsExhausted,
+        _ => null,
+    };
+
     /// <summary>The story landed: the gate decides on it.</summary>
     private StepResult Advance(AutopilotStepContext context, string code)
     {
@@ -234,6 +264,12 @@ public sealed partial class GenerateStoryStep(
 
         return StepResult.Stopped(code);
     }
+
+    [LoggerMessage(
+        EventId = 6647,
+        Level = LogLevel.Warning,
+        Message = "autopilot_story_series_held runId={RunId} code={Code}")]
+    private partial void LogSeriesHeld(Guid runId, string code);
 
     [LoggerMessage(
         EventId = 6582,

@@ -302,6 +302,52 @@ public sealed class AutopilotRunTests
         run.RenderAttempts.ShouldBe(AutopilotRun.MaxRenderAttempts, "the dispatched render is not re-attempted");
     }
 
+    /// <summary>
+    /// The gate spent the run's one regeneration and a §3.6 trigger paused the run before it was dispatched (S71
+    /// CR-10): resuming must go back to <c>story_generating</c>, because resuming into the gate would re-evaluate the
+    /// story that just failed and waste the regeneration the run already paid for.
+    /// </summary>
+    [Fact]
+    public void AutopilotRun_PauseAfterTheGateSpentTheRegeneration_ResumesToTheStoryGeneration()
+    {
+        var run = AutopilotRunScenario.StoryGate();
+
+        // The gate's failed verdict: `story_gate → story_generating` with `step` still `story_gate` (only a dispatch
+        // names the new step) and the second attempt spent.
+        run.AdvanceTo(AutopilotRunState.StoryGenerating, AutopilotRunStep.StoryGate, AutopilotRunScenario.Now);
+        run.ConsumeStoryAttempt();
+        run.Step.ShouldBe(AutopilotRunStep.StoryGate);
+
+        run.Pause(AutopilotPauseReason.ProviderFundsExhausted, AutopilotRunScenario.Now.AddMinutes(1));
+        run.Resume(AutopilotRunScenario.Now.AddMinutes(2));
+
+        run.State.ShouldBe(
+            AutopilotRunState.StoryGenerating,
+            "step story_gate with both attempts spent is the pending regeneration, not another gate pass");
+        run.Step.ShouldBe(AutopilotRunStep.StoryGate);
+    }
+
+    /// <summary>
+    /// The opposite case: the regeneration was dispatched (step <c>story2</c>) and then landed, so a pause resumes into
+    /// the gate — the generation is paid and guarded by its key, the gate is free.
+    /// </summary>
+    [Fact]
+    public void AutopilotRun_PauseAfterTheRegenerationLanded_ResumesToTheGate()
+    {
+        var run = AutopilotRunScenario.StoryGate();
+
+        run.AdvanceTo(AutopilotRunState.StoryGenerating, AutopilotRunStep.StoryGate, AutopilotRunScenario.Now);
+        run.ConsumeStoryAttempt();
+        run.AdvanceTo(AutopilotRunState.StoryGenerating, AutopilotRunStep.Story2, AutopilotRunScenario.Now);
+        run.AdvanceTo(AutopilotRunState.StoryGate, AutopilotRunStep.Story2, AutopilotRunScenario.Now);
+
+        run.Pause(AutopilotPauseReason.SpendCapReached, AutopilotRunScenario.Now.AddMinutes(1));
+        run.Resume(AutopilotRunScenario.Now.AddMinutes(2));
+
+        run.State.ShouldBe(AutopilotRunState.StoryGate);
+        run.Step.ShouldBe(AutopilotRunStep.Story2);
+    }
+
     [Fact]
     public void AutopilotRun_PauseTwice_ReplacesTheReasonAndResumeWhenNotPaused_Throws()
     {

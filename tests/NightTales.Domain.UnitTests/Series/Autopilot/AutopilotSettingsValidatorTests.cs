@@ -123,6 +123,60 @@ public sealed class AutopilotSettingsValidatorTests
         Fields(result).ShouldHaveSingleItem().ShouldBe("cadence.time_zone");
     }
 
+    /// <summary>
+    /// The zone id is bounded before the runtime resolves it: the longest real IANA ids stay valid, an id over the
+    /// cap is a field error (never an exception out of the loader), and a path-like value is refused by the charset.
+    /// </summary>
+    [Fact]
+    public void AutopilotSettingsValidator_TimeZone_IsBoundedAndCharsetChecked()
+    {
+        // The longest shipped id (32) and the `Etc/GMT+N` spelling are inside both rules.
+        Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"America/Argentina/ComodRivadavia\""))
+            .IsError.ShouldBeFalse();
+        Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"Etc/GMT+5\"")).IsError.ShouldBeFalse();
+
+        // Exactly at the cap the length rule passes, so the resolution rule answers instead.
+        var atCap = new string('a', AutopilotSettingsValidator.TimeZoneMaxChars);
+        var resolvedNone = Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", $"\"{atCap}\""));
+        resolvedNone.IsError.ShouldBeTrue();
+        resolvedNone.FirstError.Description.ShouldContain("is not a time zone id");
+
+        var tooLong = Validate(
+            Replace(Valid, "\"Asia/Ho_Chi_Minh\"", $"\"{new string('a', AutopilotSettingsValidator.TimeZoneMaxChars + 1)}\""));
+        tooLong.IsError.ShouldBeTrue();
+        Fields(tooLong).ShouldHaveSingleItem().ShouldBe("cadence.time_zone");
+
+        // The length rule answers here, not the loader: an unresolvable id of any length has the same field path.
+        tooLong.FirstError.Description.ShouldContain("at most");
+
+        // A path-like value never reaches the loader.
+        var path = Validate(Replace(Valid, "\"Asia/Ho_Chi_Minh\"", "\"../../../etc/passwd\""));
+        path.IsError.ShouldBeTrue();
+        Fields(path).ShouldHaveSingleItem().ShouldBe("cadence.time_zone");
+        path.FirstError.Description.ShouldNotContain("resolves");
+    }
+
+    /// <summary>
+    /// The gate-profile ref is a bounded slug: the cap is inclusive, and whitespace or punctuation outside
+    /// <c>_</c>, <c>-</c> and <c>.</c> is a field error rather than a stored value the profile resolver cannot mean.
+    /// </summary>
+    [Fact]
+    public void AutopilotSettingsValidator_GateThresholdsRef_IsBoundedAndCharsetChecked()
+    {
+        var atCap = new string('p', AutopilotSettingsValidator.GateThresholdsRefMaxChars);
+        Validate(Replace(Valid, "\"default\"", $"\"{atCap}\"")).IsError.ShouldBeFalse();
+        Validate(Replace(Valid, "\"default\"", "\"strict-v1.2_final\"")).IsError.ShouldBeFalse();
+
+        var tooLong = Validate(
+            Replace(Valid, "\"default\"", $"\"{new string('p', AutopilotSettingsValidator.GateThresholdsRefMaxChars + 1)}\""));
+        tooLong.IsError.ShouldBeTrue();
+        Fields(tooLong).ShouldHaveSingleItem().ShouldBe("gate_thresholds_ref");
+
+        var withSpace = Validate(Replace(Valid, "\"default\"", "\"strict v1\""));
+        withSpace.IsError.ShouldBeTrue();
+        Fields(withSpace).ShouldHaveSingleItem().ShouldBe("gate_thresholds_ref");
+    }
+
     [Fact]
     public void AutopilotSettingsValidator_PublishTimeFormat_Fails()
     {

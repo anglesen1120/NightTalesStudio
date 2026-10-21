@@ -33,6 +33,21 @@ public sealed class SystemWorkQuery(IReadDb readDb) : ISystemWorkQuery
         return Rows(where, batch, ct);
     }
 
+    /// <inheritdoc />
+    public IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T, TKey>(
+        Expression<Func<T, bool>> where,
+        Expression<Func<T, TKey>> orderBy,
+        int batch,
+        CancellationToken ct)
+        where T : Entity, IUserOwned
+    {
+        ArgumentNullException.ThrowIfNull(where);
+        ArgumentNullException.ThrowIfNull(orderBy);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batch);
+
+        return OrderedRows(where, orderBy, batch, ct);
+    }
+
     /// <summary>
     /// Streams the pairs, so a sweep can start on the first one instead of buffering a batch. The
     /// enumeration owns the query: the caller must consume it inside the lifetime of the
@@ -48,6 +63,33 @@ public sealed class SystemWorkQuery(IReadDb readDb) : ISystemWorkQuery
             .Query<T>()
             .IgnoreQueryFilters([TenantFilterConvention.FilterName])
             .Where(where)
+            .Select(entity => new { entity.Id, entity.UserId })
+            .Take(batch);
+
+        await foreach (var row in rows.AsAsyncEnumerable().WithCancellation(ct))
+        {
+            yield return (row.Id, row.UserId);
+        }
+    }
+
+    /// <summary>
+    /// Streams the pairs of the ordered overload: <paramref name="orderBy"/> first, then the id as the total-order
+    /// tiebreak. The primary key is the last sort key, so the statement is stable and a sweep that re-stamps what it
+    /// served walks its queue instead of re-reading its head.
+    /// </summary>
+    private async IAsyncEnumerable<(Guid Id, Guid UserId)> OrderedRows<T, TKey>(
+        Expression<Func<T, bool>> where,
+        Expression<Func<T, TKey>> orderBy,
+        int batch,
+        [EnumeratorCancellation] CancellationToken ct)
+        where T : Entity, IUserOwned
+    {
+        var rows = readDb
+            .Query<T>()
+            .IgnoreQueryFilters([TenantFilterConvention.FilterName])
+            .Where(where)
+            .OrderBy(orderBy)
+            .ThenBy(entity => entity.Id)
             .Select(entity => new { entity.Id, entity.UserId })
             .Take(batch);
 

@@ -4,9 +4,11 @@ using Mediator;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Publishing.Commands.CreatePublication;
 using NightTales.Application.Publishing;
 using NightTales.Domain.Common;
+using NightTales.Domain.Episodes;
 using NightTales.Domain.Publishing;
 using NightTales.Domain.Series.Autopilot;
 using SeriesAggregate = NightTales.Domain.Series.Series;
@@ -35,10 +37,20 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// — window the plan asks for without this class holding a second copy of the formula.
 /// </para>
 /// <para>
-/// <b>Channel (plan §3.6 rows 6 and 6b, §3.7).</b> The connection comes from the run's own authorization snapshot:
-/// no authorization, no channel recorded on it (S66-7 leaves the column nullable), or a row this scope cannot read
-/// ends the run <c>autopilot_channel_missing</c>; an inactive connection and an unsupported platform are §3.6
-/// triggers, so they <em>pause</em> the run instead of failing it.
+/// <b>Channel (plan §3.6 rows 6 and 6b, §3.7, S71 SEC-5).</b> The connection comes from the series' <em>current</em>
+/// authorization — the pointer the owner's accept route writes, read filtered by series and revocation — never from
+/// the run's own idea-time snapshot: a replaced revision must not publish, and a re-accepted one is the consent this
+/// create relies on. No authorization, no channel recorded on it (S66-7 leaves the column nullable), or a row this
+/// scope cannot read ends the run <c>autopilot_channel_missing</c>; an inactive connection and an unsupported
+/// platform are §3.6 triggers, so they <em>pause</em> the run instead of failing it.
+/// </para>
+/// <para>
+/// <b>Only an approved cut is published (S71 SEC-3).</b> A create is sent only for an episode in
+/// <see cref="EpisodeStatus.Ready"/> — the state an approval (the gate's or the owner's) leaves behind, and the state
+/// <c>CreatePublicationHandler</c> requires. Every other state means nothing was approved, so a run that reaches
+/// here from <c>video_gate</c> moves to <c>waiting_owner</c> with <see cref="WaitingFor.Video"/> and a run already
+/// waiting is left alone until the owner decides or the wait expires. The question is asked before the §3.6 channel
+/// triggers: an unapproved cut waits whatever the channel says, and a channel can only make a publishable cut fail.
 /// </para>
 /// <para>
 /// <b>Privacy (plan §3.1, §7.4).</b> The submitted value is the series' <c>privacy</c>, except while the channel is
@@ -162,13 +174,6 @@ public sealed partial class AutopilotPublicationCreator
                 return StepResult.Stopped(AutopilotStepCodes.SlotMissed);
         }
 
-        var channel = await _reader.FindChannelAsync(run.AuthorizationId, ct).ConfigureAwait(false);
-        var channelResult = CheckChannel(run, channel, now);
-        if (channelResult is not null)
-        {
-            return channelResult;
-        }
-
         var episode = await _reader.FindEpisodeAsync(episodeId, ct).ConfigureAwait(false);
         if (episode is null)
         {
@@ -176,6 +181,32 @@ public sealed partial class AutopilotPublicationCreator
             LogCreateRefused(run.Id, AutopilotStepCodes.EpisodeMissing);
 
             return StepResult.Stopped(AutopilotStepCodes.EpisodeMissing);
+        }
+
+        // Only an approved cut is publishable: `ready` is the state the approval leaves the episode in, and the
+        // state `CreatePublicationHandler` requires. Anything else means nothing was approved — a dry run, a hold,
+        // a refused approval, or an owner who has not decided yet — so the run keeps waiting for its owner instead
+        // of ending (S71 SEC-3). This is asked before the §3.6 channel triggers: a cut nobody approved is a
+        // `waiting_owner` outcome whatever the channel says, and the channel only matters once there is something
+        // to publish. The create-window guard above already ended a run that outlived its slot.
+        if (episode.Status != EpisodeStatus.Ready)
+        {
+            return WaitForTheApproval(run, now);
+        }
+
+        // The consent this create relies on is the series' *current* authorization, filtered by series and
+        // revocation (plan §3.7, S71 SEC-5), never the run's snapshot: the owner may have replaced the revision
+        // after the idea was planned, and the create handler refuses a revoked one, which would end a run that
+        // should simply publish under the consent it now has.
+        var authorizationId = await _reader
+            .FindCurrentAuthorizationAsync(context.Series, ct)
+            .ConfigureAwait(false);
+
+        var channel = await _reader.FindChannelAsync(authorizationId, ct).ConfigureAwait(false);
+        var channelResult = CheckChannel(run, channel, now);
+        if (channelResult is not null)
+        {
+            return channelResult;
         }
 
         var privacy = await ResolvePrivacyAsync(context, channel!.Id, ct).ConfigureAwait(false);
@@ -192,20 +223,47 @@ public sealed partial class AutopilotPublicationCreator
                     [],
                     PrivacyWire(privacy),
                     run.SlotAt,
-                    run.AuthorizationId),
+                    authorizationId),
                 ct)
             .ConfigureAwait(false);
 
         if (created.IsError)
         {
-            return await MapRefusalAsync(run, episodeId, created.FirstError, now, ct).ConfigureAwait(false);
+            return await MapRefusalAsync(run, episodeId, authorizationId, created.FirstError, now, ct)
+                .ConfigureAwait(false);
         }
 
+        // The stamp travels with the transition: the run now records the revision it actually published under.
         run.AttachPublication(created.Value.Id);
-        run.AdvanceTo(AutopilotRunState.PublicationCreated, AutopilotRunStep.Publication, now);
+        run.AdvanceTo(AutopilotRunState.PublicationCreated, AutopilotRunStep.Publication, now, authorizationId);
         LogCreated(run.Id, created.Value.Id, run.SlotAt);
 
         return StepResult.Advanced(AutopilotRunStep.Publication);
+    }
+
+    /// <summary>
+    /// Keeps the run waiting on its video (plan §3.5 row <c>video_gate → waiting_owner</c>): nothing was approved,
+    /// so nothing may be published, and the owner's own approval — or the 48 h expiry of
+    /// <c>WaitingOwnerStep</c> — ends the wait (S71 SEC-3).
+    /// </summary>
+    /// <param name="run">The tracked run.</param>
+    /// <param name="now">The tick's clock reading.</param>
+    /// <returns>
+    /// <see cref="StepResultKind.Idle"/> for a run already waiting on its video (the tick leaves the row alone), or
+    /// the stop the gate's own vocabulary names for the move into <c>waiting_owner</c>.
+    /// </returns>
+    private StepResult WaitForTheApproval(AutopilotRun run, DateTimeOffset now)
+    {
+        if (run.State == AutopilotRunState.WaitingOwner)
+        {
+            return StepResult.Idle;
+        }
+
+        run.SetWaitingFor(WaitingFor.Video);
+        run.AdvanceTo(AutopilotRunState.WaitingOwner, AutopilotRunStep.VideoGate, now);
+        LogWaitingForVideo(run.Id);
+
+        return StepResult.Stopped(OwnerActionReasons.OwnerApprovalRequired);
     }
 
     /// <summary>
@@ -266,9 +324,17 @@ public sealed partial class AutopilotPublicationCreator
     }
 
     /// <summary>Maps a refused create: adopt a live publication, pause, end or retry (plan §7.3).</summary>
+    /// <param name="run">The tracked run.</param>
+    /// <param name="episodeId">The episode the create was for.</param>
+    /// <param name="authorizationId">The revision the create submitted; the adoption must match it.</param>
+    /// <param name="error">The refusal.</param>
+    /// <param name="now">The tick's clock reading.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    /// <returns>The step's result for the refusal.</returns>
     private async ValueTask<StepResult> MapRefusalAsync(
         AutopilotRun run,
         Guid episodeId,
+        Guid? authorizationId,
         Error error,
         DateTimeOffset now,
         CancellationToken ct)
@@ -292,10 +358,10 @@ public sealed partial class AutopilotPublicationCreator
                     // Only the row this run created may be adopted: another authorization's (or a manual) publication
                     // for the same episode means the slot's create can never succeed, which is a failure, not a pass.
                     var existing = await _reader.FindActivePublicationAsync(episodeId, ct).ConfigureAwait(false);
-                    if (existing is not null && existing.AutopilotAuthorizationId == run.AuthorizationId)
+                    if (existing is not null && existing.AutopilotAuthorizationId == authorizationId)
                     {
                         run.AttachPublication(existing.Id);
-                        run.AdvanceTo(AutopilotRunState.PublicationCreated, AutopilotRunStep.Publication, now);
+                        run.AdvanceTo(AutopilotRunState.PublicationCreated, AutopilotRunStep.Publication, now, authorizationId);
                         LogAdopted(run.Id, existing.Id);
 
                         return StepResult.Advanced(AutopilotRunStep.Publication);
@@ -402,4 +468,10 @@ public sealed partial class AutopilotPublicationCreator
         Level = LogLevel.Information,
         Message = "Autopilot run {RunId} adopted the episode's live publication {PublicationId} instead of creating a second.")]
     private partial void LogAdopted(Guid runId, Guid publicationId);
+
+    [LoggerMessage(
+        EventId = 6651,
+        Level = LogLevel.Information,
+        Message = "Autopilot run {RunId} waits for the owner: its episode has no approved video to publish yet.")]
+    private partial void LogWaitingForVideo(Guid runId);
 }

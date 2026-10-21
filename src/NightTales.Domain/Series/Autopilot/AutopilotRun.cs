@@ -480,7 +480,10 @@ public sealed class AutopilotRun : AggregateRoot, IUserOwned, IAuditable
     /// <item><description>
     /// step <c>story</c>, <c>story2</c> or <c>story_gate</c> → <see cref="AutopilotRunState.Rendering"/> when
     /// <see cref="RenderAttempts"/> is 1, else <see cref="AutopilotRunState.StoryGate"/>. The gate is preferred over
-    /// the generation because the gate is free and idempotent while a generation is paid and guarded by its key;
+    /// the generation because the gate is free and idempotent while a generation is paid and guarded by its key. The
+    /// one exception is step <c>story_gate</c> with both story attempts spent: that is the gate's one regeneration
+    /// still pending, so the run resumes into <see cref="AutopilotRunState.StoryGenerating"/> and the generation step
+    /// dispatches <c>…:story2</c> (or adopts it when it was already dispatched);
     /// </description></item>
     /// <item><description>step <c>find_sources</c> or <c>fact_sheet</c> → <see cref="AutopilotRunState.Researching"/>;</description></item>
     /// <item><description>
@@ -671,6 +674,13 @@ public sealed class AutopilotRun : AggregateRoot, IUserOwned, IAuditable
         {
             AutopilotRunStep.VideoGate => AutopilotRunState.VideoGate,
             AutopilotRunStep.Render => AutopilotRunState.VideoGate,
+
+            // The gate failed attempt 1 and spent attempt 2 without dispatching `…:story2` yet: resuming into the gate
+            // would re-evaluate the story that just failed and waste the regeneration, so the run goes back to the
+            // state that dispatches it (S71 CR-10). A run whose attempt 2 already landed has `:story2` under the same
+            // step, and the generation step adopts that row instead of paying again.
+            AutopilotRunStep.StoryGate when RenderAttempts < MaxRenderAttempts
+                && Attempt >= MaxStoryAttempts => AutopilotRunState.StoryGenerating,
             AutopilotRunStep.Story or AutopilotRunStep.Story2 or AutopilotRunStep.StoryGate =>
                 RenderAttempts >= MaxRenderAttempts ? AutopilotRunState.Rendering : AutopilotRunState.StoryGate,
             AutopilotRunStep.FindSources or AutopilotRunStep.FactSheet => AutopilotRunState.Researching,

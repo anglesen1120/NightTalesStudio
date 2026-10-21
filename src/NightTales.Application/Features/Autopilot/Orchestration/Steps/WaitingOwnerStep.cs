@@ -50,10 +50,13 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <term><see cref="WaitingFor.Video"/></term>
 /// <description>
 /// the episode is <see cref="EpisodeStatus.VideoReview"/> or <see cref="EpisodeStatus.Ready"/> →
-/// <see cref="AutopilotPublicationCreator.TryCreateAsync"/>, which owns the timing guard, the publication command and
-/// the move to <c>publication_created</c> (row 222). An episode back in <see cref="EpisodeStatus.StoryApproved"/>
-/// (the owner regenerated the story while the wait was on the video, so no video exists to publish) → back to
-/// <c>rendering</c> with the wait cleared, so the next tick renders the new story instead of publishing nothing.
+/// <see cref="AutopilotPublicationCreator.TryCreateAsync"/>, which owns the timing guard, the approved-state guard,
+/// the publication command and the move to <c>publication_created</c> (row 222); an episode still under review
+/// answers <see cref="StepResult.Idle"/> there, so the wait keeps standing until the owner approves.
+/// <see cref="WaitingFor.Video"/> is only ever entered by <c>VideoGateStep</c>, which writes <c>step = video_gate</c>
+/// in the same save, so any other episode state (a story the owner regenerated) answers
+/// <see cref="StepResult.Idle"/>: the run cannot rewind <c>step</c> to re-render, and the 48 h expiry owns the end
+/// (S71 CR-4, which is why the unreachable <c>rendering</c> resume was removed).
 /// </description>
 /// </item>
 /// </list>
@@ -122,22 +125,12 @@ public sealed class WaitingOwnerStep(
 
         return run.WaitingFor switch
         {
-            WaitingFor.Sources => await AnswerSourcesAsync(run, episodeId, context.Now, ct).ConfigureAwait(false),
-            WaitingFor.FactSheet => await AnswerFactSheetAsync(run, episodeId, context.Now, ct).ConfigureAwait(false),
-            WaitingFor.Story => await AnswerStoryAsync(run, episode, context.Now, ct).ConfigureAwait(false),
-            WaitingFor.Video => episode.Status switch
-            {
-                // A story state while waiting for a video means the video's input changed underneath the wait (the
-                // owner regenerated or re-approved the story instead of approving the video). Routing that to the
-                // publication creator would publish a video nobody approved, so the run renders the new story first;
-                // `WaitingFor` alone cannot tell the two apart, the episode is the signal.
-                EpisodeStatus.StoryApproved => AutopilotRunStep.IsBehind(run.Step, AutopilotRunStep.Render)
-                    ? ResumeRender(run, context.Now)
-                    : StepResult.Idle,
-                EpisodeStatus.VideoReview or EpisodeStatus.Ready =>
-                    await publicationCreator.TryCreateAsync(context, ct).ConfigureAwait(false),
-                _ => StepResult.Idle,
-            },
+            WaitingFor.Sources => await AnswerSourcesAsync(context, episodeId, ct).ConfigureAwait(false),
+            WaitingFor.FactSheet => await AnswerFactSheetAsync(context, episodeId, ct).ConfigureAwait(false),
+            WaitingFor.Story => await AnswerStoryAsync(context, episode, ct).ConfigureAwait(false),
+            WaitingFor.Video => episode.Status is EpisodeStatus.VideoReview or EpisodeStatus.Ready
+                ? await publicationCreator.TryCreateAsync(context, ct).ConfigureAwait(false)
+                : StepResult.Idle,
             _ => StepResult.Idle,
         };
     }
@@ -147,15 +140,21 @@ public sealed class WaitingOwnerStep(
     /// the sheet or, when one is already approved, continues into the story.
     /// </summary>
     private async ValueTask<StepResult> AnswerSourcesAsync(
-        AutopilotRun run,
+        AutopilotStepContext context,
         Guid episodeId,
-        DateTimeOffset now,
         CancellationToken ct)
     {
+        var run = context.Run;
+
+        if (await HoldAsync(context, ct).ConfigureAwait(false) is { } held)
+        {
+            return held;
+        }
+
         var hasSheet = await HasApprovedSheetAsync(episodeId, ct).ConfigureAwait(false);
         if (hasSheet)
         {
-            return await StartStoryAsync(run, episodeId, now, ct).ConfigureAwait(false);
+            return await StartStoryAsync(context, episodeId, ct).ConfigureAwait(false);
         }
 
         if (!await HasFetchedSourceAsync(episodeId, ct).ConfigureAwait(false))
@@ -182,41 +181,31 @@ public sealed class WaitingOwnerStep(
         return StepResult.Advanced(AutopilotRunStep.FactSheet);
     }
 
-    /// <summary>
-    /// The story changed while the run waited for a video: the run goes back to <c>rendering</c>, so the next tick
-    /// re-dispatches the render against the new story. The wait is cleared first — <c>waiting_owner</c> is the only
-    /// state that owns that column. The caller only resumes a run whose step is still behind the render: the aggregate
-    /// has no way to rewind <c>step</c> (<c>AdvanceTo(step: null)</c> keeps the stored value), and a run already at
-    /// or past <c>render</c> would come back here for ever.
-    /// </summary>
-    /// <param name="run">The run whose wait is over.</param>
-    /// <param name="now">The tick's clock reading.</param>
-    /// <returns>The advanced result; the orchestrator saves the two columns.</returns>
-    private static StepResult ResumeRender(AutopilotRun run, DateTimeOffset now)
-    {
-        run.SetWaitingFor(null);
-        run.AdvanceTo(AutopilotRunState.Rendering, step: null, now);
-
-        return StepResult.Advanced(AutopilotRunStep.Render);
-    }
-
     /// <summary>The owner approved the fact sheet: the story generation is the run's next paid step.</summary>
     private async ValueTask<StepResult> AnswerFactSheetAsync(
-        AutopilotRun run,
+        AutopilotStepContext context,
         Guid episodeId,
-        DateTimeOffset now,
         CancellationToken ct) =>
         await HasApprovedSheetAsync(episodeId, ct).ConfigureAwait(false)
-            ? await StartStoryAsync(run, episodeId, now, ct).ConfigureAwait(false)
+            ? await StartStoryAsync(context, episodeId, ct).ConfigureAwait(false)
             : StepResult.Idle;
 
     /// <summary>Sends the story generation and moves the run to <c>story_generating</c> (plan §3.5 row 206).</summary>
     private async ValueTask<StepResult> StartStoryAsync(
-        AutopilotRun run,
+        AutopilotStepContext context,
         Guid episodeId,
-        DateTimeOffset now,
         CancellationToken ct)
     {
+        var run = context.Run;
+
+        // The wait can last up to 48 h, so the slot and the series' right to spend are re-read here and not only when
+        // the wait began (task rows SEC-8, SEC-1): an answer that arrives after the slot is missed, or after the owner
+        // paused, disabled or archived the series or revoked the authorization, must not buy a story.
+        if (await HoldAsync(context, ct).ConfigureAwait(false) is { } held)
+        {
+            return held;
+        }
+
         if (!AutopilotRunStep.IsBehind(run.Step, AutopilotRunStep.Story))
         {
             return StepResult.Idle;
@@ -238,18 +227,26 @@ public sealed class WaitingOwnerStep(
         }
 
         run.ConsumeStoryAttempt();
-        run.AdvanceTo(AutopilotRunState.StoryGenerating, AutopilotRunStep.Story, now);
+        run.AdvanceTo(AutopilotRunState.StoryGenerating, AutopilotRunStep.Story, context.Now);
 
         return StepResult.Advanced(AutopilotRunStep.Story);
     }
 
     /// <summary>Sends the run's single render and moves it to <c>rendering</c> (plan §3.5 row 215).</summary>
     private async ValueTask<StepResult> AnswerStoryAsync(
-        AutopilotRun run,
+        AutopilotStepContext context,
         Episode episode,
-        DateTimeOffset now,
         CancellationToken ct)
     {
+        var run = context.Run;
+
+        // Same rule as the story answer: the render is paid, so the slot and the series' right to spend are read now
+        // (task rows SEC-8, SEC-1), not when the wait began.
+        if (await HoldAsync(context, ct).ConfigureAwait(false) is { } held)
+        {
+            return held;
+        }
+
         if (episode.Status != EpisodeStatus.StoryApproved
             || !AutopilotRunStep.IsBehind(run.Step, AutopilotRunStep.Render))
         {
@@ -273,7 +270,7 @@ public sealed class WaitingOwnerStep(
             // step uses (plan §3.5: `rendering → failed`); every other refusal is a wait the next tick re-evaluates.
             if (render.FirstError.Code == ErrorCodes.KeywordsFlagged)
             {
-                run.Fail(AutopilotStepCodes.RenderKeywordsFlagged, now);
+                run.Fail(AutopilotStepCodes.RenderKeywordsFlagged, context.Now);
 
                 return StepResult.Stopped(AutopilotStepCodes.RenderKeywordsFlagged);
             }
@@ -286,9 +283,29 @@ public sealed class WaitingOwnerStep(
         // `step` is the last *completed* step (plan §3.3, AutopilotRun.AdvanceTo): the render step belongs to the
         // success edge `rendering -> video_gate` (RenderStep writes it there), so dispatch keeps the step the run
         // already has. Claiming `render` here would make a §3.6 pause resume into `video_gate` with no video.
-        run.AdvanceTo(AutopilotRunState.Rendering, step: null, now);
+        run.AdvanceTo(AutopilotRunState.Rendering, step: null, context.Now);
 
         return StepResult.Advanced(AutopilotRunStep.Render);
+    }
+
+    /// <summary>
+    /// The two guards every paid dispatch of this step runs first: the run's slot must still be publishable (task row
+    /// SEC-8) and the series must still be allowed to spend (task rows SEC-1, PF-5). Both record their move on the run
+    /// — a failed slot, a pause — so the caller only returns the result.
+    /// </summary>
+    /// <param name="context">The run, its series and the tick's clock reading.</param>
+    /// <param name="ct">Cancels the authorization read.</param>
+    /// <returns>The stopped result, or <see langword="null"/> when the dispatch may be paid for.</returns>
+    private async ValueTask<StepResult?> HoldAsync(AutopilotStepContext context, CancellationToken ct)
+    {
+        if (AutopilotStepSupport.SlotIsMissed(context))
+        {
+            return AutopilotStepSupport.FailSlotMissed(context);
+        }
+
+        var spend = await AutopilotStepSupport.SeriesMaySpendAsync(db, context, ct).ConfigureAwait(false);
+
+        return spend.Stop;
     }
 
     private Task<bool> HasApprovedSheetAsync(Guid episodeId, CancellationToken ct) =>

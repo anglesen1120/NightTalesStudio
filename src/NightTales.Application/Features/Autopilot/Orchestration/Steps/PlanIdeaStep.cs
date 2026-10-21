@@ -34,15 +34,27 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <b>Single flight.</b> Before paying, the step reads the row its idempotency key already committed. A row that
 /// exists is adopted instead of a second paid call: the run is advanced from a pick the planner persisted before
 /// it returned, and a row that is queued or running leaves the step idle — the tick that committed it owns the
-/// work. That is the whole of "a replay never pays twice".
+/// work. That is the whole of "a replay never pays twice". A crash between the planner's pick and the orchestrator's
+/// save is the one case where a queued or running row already owns a pick: adoption then completes the row
+/// (<see cref="GenerationRun.Start"/>/<see cref="GenerationRun.Succeed"/>, both no-ops once reached) and settles its
+/// reservation, because no job follows an ideas row to do either (CR-8).
+/// </para>
+/// <para>
+/// <b>Settlement is keyed on the reservation.</b> <see cref="ICreditLedger.SettleAsync"/> takes no idempotency key
+/// of its own: the cost it settles is the amount <c>usage_records</c> already holds for that reservation, so
+/// repeating it writes the same figure and the reservation id is the key. A crash between the settle and the
+/// orchestrator's save therefore repeats the same settlement, never a second charge. 12.1.2's ledger must answer
+/// success for a repeated settle the way it does for a repeated refund (recorded as an open item on the task).
+/// </para>
 /// </para>
 /// <para>
 /// <b>Error mapping</b> (task file §Failure handling, plan §7.3): <c>spend_cap_reached</c> fails the run (the
 /// platform refuses the charge; the aggregate records the reason, the owner's notice is 02.8.3-T4's); a
-/// <c>provider_funds_exhausted</c> refunds the reservation and answers <see cref="StepResultKind.Retry"/>, which is
-/// 02.2.2's dispatch rule ("held, not failed"); Retry saves nothing, so the row stays queued and the hold itself —
-/// including the series pause that closes the slot — is 02.8.3-T4's trigger 5, not something this step may claim
-/// to persist. Every ideas error
+/// <c>provider_funds_exhausted</c> ends the generation row with that code — plan §3.6 row 5's detection source —
+/// refunds the reservation and pauses the run with the same reason, which is the hold plan §3.5 gives the story
+/// step (<c>story_generating → paused</c>); a Retry here would save nothing and leave a queued row every later tick
+/// adopts as in flight, so the slot could never pay again and would idle until <c>slot_missed</c>. The series pause
+/// that closes the slot stays 02.8.3-T4's trigger 5. Every ideas error
 /// (<c>ideas_no_idea</c> with its <c>variety_*</c> detail, <c>ideas_moderated</c>, <c>ideas_invalid_output</c>,
 /// <c>ideas_generation_failed</c>) fails the run with that code and is never retried in the same slot
 /// (02.8.4-T1's variety steering reads the recorded outcome). A pricing or budget-readiness error
@@ -70,6 +82,12 @@ public sealed partial class PlanIdeaStep(
     ICreditLedger ledger,
     ILogger<PlanIdeaStep> logger) : IAutopilotStepHandler
 {
+    /// <summary>
+    /// The refund reason of a reservation whose <c>generation_runs</c> row never committed: the insert failed, so no
+    /// call could be bought with it (short and content-free, which is all a refund reason may be).
+    /// </summary>
+    private const string ReservationNotCommittedReason = "generation_run_not_committed";
+
     /// <inheritdoc />
     public AutopilotRunState State => AutopilotRunState.Planned;
 
@@ -245,13 +263,35 @@ public sealed partial class PlanIdeaStep(
 
         if (queued.IsError)
         {
+            // The row that would carry the reservation was refused, so nothing can spend it: release it before the
+            // run fails (PF-13). This exit and the save below are the only two between the reserve and the call.
+            await RefundAsync(context, reservation.Value, queued.FirstError.Code, ct).ConfigureAwait(false);
+
             return Fail(context, queued.FirstError.Code);
         }
 
         db.GenerationRuns.Add(queued.Value);
 
         // The planner's contract: the row is committed before the paid call and no transaction spans it.
-        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // The insert is the whole save, so an exception — a cancellation or the `ux_generation_runs_active_series`
+            // violation of an overlapping tick — leaves no row behind, and no call may be paid for. The row is
+            // detached so no later save of this scope can insert it over a refunded reservation, and the refund gets
+            // its own token because the tick's cancellation is exactly one of the ways to land here (PF-13).
+            db.GenerationRuns.Remove(queued.Value);
+
+            await RefundAsync(context, reservation.Value, ReservationNotCommittedReason, CancellationToken.None)
+                .ConfigureAwait(false);
+
+            LogRowNotCommitted(run.Id, exception.GetType().Name);
+
+            throw;
+        }
 
         var facts = new RunContext(
             queued.Value.Id,
@@ -269,7 +309,7 @@ public sealed partial class PlanIdeaStep(
 
         if (pick.IsError)
         {
-            return await RecordFailure(context, queued.Value, pick.FirstError.Code, reservation.Value, ct)
+            return await RecordFailure(context, queued.Value, pick.FirstError.Code, reservation.Value)
                 .ConfigureAwait(false);
         }
 
@@ -321,6 +361,8 @@ public sealed partial class PlanIdeaStep(
 
         if (ideaId is { } adopted)
         {
+            await CompleteAdoptedAsync(context, row, ct).ConfigureAwait(false);
+
             run.AttachIdea(adopted);
             run.AdvanceTo(AutopilotRunState.IdeaPicked, AutopilotRunStep.Idea, context.Now, authorizationId);
 
@@ -341,30 +383,82 @@ public sealed partial class PlanIdeaStep(
         };
     }
 
+    /// <summary>
+    /// Closes the row a crash left behind: the planner can commit its pick and die before the orchestrator's save, so
+    /// the row stays queued (or running) although the call it paid for finished. Nothing else writes that row — no job
+    /// follows an ideas row — so adoption starts and succeeds it here, at the cost the call already recorded, and
+    /// settles its reservation. Both transitions are no-ops once reached, which makes a second adoption harmless
+    /// (CR-8).
+    /// </summary>
+    /// <param name="context">The run and the tick's clock reading.</param>
+    /// <param name="row">The row this run's idempotency key already committed.</param>
+    /// <param name="ct">Cancels the cost read.</param>
+    private async ValueTask CompleteAdoptedAsync(
+        AutopilotStepContext context,
+        GenerationRun row,
+        CancellationToken ct)
+    {
+        if (row.Status is not (GenerationRunStatus.Queued or GenerationRunStatus.Running))
+        {
+            // `succeeded` already holds its cost and settlement; a failed or cancelled row with a pick is a data
+            // defect this step must not paper over.
+            return;
+        }
+
+        if (row.Status == GenerationRunStatus.Queued)
+        {
+            row.Start(context.Now);
+        }
+
+        var cost = row.ReservationId is { } reserved
+            ? await db.UsageRecords
+                .Where(record => record.ReservationId == reserved)
+                .SumAsync(record => record.CostUsd, ct)
+                .ConfigureAwait(false)
+            : 0m;
+
+        row.Succeed(cost, resultStoryVersionId: null, resultFactSheetId: null, context.Now);
+
+        if (row.ReservationId is not { } reservation)
+        {
+            return;
+        }
+
+        var settled = await ledger.SettleAsync(new ReservationId(reservation), ct).ConfigureAwait(false);
+
+        if (settled.IsError)
+        {
+            LogLedgerFailed(context.Run.Id, "settle", settled.FirstError.Code);
+        }
+    }
+
     /// <summary>Records the planner's failure on both the generation row and the run, and answers the step's result.</summary>
     private async ValueTask<StepResult> RecordFailure(
         AutopilotStepContext context,
         GenerationRun row,
         string code,
-        ReservationId reservation,
-        CancellationToken ct)
+        ReservationId reservation)
     {
         if (code == ErrorCodes.ProviderFundsExhausted)
         {
-            // 02.2.2's dispatch rule: the run is held, not failed. Nothing of this row survives the tick — Retry
-            // saves nothing — so the row stays queued (a later tick adopts it as in flight) and the reservation is
-            // refunded rather than left to hold credits no call will spend. Closing the slot is 02.8.3-T4's
-            // trigger 5 (series pause), which also owns persisting the hold.
-            await RefundAsync(context, reservation, code, ct).ConfigureAwait(false);
+            // Plan §3.6 row 5 reads the code off this row, and plan §3.5 holds the run the way the story step does
+            // (`story_generating → paused`). Both writes ride the orchestrator's save with the Stopped result, so the
+            // terminal row and the pause commit together; a Retry would save neither and every later tick would adopt
+            // the queued row as in flight, idling the slot until slot_missed (CR-1). The series pause is T4's.
+            row.Fail(code, detail: null, countsTowardLimit: false, context.Now);
 
-            return RetryHeld(context, code);
+            await RefundAsync(context, reservation, code, CancellationToken.None).ConfigureAwait(false);
+
+            return Held(context, code);
         }
 
         row.Fail(code, detail: null, countsTowardLimit: false, context.Now);
 
         // The run mutation and this row are saved together with the Stopped result, but the refund is its own
-        // transaction and must not wait on that save: a reservation nobody settles would hold credits forever.
-        await RefundAsync(context, reservation, code, ct).ConfigureAwait(false);
+        // transaction and must not wait on that save: a reservation nobody settles would hold credits forever. The
+        // tick's own token is not used, because a cancelled tick is one of the ways a failure is recorded and the
+        // release must still happen.
+        await RefundAsync(context, reservation, code, CancellationToken.None).ConfigureAwait(false);
 
         return Fail(context, code);
     }
@@ -404,12 +498,18 @@ public sealed partial class PlanIdeaStep(
         return StepResult.Retry(code);
     }
 
-    /// <summary>Answers Retry for a held provider: the reservation is refunded and the run itself does not change.</summary>
-    private StepResult RetryHeld(AutopilotStepContext context, string code)
+    /// <summary>
+    /// Holds the run with <see cref="AutopilotPauseReason.ProviderFundsExhausted"/>: the slot keeps its row and waits
+    /// for the owner, exactly as a held story run does (plan §3.5, §3.6 row 5). The paused run is `Stopped`, so the
+    /// pause is saved with the terminal generation row in one save.
+    /// </summary>
+    private StepResult Held(AutopilotStepContext context, string code)
     {
+        context.Run.Pause(AutopilotPauseReason.ProviderFundsExhausted, context.Now);
+
         LogHeld(context.Run.Id, code);
 
-        return StepResult.Retry(code);
+        return StepResult.Stopped(code);
     }
 
     private StepResult InFlight(Guid runId, GenerationRun row)
@@ -480,6 +580,12 @@ public sealed partial class PlanIdeaStep(
         Level = LogLevel.Error,
         Message = "autopilot_idea_ledger_failed runId={RunId} operation={Operation} code={Code}")]
     private partial void LogLedgerFailed(Guid runId, string operation, string code);
+
+    [LoggerMessage(
+        EventId = 6612,
+        Level = LogLevel.Error,
+        Message = "autopilot_idea_row_not_committed runId={RunId} exceptionType={ExceptionType}")]
+    private partial void LogRowNotCommitted(Guid runId, string exceptionType);
 
     [LoggerMessage(
         EventId = 6547,

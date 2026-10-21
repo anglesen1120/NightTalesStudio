@@ -27,7 +27,9 @@ namespace NightTales.Application.Features.Autopilot.Planning;
 /// <para>
 /// <b>The unique index is the final arbiter.</b> Slots the series already has are skipped by a read; the insert
 /// still catches the provider's <c>23505</c> and treats it as "already planned", because a second tick can
-/// overlap the first. One bad series never stops the others: every failure is logged by id and type only.
+/// overlap the first. That refused flush rolls the whole per-series batch back, so the series reports no created
+/// row for that tick (the concurrent tick owns them). One bad series never stops the others: every failure is
+/// logged by id and type only.
 /// </para>
 /// <para>
 /// <b>The daily cap is per channel.</b> <see cref="AutopilotSettings.DailyCap"/> is applied twice: by
@@ -65,7 +67,7 @@ public sealed partial class AutopilotSlotPlanner(
     /// </summary>
     /// <param name="now">The tick's clock reading, read once.</param>
     /// <param name="ct">The caller's cancellation token.</param>
-    /// <returns>The number of <c>autopilot_runs</c> rows inserted by this pass.</returns>
+    /// <returns>The number of <c>autopilot_runs</c> rows this pass inserted and committed.</returns>
     public async Task<int> PlanAsync(DateTimeOffset now, CancellationToken ct)
     {
         var series = new List<(Guid Id, Guid UserId)>();
@@ -239,7 +241,11 @@ public sealed partial class AutopilotSlotPlanner(
         catch (DbUpdateException exception) when (AutopilotSlotConflict.IsSlotUniqueViolation(exception))
         {
             // A concurrent tick planned the same slot first: the index is the arbiter and this is not an error.
+            // The refused flush rolled the whole batch back, so not one of these rows exists and none of them may
+            // be reported as created (the tick-local channel counts keep their increments; next tick re-reads them).
             LogAlreadyPlanned(series.Id);
+
+            return 0;
         }
 
         return created;

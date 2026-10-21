@@ -42,7 +42,9 @@ public sealed class AutopilotResearchStepTests(TestDatabase database) : Integrat
     [Fact]
     public async Task TrueCrimeRun_NoFinderGo_WaitsForSources()
     {
-        var world = await SeedAsync();
+        // No readable source: a pasted note is stored `Fetched`, so seeding one would draft the sheet instead of
+        // reaching the finder's no-go branch this test is about.
+        var world = await SeedAsync(withSource: false);
         await using var db = Open(world, Now);
         var run = await AddRunAsync(db, world);
         var sender = new RecordingSender();
@@ -50,7 +52,9 @@ public sealed class AutopilotResearchStepTests(TestDatabase database) : Integrat
         var step = new ResearchStep(sender, db, new FixedSourceFinderGo(hasGo: false));
         var result = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, Now), Ct);
 
-        result.Kind.ShouldBe(StepResultKind.Advanced);
+        // The owner ask is a stop, not an advance: `StopForSources` records the wait and ends the tick.
+        result.Kind.ShouldBe(StepResultKind.Stopped);
+        result.Code.ShouldBe(AutopilotRunStep.SourcesRequired);
         run.State.ShouldBe(AutopilotRunState.WaitingOwner);
         run.WaitingFor.ShouldBe(WaitingFor.Sources);
         run.Step.ShouldBe(AutopilotRunStep.SourcesRequired);
@@ -81,9 +85,10 @@ public sealed class AutopilotResearchStepTests(TestDatabase database) : Integrat
 
         await new FactSheetBuilder(Database, world.Actor).CreateAsync(world.UserId, world.EpisodeId, Ct);
 
-        var waiting = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, Now), Ct);
+        var awaiting = await step.HandleAsync(AutopilotStepContexts.For(run, world.Series, Now), Ct);
 
-        waiting.Kind.ShouldBe(StepResultKind.Advanced);
+        awaiting.Kind.ShouldBe(StepResultKind.Stopped);
+        awaiting.Code.ShouldBe(AutopilotRunStep.FactSheet);
         run.State.ShouldBe(AutopilotRunState.WaitingOwner);
         run.WaitingFor.ShouldBe(WaitingFor.FactSheet);
         sender.SentAny<GenerateStoryCommand>()
@@ -113,21 +118,30 @@ public sealed class AutopilotResearchStepTests(TestDatabase database) : Integrat
         return run;
     }
 
-    private async Task<World> SeedAsync(Topic topic = Topic.TrueCrime)
+    private async Task<World> SeedAsync(Topic topic = Topic.TrueCrime, bool withSource = true)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
         actor.Id = user.Id;
 
-        var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, topic: topic);
+        var series = await new SeriesBuilder(Database, actor)
+            .CreateAsync(user.Id, topic: topic, autopilotEnabled: true, ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor).CreateAsync(user.Id, series.Id, ct: Ct);
 
         await using (var seed = Open(new World(actor, user.Id, series, episode.Id), Now))
         {
-            var note = StorySource.CreateNote(Guid.CreateVersion7(), user.Id, episode.Id, "a pasted source", Now);
-            note.IsError.ShouldBeFalse();
+            // Both dispatches of the research state are paid, so the step re-reads the series' authorization first
+            // (S71 SEC-1, PF-5): the world starts with the rows 02.8.3-T3's accept route writes.
+            await AutopilotSeriesSeed.AcceptAsync(seed, series, Now, Ct);
 
-            seed.StorySources.Add(note.Value);
+            if (withSource)
+            {
+                var note = StorySource.CreateNote(Guid.CreateVersion7(), user.Id, episode.Id, "a pasted source", Now);
+                note.IsError.ShouldBeFalse();
+
+                seed.StorySources.Add(note.Value);
+            }
+
             await seed.SaveChangesAsync(Ct);
         }
 

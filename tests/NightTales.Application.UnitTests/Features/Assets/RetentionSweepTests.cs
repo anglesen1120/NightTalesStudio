@@ -613,6 +613,14 @@ public sealed class RetentionSweepTests
                 yield return (asset.Id, asset.UserId);
             }
         }
+
+        public IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T, TKey>(
+            Expression<Func<T, bool>> where,
+            Expression<Func<T, TKey>> orderBy,
+            int batch,
+            CancellationToken ct)
+            where T : Entity, IUserOwned =>
+            throw new NotSupportedException("The retention sweep reads its queue in insertion order; it uses no ordering.");
     }
 
     private sealed class AuditFake : IAuditRetentionStore

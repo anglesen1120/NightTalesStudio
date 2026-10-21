@@ -38,6 +38,11 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
     /// <summary>The plan §3.5 <c>LIMIT 2</c>: only the two most recent terminal runs are counted.</summary>
     public const int StreakWindow = 2;
 
+    // The terminal marker is `finished_at`, not `outcome`: 02.8.3 writes the outcome on every stop, including the
+    // non-terminal ones (`waiting_owner`, `paused`, `awaiting_authorization`), so filtering on `outcome` would put a
+    // stopped-but-open run (a buffered slot waiting for the owner's consent) inside the two-row window and reset the
+    // streak although the last two finished runs both failed the gate.
+
     /// <inheritdoc />
     public async ValueTask<int> GetStreakAsync(Guid seriesId, CancellationToken ct)
     {
@@ -89,9 +94,10 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
     }
 
     /// <summary>
-    /// The outcomes of the <paramref name="take"/> most recent runs of the series that have stopped, newest first.
-    /// A run whose <c>outcome</c> is still null has not stopped and is not part of the answer, so it cannot be
-    /// mistaken for a failure it never was (nor for the end of a streak).
+    /// The outcomes of the <paramref name="take"/> most recent runs of the series that have finished, newest first.
+    /// A run that has not finished (<c>finished_at IS NULL</c>) is not part of the answer, so neither a run in
+    /// flight nor one merely stopped on the owner or the consent gate can be mistaken for a failure it never was
+    /// (nor for the end of a streak).
     /// </summary>
     /// <param name="seriesId">The series to read.</param>
     /// <param name="take">How many outcomes to read; the caller's window.</param>
@@ -102,7 +108,7 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
         CancellationToken ct) =>
         await db.AutopilotRuns
             .AsNoTracking()
-            .Where(run => run.SeriesId == seriesId && run.Outcome != null)
+            .Where(run => run.SeriesId == seriesId && run.FinishedAt != null)
             .OrderByDescending(run => run.SlotAt)
             .ThenByDescending(run => run.Id)
             .Select(run => run.Outcome)
