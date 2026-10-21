@@ -1500,3 +1500,21 @@ Replaced Resume header (Session 73 bullet, PR open state), verbatim:
 Replaced Resume bullet (Web Session 54 closed), verbatim:
 
 - **Web (Session 54 closed):** **10.5.3-T2** self-review issues panel + score table, "Automatically corrected once" badge, drift note and similarity highlights merged as #227 (`f9a37b26`, tip `d0f2f429`, code tip `3c7e66f4`, `feature/10.5.3-T2-s54`, from `develop` `cb491bbf`; web lane; FE only, no `web/openapi.json` change). Coordinator decision A (deferred owner review): counts and inline rows only from `qualityHints`; model-review issues only in the "why" panel because the server does not flatten them (new §Open tasks row `qualityHints-model-review-flatten`). Closes the `story-review.page.scss` budget row; the 4-GET gate read stays open. Local web gate exit 0 on `3c7e66f4`, T2 gates closed; CI refused: CI-01 (`build-test` jobs `117412350028`, `117412349894`, 0 steps, billing annotation), owner treats as pass. Accepted lows: §Open tasks `L1-S54`, `L2-S54`.
+
+## Session 75 close-out (2026-10-21)
+
+Replaced Resume bullet (Web Session 75, PR open state), verbatim:
+
+- **Web (Session 75, PR open, not merged; `feature/10.7.1-T0-s75` from `develop` `acb48dee`):** **10.7.1-T0** `/channels` UI design reconciled with the merged backend (06.1.2-T1 #237, 06.1.2-T2 #241, 06.4.1-T1 #265): the 16 `f-channels-*` frames in `design/ui/screens/06-render-publish.html` (approved 2026-10-02, deck `192cc73`) now carry the shipped disconnect behaviour (tokens removed now, Google revoke requested not guaranteed, awaiting_consent/scheduled publications cancelled, uploading/processing not stopped, data scheduled for deletion 7 days after, published videos untouched), no menu on revoked rows, null `displayName` / null `lastVerifiedAt` rows, connect and disconnect error variants, frame-specific a11y notes. Design-only: no `web/` or `src/` change, no `web/openapi.json` re-pin. Copy keys in `10-web-ui/10.7.1-channels/plan.md` §6 amended (10.7.1-T0 S75). Gate: `git diff --check` clean + deck render matrix (360/768/1280 x dark/light x vi/en) with no overflow, no console error; T0 doc review + separate design/a11y review. **Owner re-approval of the reconciled frames pending** (task file §Outputs); open items S75-1, S75-2 (§Open findings).
+
+Removed Open-tasks row (10.7.1-T0 merged, owner approved), verbatim:
+
+| 10.7.1-T0 `/channels` UI design (reconciliation) | PR open (Session 75, `feature/10.7.1-T0-s75`), docs/design only; not merged; owner re-approval pending | Deck frames + `plan.md` §6 copy keys + task Notes + 10.7.1-T1 Notes hand-over (from 10.7.1-T0, S75). Blocks 10.7.1-T1 until the owner approves the reconciled frames (2026-10-02 approval covers deck `192cc73` only). No ⚠️ or STATUS hand-over row was specific to this task (checked: `web/openapi.json` not re-pinned, 10.7.2-T1 consumes it later). |
+
+Closed Open finding S75-1 (owner approved the deck wording 2026-10-21), verbatim:
+
+- **S75-1** (10.7.1-T0 design, S75, 2026-10-21) — `[OPEN]` owner: owner / 10.7.1-T1. `06-youtube-posting/06.4-revocation/plan.md:229` says the disconnect body must state that the channel's data is deleted on Google's side; shipped 06.4.1-T1 deletes Night Tales' own channel data (request due 7 days after) and only requests revocation at Google, so the design says that instead. Confirm the wording (the 06 plan text stays as is). (from 10.7.1-T0, S75)
+
+Replaced session-log row (PR open state), verbatim:
+
+| 2026-10-21 | Session 75: 10.7.1-T0 `/channels` UI design reconciled (PR open, not merged) | `design-ui` agent reworked the 16 `f-channels-*` frames against the merged backend (06.1.2-T1/T2, 06.4.1-T1); separate design/a11y reviewer: 10 findings (R1-R10), one `judge_batch` triage (`typesafe/jev-1.13.0`, 10/10; labels under 0.7 hand-read) → R1-R3, R5-R8 fixed in the deck, R4 closed by the `plan.md` §6 sync, R9 recorded as design notes, R10 recorded (S75-2). Gate: `git diff --check` clean; deck render matrix (12 combos, 16 frames each) no overflow, no console error. Design-only (no `web/`/`src/`). Owner re-approval pending. |
