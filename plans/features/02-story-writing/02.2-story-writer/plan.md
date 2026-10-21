@@ -163,7 +163,7 @@ Manual (M1 §7): one live `WriteAsync` per tier × language with `OPENAI_LIVE_TE
 | 02.2.3-T2 | Prompt assembly + data object + injection tests | S (0.5) | BE | 02.2.3-T1 | 02.2.1-T2 |
 | 02.2.1-T1 | `StoryContentV1` + `StoryDraftValidator` + derived fields + `KeywordRules` | M (1.0) | BE | 02.1.1-T0 | 02.2.1-T2, 02.3.4-T1, 03.2.2 |
 | 02.2.1-T2 | `OpenAiTextClient` + `OpenAiStoryWriter.WriteAsync` | M (1.0) | BE | 02.2.1-T1, 02.2.3-T2, 02.2.4-T1 | 02.2.2-T3 |
-| 02.2.4-T1 | `price_versions` P subset + `TextCostCalculator` + `IUsageMeter` + `IStoryCostEstimator` | S (0.5) | BE | 09 persistence | 02.2.1-T2, 02.2.2-T2, 09.6.1-T1 (09 W2 CR-9), 12.8.1-T1, 12.1.4-T1, 12.1.2-T1, 12.5.2-T1 |
+| 02.2.4-T1 | `price_versions` P subset + `TextCostCalculator` + `IUsageMeter` + `IStoryCostEstimator` | S (0.5) | BE | 09 persistence | 02.2.1-T2, 02.2.2-T2, 09.6.1-T1 (09 W2 CR-9) |
 
 Total **3.5 d** — matches README §9 (02.2 writer 2.0 → 3.5: prompt catalog, adapter hardening, retry budget, `price_versions` in P; F22, F23, F35). Order: 02.2.4-T1 ∥ 02.2.3-T1 → 02.2.3-T2 ∥ 02.2.1-T1 → 02.2.1-T2.
 

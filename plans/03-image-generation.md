@@ -17,13 +17,13 @@
 
 | # | Finding | Action |
 |---|---|---|
-| G1 | Cost table in DECISIONS is a **floor** (1024×1024); MPT sends 1536×1024 / 1024×1536 by default ✅ | Measure real `usage` per aspect (03.3.1) before pricing (12) |
+| G1 | Cost table in DECISIONS is a **floor** (1024×1024); MPT sends 1536×1024 / 1024×1536 by default ✅ | Measure real `usage` per aspect (03.3.1) before relying on the DECISIONS cost table |
 | G2 | Unknown how MPT surfaces `moderation_blocked` through its task API | Spike 03.4.1 before designing UI messages |
 | G3 | One image per keyword ✅ → keyword count drives cost | Cap keywords per minute of video (§5.3) |
 | G4 | True crime: realistic images of real people are a legal and policy risk | Style templates force illustration/silhouette/scenery; keyword linter blocks names (03.2.2) |
 | G5 | Scenes can look inconsistent | One template per series; describe place/time/light the same way |
 | A1 | `medium` quality is good enough | ⚠️ Compare low/medium/high side-by-side in M0 (03.3.2) |
-| G6 | MPT cannot choose image quality: its `openai_image` body is only `{model, prompt, n: 1, size}` (no `quality`, no `moderation`) ✅ (01 README §1 M4, MPT `material.py` @ `3d5f4e42`), so the API default `quality = auto` applies ✅ (O6). The DECISIONS §4 price "medium ~$0.013" is therefore not what M0 pays | [OPEN] CR-3 decision in §10 before 03.3.1 numbers feed pricing (12) |
+| G6 | MPT cannot choose image quality: its `openai_image` body is only `{model, prompt, n: 1, size}` (no `quality`, no `moderation`) ✅ (01 README §1 M4, MPT `material.py` @ `3d5f4e42`), so the API default `quality = auto` applies ✅ (O6). The DECISIONS §4 price "medium ~$0.013" is therefore not what M0 pays | [OPEN] CR-3 decision in §10 before 03.3.1 numbers feed the cost model |
 | G8 | MPT skips a blocked or failed image, uses the next term, loops clips and reports success; image count = `ceil(audio ÷ video_clip_duration)` (default clip 5 s); clip order is shuffled by default (`video_concat_mode = random`) ✅ (feature README I4–I13) | Relay report `images.v1` + outcome table D7; clip 10 s; sequential order (03 CR-10) |
 | G7 | Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8 — superseded by `gpt-image-2`, 01 DEC-11; rate re-check [OPEN]); MPT retries a 429 only 3× (waits 5 s and 15 s, ≈ 20 s in total; 03 CR-8) and then **skips the keyword silently** ✅ (M4) → a video can render with missing images and still "succeed" | Count skipped keywords per run (01.3.1 `image_failed_count`, `image_http_429_count`); a run with any skipped keyword is invalid; pacing by the relay token bucket (D5) and a tier increase request before M1 (owner O4) (01 F24, 03 CR-10) |
 
@@ -57,7 +57,7 @@
 
 ### Epic 03.3 — Cost and quality measurement (M0)
 
-**03.3.1 Measure real image tokens** — *As the Tech Lead I want actual tokens per image per aspect so that credit prices are correct.* Must · S
+**03.3.1 Measure real image tokens** — *As the Tech Lead I want actual tokens per image per aspect so that the cost per image is correct.* Must · S
 - Given 3 trial renders (landscape and portrait), When they finish, Then average `output_tokens` per image and cost per image are written to the measurement sheet (01) for each aspect/quality.
 - MPT does not log `usage` ✅ (01 M4/M5). M0 reads it from the local usage tap (01 D6, `trial/runs/<run_id>/openai_usage.jsonl`), which records `usage` and the `quality` the API echoes per call; the dashboard is only a daily cross-check (01.3.1-T4).
 
@@ -74,7 +74,7 @@
 - Given a keyword likely to be blocked, When a render runs, Then we record: does the whole task fail or skip the image; task state and error text; whether the failing keyword is identifiable (MPT logs `openai image generation failed: term=…` ✅ M4); a 429 burst at Tier 1 (G7). `quality`/`moderation` cannot be set through MPT ✅ (G6). Output: `worker-node/contract/images.md` + samples, handed to 05.4.1 (03.4.1-T1). Done with a scripted image stub; no real policy-violating prompt is sent (feature D14, 03 CR-10).
 
 **03.4.2 Moderation handling** — *As a creator I want a clear message when an image is blocked so that I can fix it.* Must · S
-- Given MPT reports an image moderation failure, When the backend polls, Then the backend applies the feature D7 table to the relay's `images.v1` report: moderated scenes get `moderation_events` rows (excerpt = keyword), the video is kept or the render fails as D7 says, credits are released on failure, and the UI highlights the scene with guidance (03 CR-10). No automatic retry with the same keywords ✅ (DECISIONS §5.2).
+- Given MPT reports an image moderation failure, When the backend polls, Then the backend applies the feature D7 table to the relay's `images.v1` report: moderated scenes get `moderation_events` rows (excerpt = keyword), the video is kept or the render fails as D7 says, the metering reservation is released on failure, and the UI highlights the scene with guidance (03 CR-10). No automatic retry with the same keywords ✅ (DECISIONS §5.2).
 
 ## 5. Technical design
 
@@ -94,7 +94,7 @@ MPT's template is a **global** config key ✅, but `video_terms` is per request 
 
 ### 5.3 Cost guard
 
-Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` ⚠️ rates priced on `gpt-image-2.5-flare`, superseded; from `price_versions.rates.image`. ✅ Resolved 2026-09-28 (02 CR-27): the DEC-9 relay bills `gpt-image-2` flat **184 VND/image** ≈ $0.0072 (fx 25,641 VND/USD, SBV 2026-09-25) — bound per video at the tier caps: Short 6 → ≈ $0.04, Standard 48 → ≈ $0.34, Long 90 → ≈ $0.65; actual cost per billed image = `image_count × 184 ÷ fx` under the per_image price (token rates stay as the measurement reference until 03.3.1-T2). Credits (plan 12, S) reserve the worst case.
+Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` ⚠️ rates priced on `gpt-image-2.5-flare`, superseded; from `price_versions.rates.image`. ✅ Resolved 2026-09-28 (02 CR-27): the DEC-9 relay bills `gpt-image-2` flat **184 VND/image** ≈ $0.0072 (fx 25,641 VND/USD, SBV 2026-09-25) — bound per video at the tier caps: Short 6 → ≈ $0.04, Standard 48 → ≈ $0.34, Long 90 → ≈ $0.65; actual cost per billed image = `image_count × 184 ÷ fx` under the per_image price (token rates stay as the measurement reference until 03.3.1-T2). `IBudgetGuard` checks this worst case before a render (metering only, DEC 10.14: no credits).
 
 ### 5.4 Error codes
 
@@ -130,7 +130,7 @@ Replaced by the 13 task files of `features/03-image-generation/` (README §8 map
 
 | Risk | Mitigation |
 |---|---|
-| Real cost per image 2–3× floor (`quality = auto` may resolve above `medium`, G6) | Measure before pricing (usage tap, 01 D6); margin buffer in 12; CR-3 decision |
+| Real cost per image 2–3× floor (`quality = auto` may resolve above `medium`, G6) | Measure before any cost assumption (usage tap, 01 D6); keep a cost buffer in the spend cap; CR-3 decision |
 | Images silently missing at Tier 1 (G7, G8) | Relay pacing + `images.v1` report; D7 fails a render with > 10 % missing scenes; tier increase (03 CR-10) |
 | Horror imagery often moderated | Atmospheric templates; linter; track block rate per template and retire bad ones |
 | MPT uses terms beyond image prompts | ✅ Not the case for list terms (I11–I14); spike 03.4.1-T1 re-checks at the pin (03 CR-10) |
@@ -144,7 +144,7 @@ Replaced by the 13 task files of `features/03-image-generation/` (README §8 map
 
 - ✅ MPT cannot pass `quality` or `moderation` (G6; answered by the 01 review, 2026-09-23).
 - ✅ **CR-3 (from 01) — closed 2026-09-24 (03 CR-10): option (b).** The image relay (03.4.3) injects `quality`; the value is chosen by 03.3.2 and recorded by 03.3.1-T2 (feature D9). Original options: Options: (a) accept `auto` and price from measured tokens; (b) inject `quality` at a forwarder between MPT and OpenAI (the M0 usage tap supports `TAP_IMAGE_QUALITY`, off by default; in production the `mpt-adapter`/node forwarder, 11.3.5); (c) upstream PR to MPT adding a quality key (no fork, DECISIONS §3). Decide after 03.3.2 (contact sheet incl. `auto`) and 03.3.1 (tokens per aspect); record in DECISIONS §3/§4.
-- ✅ **CR-4 (from 01) — closed 2026-09-24 (03 CR-10): relay metering.** The relay records `usage` per call per render task; the backend writes one `usage_records` row per billed image (feature D8). Original question: MPT exposes no `usage`, so FR-03-4 (`usage_records`, `operation = image`) needs a source. Options: a metering forwarder on the GPU node like the M0 tap (writes per-call usage keyed by task id, 11) or per-image estimates from measured `tokens_per_image` (§5.3) reconciled daily with the OpenAI Costs API (needs an Admin key). Owner plans: 03 (source), 11 (node component), 12 (`usage_records`).
+- ✅ **CR-4 (from 01) — closed 2026-09-24 (03 CR-10): relay metering.** The relay records `usage` per call per render task; the backend writes one `usage_records` row per billed image (feature D8). Original question: MPT exposes no `usage`, so FR-03-4 (`usage_records`, `operation = image`) needs a source. Options: a metering forwarder on the GPU node like the M0 tap (writes per-call usage keyed by task id, 11) or per-image estimates from measured `tokens_per_image` (§5.3) reconciled daily with the OpenAI Costs API (needs an Admin key). Owner tasks: 03 (source), 11 (node component); the `usage_records` rows are written by the backend (09).
 - **Contract changes (applied to 00):** `style_templates` catalog (name, template, preview_storage_key, topic_hint, active) in 00 §6, referenced by `series.style_template_id`.
 
 ## 11. Estimate summary

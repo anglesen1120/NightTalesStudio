@@ -278,7 +278,7 @@ New scope `web/src/assets/i18n/publishing/{vi,en}.json` (D10) for every key abov
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 10.7.2-T1 | YouTube publish form + consent (`pc.v1`) + quota wait | M (1.0) | 10.7.1-T1, 10.6.2-T1, 06.2.1-T1, 06.2.2-T1, 06.3.1-T1 | 10.7.4-T1, 06.5.1-T1, 13.5.1-T1 (10 CR-38) |
+| 10.7.2-T1 | YouTube publish form + consent (`pc.v1`) + quota wait | M (1.0) | 10.7.1-T1, 10.6.2-T1, 06.2.1-T1, 06.2.2-T1, 06.3.1-T1 | 10.7.4-T1, 06.5.1-T1 |
 | 10.7.2-T0 | UI design (publish form, consent, quota wait, publication status, veto-email pages) | M (1.0) | 10.1.3-T1, 06.2.1-T1 (soft) | 10.7.2-T1, 10.7.4-T1, 10.7.4-T2 |
 | 10.7.4-T1 | Publication status widgets, `PublicationUpdated`, cancel | S (0.5) | 10.7.2-T1, 06.2.5-T1, 06.2.6-T1 | 10.7.4-T2, 06.5.1-T1, 10.7.3-T2 (10 CR-37) |
 | 10.7.4-T2 | Veto e-mail pages: cancel-by-link (public) and approve-now (owner) | S (0.5) | 10.7.4-T1, 06.2.2-T2, 06.2.2-T4 | 10.10.2-T1 |

@@ -1,6 +1,6 @@
 # 07.1 — TikTok app registration, OAuth connect and connection security
 
-Ids **07.1.1-T1**, **07.1.2-T1**, **07.1.2-T2** · Phase **S · R2** · flag `tiktok_publish` · folder `plans/features/07-tiktok-posting/07.1-app-connect/`
+Ids **07.1.1-T1**, **07.1.2-T1**, **07.1.2-T2** · Phase **P · R2** · flag `tiktok_publish` · folder `plans/features/07-tiktok-posting/07.1-app-connect/`
 
 Contract: `../README.md` (§1 K/C + §1.3 U1–U13, §2 F, §3 D1–D19, §4 CRs, §5 sequencing, §7 gates, §8.1 canonical rows, §10 O1–O6 + TT1–TT12); 06 building blocks reused verbatim (C6, D15). Legend: ✅ docs/source · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
 
@@ -150,9 +150,9 @@ No test asserts wiring, mocked echoes or source text; `FakeTikTokServer` counter
 
 | Task | Size | Area | Depends on | Blocks | Phase / flag |
 |---|---|---|---|---|---|
-| 07.1.1-T1 | S (0.5) | Ops/BA | 13.1.1-T1 (soft), 13.1.2-T1 (soft) | 07.1.2-T1 | S · R2 |
-| 07.1.2-T1 | M (1.0) | BE + Security | 07.1.1-T1 (soft), 06.1.2-T1, 06.1.2-T2, 09.3.2-T1, 09.9.4-T1, 13.2.1-T1 | 07.1.2-T2, 07.2.1-T1, 10.7.3-T1 (07 CR-7, soft) | S · R2 · flag `tiktok_publish` |
-| 07.1.2-T2 | S (0.5) | BE + Security | 07.1.2-T1, 06.1.2-T2, 09.2.6-T3 | 07.2.1-T1 | S · R2 · flag `tiktok_publish` |
+| 07.1.1-T1 | S (0.5) | Ops/BA | 13.1.1-T1 (soft), 13.1.2-T1 (soft) | 07.1.2-T1 | P · R2 |
+| 07.1.2-T1 | M (1.0) | BE + Security | 07.1.1-T1 (soft), 06.1.2-T1, 06.1.2-T2, 09.3.2-T1, 09.9.4-T1, 13.2.1-T1 | 07.1.2-T2, 07.2.1-T1, 10.7.3-T1 (07 CR-7, soft) | P · R2 · flag `tiktok_publish` |
+| 07.1.2-T2 | S (0.5) | BE + Security | 07.1.2-T1, 06.1.2-T2, 09.2.6-T3 | 07.2.1-T1 | P · R2 · flag `tiktok_publish` |
 
 **2.0 d** raw, unchanged (README §9: 07.1.1-T1 loses the doc-reading work — now §1 — but gains the `PULL_FROM_URL` domain verification). Order `07.1.1-T1 (soft) → 07.1.2-T1 → 07.1.2-T2`; `07.2.1-T1` follows `07.1.2-T2` (README §5). 07.1.1-T1 can start against a contract-true fake; its acceptance run needs the real app, secret and DNS record.
 

@@ -17,10 +17,10 @@ Nine tasks, one file each (11 CR-15 added `11.4.1-T2`; T80 added `11.4.1-T3`):
 | 11.5.1 | `11.5.1-T2` | `node.yml`: proxy pytest, `render_check.py --self-test`, `check_fixtures.py`, shellcheck (`worker-node/{bin,host,net,storage}`, `infra/checks`, `tools/ops`), adapter self-contained publish, always-running `node-gate` required job, `nts-node-<version>.tar.zst` + `MANIFEST.json` (ref/git_sha/run_id) + `SHA256SUMS` release asset published only from `main` runs (D20 H6/H19) |
 | 11.5.2 | `11.5.2-T1` | Secret-manager paths `nts/<env>/<NAME>`, runtime injection into containers and `/etc/nts/*.env`, rotation runbook, secret scanning |
 | 11.5.3 | `11.5.3-T1` | OIDC environment-scoped roles, prod reviewer, no `pull_request_target`, no secrets on PRs, SHA-pinned actions, minimal `permissions`, branch protection |
-| 11.5.3 | `11.5.3-T2` (S) | cosign keyless signing + syft SBOM for images and the node bundle; deploy verifies |
+| 11.5.3 | `11.5.3-T3` (XS) | `.github/dependabot.yml` (`nuget`, `npm`, `uv`, `docker`, `github-actions`) + lock enforcement in every job (the signing/SBOM half was phase S, dropped by DEC 10.14; see the next row) |
 | 11.5.3 | `11.5.3-T3` (XS) | `.github/dependabot.yml` (`nuget`, `npm`, `uv`, `docker`, `github-actions`) + lock enforcement in every job |
 
-**Out of scope, owner in brackets.** Cloud resources, network, LB, PostgreSQL, registry, IaC module (`11.2.2-T1`…`T4`, `11.2.3-T1`); node host/units/`nts-node` (`11.3.1-T1`…`T3`); node network + TLS tests (`11.3.2-T1/T2`); registry/dispatch (`11.3.3-T1/T2`); adapter + contract (`11.3.5-T1`…`T4`); dev Compose and `tools/dev/storage-init.sh` (`11.1.1-T1/T2`, `11.1.2-T1/T2`); `backend.yml` + migrations job (`09.1.5-T1`, `09.2.2-T2`); `web.yml` (`10.1.5`); local gitleaks hooks (`.githooks/*`, `.gitleaksignore` — `01.1.2-T4`); the timed restore drill (`11.6.1-T1`); telemetry/alerts (`11.6.2-T1`); capacity/cost (`11.6.3-T1`). This folder consumes those artefacts and never forks their logic (README §3 D2).
+**Out of scope, owner in brackets.** Cloud resources, network, LB, PostgreSQL, registry, IaC module (`11.2.2-T1`…`T4`); node host/units/`nts-node` (`11.3.1-T1`…`T3`); node network + TLS tests (`11.3.2-T1/T2`); registry/dispatch (`11.3.3-T1/T2`); adapter + contract (`11.3.5-T1`…`T4`); dev Compose and `tools/dev/storage-init.sh` (`11.1.1-T1/T2`, `11.1.2-T1/T2`); `backend.yml` + migrations job (`09.1.5-T1`, `09.2.2-T2`); `web.yml` (`10.1.5`); local gitleaks hooks (`.githooks/*`, `.gitleaksignore` — `01.1.2-T4`); the timed restore drill (`11.6.1-T1`); telemetry/alerts (`11.6.2-T1`); capacity/cost (`11.6.3-T1`). This folder consumes those artefacts and never forks their logic (README §3 D2).
 
 **Why.** Everything the app, the operator and the node need to *exist in an environment* lives here: where bytes live, how code and bundles arrive, where secrets come from, and why a stolen CI token or poisoned dependency cannot reach production. Gate 11-M1 (`../README.md` §7) cannot close without it ("staging deploys automatically, prod by approval; migrations as a separate step").
 
@@ -42,7 +42,7 @@ Nine tasks, one file each (11 CR-15 added `11.4.1-T2`; T80 added `11.4.1-T3`):
 | ✅ Preview contract | `voice-previews/<slug>.v<n>.mp3` (`audio/mpeg`, `Cache-Control: public, max-age=31536000, immutable`, never overwritten, HEAD-verified before the catalog is updated — storage CLI "⚠️ not fixed yet"; `04-voice-proxy/README.md:234`, `04.2.3-T1:16,49-53`) and `style-previews/<name>.v1.webp` (`image/webp`, same header; `03-image-generation/README.md:75,114`, `03.1.2-T1:25`) both live in `nt-public-<env>` | `04`, `03` read ✅ |
 | ✅ 05 D15 S7 | Node music key read-only, prefix `music/` only, `music-evidence/` not readable from nodes; operator key `NTS_MUSIC_WRITE_KEY`/`_SECRET` (`nts.music.write`); credentials via `curl --config -` on stdin, never argv; negative `PUT` with the node key → 403 | `../05-video-assembly-subtitles/README.md:359-360`; `05.3.2-T2:33,61-62` |
 | ✅ CI reuse | `09.2.2-T2:19,50` — `dotnet ef migrations bundle --self-contained -r linux-x64 -o artifacts/nts-migrate`, run once with `--connection`; `09.1.5-T1:34-37,64,84` — `global-json-file`, `dotnet restore --locked-mode`, `format --verify-no-changes`, `permissions: contents: read`, 40-char SHA pins; `01.1.2-T4:15,85-88` — gitleaks installed for the commit hook (licence expected MIT, ⚠️ plan 01 U1), `.gitleaksignore` = fingerprint + reason, TL-reviewed | those files ✅ |
-| ✅ F22/F23 | `node.yml` is new work; 11.5.3-T2 keeps signing/SBOM (S), 11.5.3-T3 is the P Dependabot/lock part; weight pins verified in `11.3.1-T1` | README §2 F22/F23 |
+| ✅ F22/F23 | `node.yml` is new work; signing/SBOM were phase S and are dropped (DEC 10.14), 11.5.3-T3 is the P Dependabot/lock part; weight pins verified in `11.3.1-T1` | README §2 F22/F23 |
 
 ## 3. Domain and data
 
@@ -75,7 +75,7 @@ No entity, table or migration is added ([DECISION]); the data is policies, crede
 
 **3.4 Runtime-injected secrets.** The D15 bootstrap set plus the D11 node set above; integration secrets are env break-glass values in P because 09.10 is S (✅ P4). `DP_KEK` has one owner-held offline copy (D17).
 
-**3.5 Build artefacts.** Images `api`/`worker`/`fetcher`/`web`/`mock-mpt` (`sha-<git sha>` + digest, `11.5.1-T1`); `artifacts/nts-migrate` (`09.2.2-T2`); `nts-node-<version>.tar.zst` + `MANIFEST.json` + `SHA256SUMS` (`11.5.1-T2`); SBOM per image and per bundle (`11.5.3-T2`, S).
+**3.5 Build artefacts.** Images `api`/`worker`/`fetcher`/`web`/`mock-mpt` (`sha-<git sha>` + digest, `11.5.1-T1`); `artifacts/nts-migrate` (`09.2.2-T2`); `nts-node-<version>.tar.zst` + `MANIFEST.json` + `SHA256SUMS` (`11.5.1-T2`); SBOM per image and per bundle: not built (dropped with phase S, DEC 10.14).
 
 **3.6 Environments.** `dev` = Compose (D14), not a deploy target; `staging` = cloud, deploy on every `main` push, **no GPU node** by default (D1) → renders against `mock-mpt`; `prod` = cloud, one GPU node, only through `environment: production`. OpenAI projects per env (P8): `nts-text-<env>`, `nts-images-<env>`.
 
@@ -144,11 +144,10 @@ No product UI. Operator surfaces only: GitHub environments `staging`/`production
 | 11.4.1-T1 | Object storage buckets, prefixes, credentials, CORS and the backup bucket | Ops | S (0.5) | 11.4.1-T2 | 11.3.2-T2, 05.3.2-T2, 04.2.3-T1, 03.1.2-T1, 11.4.1-T3, 11.6.1-T1 |
 | 11.4.1-T2 | SeaweedFS storage hosts: install, TLS, identities, lifecycle runner, metrics | Ops | S (0.5) | 11.2.2-T1, 11.2.2-T4, 11.5.2-T1 | 11.4.1-T1, 11.4.1-T3, 11.6.2-T1 |
 | 11.4.1-T3 | Media backup copy: delete propagation, `filer.backup`, lifecycle proof, restore test | Ops | S (0.5) | 11.4.1-T1, 11.4.1-T2 | 11.6.1-T1, 11.6.2-T1 |
-| 11.5.1-T1 | Application CI: `e2e.yml` and `deploy.yml` | Ops | M (1.0) | 09.1.5-T1, 11.1.1-T1, 11.1.1-T2, 11.1.2-T2, 11.2.2-T1, 11.2.2-T4 | 11.5.3-T1, 11.5.3-T2, 11.5.3-T3, 10.10.2-T1 (10 CR-15), 08.2.1-T2 |
-| 11.5.1-T2 | Node CI: `node.yml`, adapter publish and the node bundle | Ops | S (0.5) | 09.1.5-T1, 11.3.5-T1 | 11.3.1-T3, 11.5.3-T2, 11.5.3-T3 |
-| 11.5.2-T1 | Secret manager paths, runtime injection and rotation runbook | Ops | S (0.5) | 11.2.1-T1, 11.2.2-T1 | 11.2.2-T4, 11.4.1-T2 (11 CR-15), 11.6.4-T1 (09 W3 CR-6) |
-| 11.5.3-T1 | Workflow hardening: OIDC, permissions, SHA pinning, branch protection | Ops | S (0.5) | 11.5.1-T1 | 11.2.3-T1 |
-| 11.5.3-T2 | Signing and SBOM (cosign keyless + syft) | Ops | S (0.5) | 11.5.1-T1, 11.5.1-T2, 11.3.1-T3 | — |
+| 11.5.1-T1 | Application CI: `e2e.yml` and `deploy.yml` | Ops | M (1.0) | 09.1.5-T1, 11.1.1-T1, 11.1.1-T2, 11.1.2-T2, 11.2.2-T1, 11.2.2-T4 | 11.5.3-T1, 11.5.3-T3, 10.10.2-T1 (10 CR-15) |
+| 11.5.1-T2 | Node CI: `node.yml`, adapter publish and the node bundle | Ops | S (0.5) | 09.1.5-T1, 11.3.5-T1 | 11.3.1-T3, 11.5.3-T3 |
+| 11.5.2-T1 | Secret manager paths, runtime injection and rotation runbook | Ops | S (0.5) | 11.2.1-T1, 11.2.2-T1 | 11.2.2-T4, 11.4.1-T2 (11 CR-15) |
+| 11.5.3-T1 | Workflow hardening: OIDC, permissions, SHA pinning, branch protection | Ops | S (0.5) | 11.5.1-T1 | — |
 | 11.5.3-T3 | Dependabot and lock enforcement | Ops | XS (0.25) | 11.5.1-T1, 11.5.1-T2, 11.3.1-T1; 01.3.3-T1 soft (lock list) | — |
 
 Cells copied from `../README.md` §8.1 (canonical). Sum **4.75 d raw**, P 4.25 / S 0.5 → buffered **5.7 d** at the 1.2 factor; matches §9 rows "11.4 Storage 1.5" (T1 0.5 + T2 0.5 + T3 0.5, T80) and "11.5 CI/CD + secrets 3.25 (P 2.75, S 0.5)" (corrected by T84). Re-estimate +1.0 d P (11.4.1-T2 + 11.4.1-T3, owner O7, 11 CR-15).
@@ -165,7 +164,7 @@ Cells copied from `../README.md` §8.1 (canonical). Sum **4.75 d raw**, P 4.25 /
 
 ## 11. Rollout
 
-1. **Order** (from §8.1 and `../README.md` §5): `11.5.2-T1` after `11.2.1-T1`/`11.2.2-T1`, then `11.4.1-T2` (also needs `11.2.2-T4`) → `11.4.1-T1` → `11.4.1-T3`; `11.5.1-T1` after `11.2.2-T4` and the dev tasks; `11.5.1-T2` after `11.3.5-T1`; `11.5.3-T1` after `11.5.1-T1`; `11.5.3-T3` after `11.5.1-T2`; `11.5.3-T2` (S) last, at M2, once node deploys exist.
-2. **Gates.** `11.4.1-T1` closes before `11.3.2-T2` (node music key) and `05.3.2-T2` can be exercised against a real bucket; `11.4.1-T3` closes before `11.6.1-T1` (backup copy live) and `11.6.2-T1` (lag alert); `11.5.1-T2` before `11.3.1-T3` can install a release; `11.5.1-T1` before gate 11-M1; `11.5.3-T1` before `11.2.3-T1` (S).
+1. **Order** (from §8.1 and `../README.md` §5): `11.5.2-T1` after `11.2.1-T1`/`11.2.2-T1`, then `11.4.1-T2` (also needs `11.2.2-T4`) → `11.4.1-T1` → `11.4.1-T3`; `11.5.1-T1` after `11.2.2-T4` and the dev tasks; `11.5.1-T2` after `11.3.5-T1`; `11.5.3-T1` after `11.5.1-T1`; `11.5.3-T3` after `11.5.1-T2`.
+2. **Gates.** `11.4.1-T1` closes before `11.3.2-T2` (node music key) and `05.3.2-T2` can be exercised against a real bucket; `11.4.1-T3` closes before `11.6.1-T1` (backup copy live) and `11.6.2-T1` (lag alert); `11.5.1-T2` before `11.3.1-T3` can install a release; `11.5.1-T1` before gate 11-M1; `11.5.3-T1` before the deploy path closes.
 3. **Flags and environments.** No feature flag: buckets exist per environment and the workflows are live from the first `main` commit. `e2e.yml`/`node.yml` are PR-safe (no secrets); prod is gated by the environment reviewer; without GitHub Pro prod deploy is `workflow_dispatch`-only from `main` (F17/O4).
 4. **Rollback.** App: re-dispatch `deploy.yml` pinned to the previous `sha-<git sha>` digest (images immutable, no rebuild). Migration: expand-only (09 NFR-09-6), so a revert is a new forward migration. Node: `nts-node rollback` + `gpu-smoke.sh` (D12). Secrets: keep the previous value until the drill passes, then delete; `ADAPTER_API_KEY_NEXT` avoids a drain (F24). Buckets: policies re-applied from IaC; a rollback never deletes objects (lifecycle is the only deletion path).

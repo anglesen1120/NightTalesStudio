@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume bullet (2026-10-21, replaced by the DEC 10.14 personal-only bullet)
+
+Replaced text (verbatim), the stale `Current` bullet dated 2026-10-05:
+
+- **Current (2026-10-05).** Wave merged today, all with no CI run (GitHub Actions billing, CI-01; owner 2026-10-05: a billing-refused CI run counts as pass when the local gates are green): 10.2.6-T1 shell #134 (`945405c`), 10.3.3-T1 login/forgot/reset #135 (`64141f1`), 02.5.2-T3 fetcher host #136 (`d35284e`), 10.3.1-T1 legal pages #139 (`29e920c`); docs close-outs #137, #138, #140, #141. Sessions 13, 14 and 15 claims released.
+
 ### Superseded Resume bullet (2026-10-21, replaced by the Session 74 06.2.2-T2 PR)
 
 Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
@@ -1530,3 +1536,19 @@ Replaced session-log row (PR open state), verbatim:
 Replaced text (verbatim), the oldest delivered Resume bullet (moved so the block stays within its 15-bullet cap):
 
 - **Web (Session 65 closed, merged #251 → `develop` `596da141`):** **10.6.1-T2** "Make video" action (Idempotency-Key, `If-Match`, keyword gate) + cancel render on `/episodes/:id` merged as #251 (`596da141`, tip `8b4cd110`, Session 65, from `develop` `d5fd2a46`; web lane, FE only; tier T2); `web/openapi.json` + `web/tools/web/openapi.lock.json` re-pinned from `develop` `d5fd2a46` (coordinator-authorised, limited Api-project build). Local web gate exit 0 on the tip `8b4cd110` (all 10 `web.yml` steps), e2e stubbed 38/38, CI refused (billing, CI-01, owner treats as pass). Open items S65-1..S65-7 stay `[OPEN]` (§Open findings).
+
+## Dropped by DEC 10.14 (2026-10-21)
+
+Rows moved out of STATUS.md because their subject was dropped with the public SaaS phase (`DECISIONS.md` §10.14, owner 2026-10-21). They are history now, not live work.
+
+Removed Open-tasks row (the build-time public site origin only existed for the 10.3.1-T2 sitemap of the public landing pages, both dropped), verbatim:
+
+| Audit hand-over: site-origin | **[OPEN]** owner: 10.3.1-T2 | Owner/TL must decide build-time public site origin before 10.3.1-T2 sitemap; current canonical/hreflang are site-relative. Do not silently choose an origin. (from 10.3.1-T1 #139) |
+
+Removed Open-tasks row (13.1.1-T2 / 13.1.2-T2 lawyer review of the public-user policies; no user other than the operator exists), verbatim:
+
+| 13.1.1-T2 / 13.1.2-T2 Legal review rows | todo (O1) | The ⚠️ rows (children/transfers/retention; credit expiry and refunds; OpenAI output terms; governing law; liability) close with a lawyer; OI-1 (operator legal name + contact) deferred to phase 2 (owner 2026-09-30), before any user other than the operator |
+
+Removed Open-finding row (S71-4; per-series feature-flag rollout rules lived in 06.5.2-T1, dropped with the SaaS phase — the personal studio keeps the global flag plus the 02.8.3-T2 series authorization), verbatim:
+
+- **S71-4** (02.8.3-T1, S71, 2026-10-20) — `[OPEN]` owner: 06.5.2-T1 (06 CR-16). No per-series rollout: `IFeatureFlags` has only `IsEnabledAsync` (no `IsEnabledForAsync`/`FeatureFlagSubject`), so the tick checks `youtube_publish` once (`AutopilotPlanJob.cs:47`) and the registration is all-or-nothing (task file line 98 asks for the per-series check). Hand-over: 06.5.2-T1 Notes.

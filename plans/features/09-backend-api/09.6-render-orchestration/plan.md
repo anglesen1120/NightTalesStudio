@@ -125,9 +125,9 @@ Harness per D13: `PostgresFixture` (one real PostgreSQL 17 on `NTS_TEST_PG`; 09 
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.6.1-T1 | `render_jobs` + `RenderJob` + `RenderEpisodeCommand` + `CreditOperation.Render` + `IRecentMusicQuery` | BE | L (2.0) | 09.5.1-T1, 05.1.2-T1, 03.2.1-T1, 03.2.2-T1 (03 CR-17), 05.3.2-T3, 02.3.2-T1, 02.2.4-T1 | 09.6.3-T1, 09.6.4-T1, 03.2.2-T2, 09.5.3-T1 soft, 10.6.1-T2 (10 CR-15), 09.9.1-T1 soft (09 W3 CR-17), 12.2.4-T1 |
+| 09.6.1-T1 | `render_jobs` + `RenderJob` + `RenderEpisodeCommand` + `CreditOperation.Render` + `IRecentMusicQuery` | BE | L (2.0) | 09.5.1-T1, 05.1.2-T1, 03.2.1-T1, 03.2.2-T1 (03 CR-17), 05.3.2-T3, 02.3.2-T1, 02.2.4-T1 | 09.6.3-T1, 09.6.4-T1, 03.2.2-T2, 09.5.3-T1 soft, 10.6.1-T2 (10 CR-15) |
 | 09.6.2-T1 | `IRenderClient`/`MptRenderClient` + `IRenderDownloadClient` + resilience + adapter error mapping | BE | M (1.0) | 05.4.1-T2, 05.1.2-T1, 11.1.2-T1, 11.3.3-T1, 11.3.5-T1, 03.2.1-T1 soft (plan types in the submit body) | 09.6.3-T1, 09.6.3-T2 |
-| 09.6.3-T1 | `SubmitRenderJob` + `RenderPollingService` + `PollRenderJob` + `RenderRetryPolicy` | BE | L (2.0) | 09.6.1-T1, 09.6.2-T1, 11.3.3-T2, 09.8.1-T1 | 09.6.3-T2, 09.6.4-T1, 03.4.2-T1, 11.6.3-T1, 10.6.1-T1 (10 CR-15), 12.8.3-T2 |
+| 09.6.3-T1 | `SubmitRenderJob` + `RenderPollingService` + `PollRenderJob` + `RenderRetryPolicy` | BE | L (2.0) | 09.6.1-T1, 09.6.2-T1, 11.3.3-T2, 09.8.1-T1 | 09.6.3-T2, 09.6.4-T1, 03.4.2-T1, 11.6.3-T1, 10.6.1-T1 (10 CR-15) |
 | 09.6.3-T2 | `IngestRenderOutputJob` + blobs/assets + `quality_report` + `RenderSucceeded` | BE | M (1.0) | 09.6.3-T1, 09.6.2-T1, 05.5.1-T2, 09.7.2-T1 | 09.7.1-T1, 03.4.2-T1 |
 | 09.6.4-T1 | `CancelRenderCommand` + `DELETE /render-jobs/{id}` | BE | S (0.5) | 09.6.1-T1, 09.6.3-T1 | 10.6.1-T2 (10 CR-15) |
 

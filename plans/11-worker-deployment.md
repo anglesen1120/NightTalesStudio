@@ -3,7 +3,7 @@
 > Contracts: `00-overview.md` §5 (architecture, local dev), §11 (NFRs). Worker contract: `05` §5.3. Proxy: `04`. Backend: `09`. Facts: `../DECISIONS.md` §10.4 (capacity), §10.8 (security).
 > Detailed plan: `features/11-worker-deployment/` (README D1–D21, 35 tasks); ready with conditions 2026-09-24 (11 CR-1); object storage is self-hosted SeaweedFS in every environment (README D21, owner O7 2026-09-27) (11 CR-15).
 > Level: **high-level plan — not the final plan.** It fixes scope, contracts, key decisions, risks and rough estimates only. Every feature in it will still get (1) a review of the relevant sections and (2) its own **detailed feature plan** in `plans/features/`, reviewed again before implementation (process and template: `00-overview.md` §10.1). Details and estimates here may change in that step.
-> Delivery phase (personal-first, `00-overview.md` §4.1): P except 11.2.3 separate prod accounts and 11.5.3-T2 signing/SBOM (S). Where this plan says M1 for an S item, read M2.
+> Delivery phase (personal-only, `00-overview.md` §4.1, DEC 10.14): all P; the former S extras 11.2.3-T1 (separate prod account), 11.5.3-T2 (signing/SBOM) and 11.6.4-T1 (`nts-admin` job image) are dropped.
 
 ## 1. Purpose and scope
 
@@ -59,8 +59,7 @@
 - Given more than one Api instance, Then the load balancer either routes SignalR over WebSockets only (client `skipNegotiation`, transport WebSockets) or uses sticky sessions for `/hubs/*` [DECISION]; Worker notifications reach every Api instance via PostgreSQL LISTEN/NOTIFY (09).
 - Given the `fetcher` container (02.5.2, 02 §5.7), Then it runs the `NightTales.Fetcher` pull loop (no Hangfire) in its own subnet with internet-only egress: its only route into the app network is the Api internal listener `:8081` (lease → heartbeat → result, bearer `FETCHER_API_TOKEN` from the secret manager); no route to PostgreSQL, storage or the render network, no cloud metadata endpoint, no DB/storage/OpenAI credentials, no listening port; an egress test proves app (except `:8081`), PostgreSQL, storage, render and metadata addresses are unreachable from it (02 CR-1, 02 README D10, T43). If 02.7.1 picks option B, the finder sidecar runs in the same subnet under the same rules.
 
-**11.2.3 Production environment** — *As the operator I want production isolated from staging so that tests never touch real users.* Must · M
-- Given the same scripts with prod variables, Then prod has separate accounts/keys, separate Google/TikTok OAuth projects (06/07), separate OpenAI project for text with a hard budget, and a second separate OpenAI project for node image generation (11.3.2).
+**11.2.3 Production environment** — *As the operator I want production isolated from staging so that tests never touch real data.* — the P part is 11.2.2-T4 (same module, prod variables, separate Google/TikTok OAuth projects and a separate OpenAI project for text with a hard budget, plus the node image project, 11.3.2). The former S task 11.2.3-T1 (prod in its own cloud account) is dropped (DEC 10.14).
 
 ### Epic 11.3 — GPU render node
 
@@ -108,11 +107,11 @@
 - Migrations: an explicit job runs EF migration bundle before rollout; expand/contract rule (09 NFR-09-6).
 
 **11.5.2 Secrets** — *As the platform I want secrets outside code so that leaks are unlikely.* Must · S
-- Given the runtime secret manager (provider-native; never CI secrets), Then the **bootstrap** secrets (DB credentials, JWT signing key, Data Protection key-encryption key, object-storage credentials, public URLs/OAuth redirect URIs, per-integration host allow-lists, private CIDR) are injected at runtime; **integration** secrets (OpenAI text key, OAuth client secrets, adapter/VieNeu keys, payment, SMTP) are entered by the owner in the admin settings (09.10) and may also be set here as env break-glass values that win over the DB; the node image key is node-managed (11.3.2); rotation procedure documented (incl. adapter one-node-at-a-time rotation, 09 §5.6); the key-encryption key is backed up separately from DB backups; secret scanning on every push.
+- Given the runtime secret manager (provider-native; never CI secrets), Then the **bootstrap** secrets (DB credentials, JWT signing key, Data Protection key-encryption key, object-storage credentials, public URLs/OAuth redirect URIs, per-integration host allow-lists, private CIDR) are injected at runtime; **integration** secrets (OpenAI text key, OAuth client secrets, adapter/VieNeu keys, SMTP) are injected as environment values from the runtime secret manager (there is no admin settings surface, DEC 10.14); the node image key is node-managed (11.3.2); rotation procedure documented (incl. adapter one-node-at-a-time rotation, 09 §5.6); the key-encryption key is backed up separately from DB backups; secret scanning on every push.
 
 **11.5.3 Supply chain** — *As the platform I want builds and deploys that cannot be hijacked so that a stolen CI token or a poisoned dependency does not reach production.* Must · M
 - Given CI, Then deploys authenticate via OIDC to environment-scoped cloud roles (no long-lived deploy keys); the prod environment requires reviewers; `pull_request` workflows receive no secrets and `pull_request_target` is never combined with a checkout of PR code; every third-party action is pinned by commit SHA.
-- Given dependencies, Then Renovate or Dependabot opens update PRs; images are signed (cosign ⚠️ license check) and an SBOM is published per image; deploys verify the signature.
+- Given dependencies, Then Renovate or Dependabot opens update PRs and deploys pull images only from the registry by immutable digest (image signing/SBOM is dropped with 11.5.3-T2, DEC 10.14).
 - Given the node bundle, Then Python dependencies install from `uv.lock` with hashes, and model weights (VieNeu, whisper) are pinned by revision + sha256 and verified at provisioning.
 
 ### Epic 11.6 — Operations foundation
@@ -124,8 +123,8 @@
 **11.6.2 Monitoring and alerts** — *As the operator I want to know about problems before users do.* Must · M
 - Given OpenTelemetry export to a backend (⚠️ choose: self-hosted Grafana stack vs provider-native), Then dashboards: API latency/errors, job queue depth, outbox lag, render success rate, GPU utilisation, disk, OpenAI cost/day, YouTube quota; alerts on thresholds defined in 08.
 
-**11.6.3 Capacity and cost measurement** — *As the owner I want videos/hour and cost/video on real hardware so that pricing (12) and scaling are correct.* Must · M
-- Given the first GPU node, When 20 renders (mixed vi/en, 5–15 min, both aspects) run with concurrency 1, 2, 4, Then record wall time per stage, GPU/CPU/RAM peaks, failures, and compute cost/video = node cost per hour ÷ videos per hour; results feed 12 and DECISIONS §10.4.
+**11.6.3 Capacity and cost measurement** — *As the owner I want videos/hour and cost/video on real hardware so that cost metering (owner) and scaling are correct.* Must · M
+- Given the first GPU node, When 20 renders (mixed vi/en, 5–15 min, both aspects) run with concurrency 1, 2, 4, Then record wall time per stage, GPU/CPU/RAM peaks, failures, and compute cost/video = node cost per hour ÷ videos per hour; results feed cost metering (owner) and DECISIONS §10.4.
 
 ## 5. Technical design
 
@@ -193,7 +192,7 @@ Routes: the mock serves the whole `render-node.v1` surface — submit, status, d
 
 ### 5.4 New table (contract change)
 
-`worker_nodes(id, name, base_url, api_key_ciphertext, api_key_hint, capacity, state, last_heartbeat_at, gpu_model, created_at)`; `base_url` is the node's `mpt-adapter`; `last_heartbeat_at` = last successful Worker health pull (every 30 s); `active_tasks` is derived from `render_jobs` in `submitted`/`running` per node, not stored; the adapter key is managed in the admin settings (09.10); the node image key is node-managed and never stored here (11.3.2).
+`worker_nodes(id, name, base_url, api_key_ciphertext, api_key_hint, capacity, state, last_heartbeat_at, gpu_model, created_at)`; `base_url` is the node's `mpt-adapter`; `last_heartbeat_at` = last successful Worker health pull (every 30 s); `active_tasks` is derived from `render_jobs` in `submitted`/`running` per node, not stored; the adapter key is provided by the runtime secret manager and stored encrypted per node; the node image key is node-managed and never stored here (11.3.2).
 
 ### 5.5 Release flow
 
@@ -218,7 +217,6 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 | 11.2.2-T2 | `fetcher` subnet + egress test (02 CR-1) | Ops | S | 11.2.2-T1, 02.5.2-T3 |
 | 11.2.2-T3 | Load balancer: WebSockets-only `/hubs/*` | Ops | XS | 11.2.2-T1 |
 | 11.2.2-T4 | `prod` environment in P from the same module | Ops | S | 11.2.2-T1, 11.5.2-T1 |
-| 11.2.3-T1 | (S) prod in its own account/projects | Ops | M | 11.2.2-T4, 11.5.3-T1 |
 | 11.3.1-T1 | GPU host base: driver, CUDA libs, ffmpeg, users, layout, venvs, weights, `gpu-smoke.sh` | Ops | M | 11.2.1-T1, 01.3.3-T1, 01.3.3-T2 |
 | 11.3.1-T2 | Node services: systemd units, env files, config profile + asset checks, music sync | Ops | M | 11.3.1-T1, 11.3.5-T3, 11.3.5-T4, 04.1.5-T1, 05.1.1-T2, 05.2.2-T1, 05.3.1-T1, 05.3.2-T2 |
 | 11.3.1-T3 | Node bundle + `nts-node` deploy/rollback/drain | Ops | M | 11.3.1-T2, 11.5.1-T2, 11.3.3-T1 |
@@ -238,12 +236,10 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 | 11.5.1-T2 | Node CI + bundle build | Ops | S | 09.1.5-T1, 11.3.5-T1 |
 | 11.5.2-T1 | Runtime secret manager + rotation doc + scanning | Ops | S | 11.2.1-T1, 11.2.2-T1 |
 | 11.5.3-T1 | OIDC deploy roles, prod reviewers, secret-free PR workflows, SHA-pinned actions | Ops | S | 11.5.1-T1 |
-| 11.5.3-T2 | (S) cosign signing + SBOM | Ops | S | 11.5.1-T1, 11.5.1-T2, 11.3.1-T3 |
 | 11.5.3-T3 | Dependabot + lock-hash enforcement | Ops | XS | 11.5.1-T1, 11.5.1-T2, 11.3.1-T1; 01.3.3-T1 soft |
 | 11.6.1-T1 | Backups (30-day retention) + restore drill incl. re-applying deletions | Ops | S | 11.2.2-T4, 11.4.1-T1, 11.4.1-T3 (11 CR-15); 13.3.1-T1 soft |
 | 11.6.2-T1 | Telemetry backend, dashboards, alerts | Ops | M | 11.2.1-T1, 11.3.3-T2, 09.9.3, 11.4.1-T2, 11.4.1-T3 (11 CR-15) |
 | 11.6.3-T1 | 20-render capacity test + cost/video | Ops/BA | M | 11.3.1-T3, 11.3.2-T2, 09.6.3-T1 |
-| 11.6.4-T1 | (S) `nts-admin` job image for the 09.10.7-T1 break-glass verb | Ops | S | 11.5.2-T1 (09 W3 CR-6) |
 
 ## 7. Test plan
 
@@ -299,7 +295,7 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
     - The firewall test proves port 8091 is loopback-only (CR-6).
   - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.3.3 registry and dispatch:
     - Stop dispatching to a node whose health has `image_relay.ok = false`.
-    - With N active nodes, set each node's `ImageRelay:ImagesPerMinute = floor(account limit ÷ N)` (03 DR-5). A shared limiter is phase S.
+    - With N active nodes, set each node's `ImageRelay:ImagesPerMinute = floor(account limit ÷ N)` (03 DR-5); a shared limiter is not planned (single owner, DEC 10.14).
   - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.4.1 storage: the bucket `nt-public-<env>` holds `style-previews/<name>.v1.webp`, public-read and immutable cache (03.1.2-T1 uploads); it is served by the self-hosted SeaweedFS gateway on `storage-<env>` and published through `https://media.<domain>` (`GET`/`HEAD` only) (11 CR-15, D21, T75).
   - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.6 operations: scrape the relay metrics `image_calls_total{status,error_code}`, `image_relay_wait_seconds` and `image_relay_rejections_total{code}`, and alert on `invalid_api_key` and on quota codes.
 
@@ -310,9 +306,9 @@ Re-estimated in `features/11-worker-deployment/` §9; accepted 2026-09-24 (owner
 | Epic | Days |
 |---|---|
 | 11.1 Local dev | 2.0 |
-| 11.2 Cloud environments | 3.75 (P 2.75, S 1.0) |
+| 11.2 Cloud environments | 2.75 (11.2.3-T1 dropped, DEC 10.14) |
 | 11.3 GPU render node + `mpt-adapter` | 11.0 |
-| 11.4 Storage | 1.5 (P 1.5) (11 CR-15/T80: 11.4.1-T1 0.5 + 11.4.1-T2 0.5 + 11.4.1-T3 0.5; was 0.5) |
-| 11.5 CI/CD + secrets | 3.25 (P 2.75, S 0.5) (T84) |
-| 11.6 Ops foundation | 3.0 (P 2.5, S 0.5: 11.6.4-T1, 09 W3 CR-6) (11 CR-15, T84) |
-| **Total** | **24.5** (P 22.5, S 2.0) → with 20 % buffer **29.4** person-days (was 17.75 / 21.3; 11 CR-15: +1.0 d P for 11.4.1-T2/T3, matching `00-overview.md` §4.1/§13) |
+| 11.4 Storage | 1.5 (11 CR-15/T80: 11.4.1-T1 0.5 + 11.4.1-T2 0.5 + 11.4.1-T3 0.5; was 0.5) |
+| 11.5 CI/CD + secrets | 2.75 (T84; 11.5.3-T2 dropped, DEC 10.14) |
+| 11.6 Ops foundation | 2.5 (11 CR-15, T84; 11.6.4-T1 dropped, DEC 10.14) |
+| **Total** | **22.5** → with 20 % buffer **27.0** person-days (all P; was 17.75 / 21.3, and 24.5 / 29.4 with the dropped S extras; 11 CR-15: +1.0 d for 11.4.1-T2/T3, matching `00-overview.md` §4.1/§13) |

@@ -18,7 +18,7 @@
 
 **Out of scope.** Version history and diff (10.5.4-T1), sources/fact sheet (10.5.5-T1), approve/reopen and attestation (10.5.6-T1), bible panel (10.5.7-T1), source finder (10.5.8-T1), render progress and video review (10.6.x), publishing (10.7.x), credits/billing/checkout (10.8.x — S), admin (10.9.x). No server-side code, no migration, no new API route: this folder consumes the frozen contracts of 09 and 02.
 
-**Personal phase (D14/02 D1/F03).** No credit amount, quote, balance or buy button appears in P. The "Write story" action renders the plain label; the reserved cost-line slots (`ConfirmDialog` `cost-line`, shell `header-end`) stay empty and are filled by S tasks 10.8.1-T1/10.8.3-T1.
+**Personal phase (D14/02 D1/F03).** No credit amount, quote, balance or buy button appears in P. The "Write story" action renders the plain label; the reserved cost-line slots (`ConfirmDialog` `cost-line`, shell `header-end`) stay empty: the S tasks that would have filled them are deleted by DEC 10.14.
 
 ## 2. Confirmed facts
 
@@ -299,7 +299,7 @@ Vitest through `@angular/build:unit-test` + jsdom, TestBed zoneless; **hand-writ
 | 10.5.10-T1 | Inline annotations + quality hints, 412 conflict dialog | L (2.0) | 10.5.3-T1, 02.3.4-T1 |
 | 10.5.3-T2 | Self-review issues, "corrected once" badge, similarity highlights | XS (0.25) | 10.5.10-T1, 02.6.1-T1, 02.6.2-T1 (soft), 02.5.6-T1 |
 
-Total **8.25 d raw** (1.0 `10.5.1-T0` design, D19, + S 1.25, L 6.0, XS 0.25). `Depends on` cells above equal `../README.md` §8.1 verbatim; per **WR5** the canonical table now also records that **10.5.3-T1 blocks 10.4.3-T2** (the autopilot run-log deep link consumes `shared/util/segment-address.ts`) and, per **10 CR-34**, **10.5.3-T1 blocks 10.8.5-T1** (the episode History tab mount point), both of which appear in 10.5.3-T1's own header row. This note is the §10 sync point — no cell here changes.
+Total **8.25 d raw** (1.0 `10.5.1-T0` design, D19, + S 1.25, L 6.0, XS 0.25). `Depends on` cells above equal `../README.md` §8.1 verbatim; per **WR5** the canonical table now also records that **10.5.3-T1 blocks 10.4.3-T2** (the autopilot run-log deep link consumes `shared/util/segment-address.ts`) and that the **10 CR-34** back-edge (`10.5.3-T1` examined as blocking `10.8.5-T1`) is void because `10.8.5-T1` is deleted by DEC 10.14. This note is the §10 sync point — no cell here changes.
 
 Open items (`[OPEN]`, recorded, not resolved here — no file outside this folder is edited):
 

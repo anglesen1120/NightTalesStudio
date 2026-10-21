@@ -251,7 +251,7 @@ Harness: D13 (`ApiFactory`, `TestAuthHandler`, `PostgresFixture`, `WorkerHost`, 
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.8.1-T1 | Hub `/hubs/episodes`, `IRealtimeNotifier` (`pg_notify`) and the LISTEN service | BE | M (1.0) | 09.2.4-T1, 09.3.2-T1 | 09.8.1-T2, 09.6.3-T1, 06.2.5-T1 (06 CR-8), 09.3.2-T2 soft (09 W3 CR-17), 07.3.2-T1 |
+| 09.8.1-T1 | Hub `/hubs/episodes`, `IRealtimeNotifier` (`pg_notify`) and the LISTEN service | BE | M (1.0) | 09.2.4-T1, 09.3.2-T1 | 09.8.1-T2, 09.6.3-T1, 06.2.5-T1 (06 CR-8), 07.3.2-T1 |
 | 09.8.1-T2 | `hub_tickets`, `POST /hubs/ticket`, single-use claim and cleanup job | BE | S (0.5) | 09.8.1-T1 | 09.9.3-T2, 10.2.4-T1 (10 CR-8), 10.2.4-T0 |
 
 Both rows are **copied verbatim from README B8.1** ✅. Folder total **1.5 d raw**, matching B9 ("09.8.1 | 1.5 | 1.5 | —") — no re-estimate.

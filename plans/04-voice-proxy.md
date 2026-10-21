@@ -68,7 +68,7 @@
 **04.2.2 Catalog in backend** — *As a creator I want to pick a voice by name and hear it so that I choose well.* Must · S
 - Given the catalog (config/seed), When `GET /api/v1/voices?language=vi` is called, Then it returns `{ id, displayName, language, gender, tags, previewUrl }`; `id` is sent to MPT as `voice_name = "kokoro:<id>"`.
 
-**04.2.3 Preview samples** — *As a creator I want 10-second previews so that I do not spend credits to test voices.* Should · S
+**04.2.3 Preview samples** — *As a creator I want 10-second previews so that I do not spend generation money to test voices.* Should · S
 - Given the catalog, When the operator runs the preview script once, Then each voice has a static MP3 in object storage; no per-user generation.
 
 ### Epic 04.3 — Fallback (documented only)

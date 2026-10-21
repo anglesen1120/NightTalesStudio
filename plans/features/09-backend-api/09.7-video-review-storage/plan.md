@@ -264,7 +264,7 @@ All are deterministic: `FakeClock` drives `now`; no `Thread.Sleep`; the sweep an
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 09.7.1-T1 | Video approve/reject (checkpoint #2) | BE | S (0.5) | 09.6.3-T2 | 02.8.2-T1, 02.8.3-T3, 06.2.1-T1 (06 CR-8), 10.6.2-T1 (10 CR-15) |
-| 09.7.2-T1 | `IBlobStore` + S3 and the signed video URL | BE | M (1.0) | 09.2.1-T1, 11.1.1-T2 | 09.6.3-T2, 09.7.3-T1, 02.5.2-T2, 06.2.3-T1, 13.3.1-T1 (06 CR-8), 10.6.2-T1 (10 CR-15), 13.3.3-T1, 07.3.1-T1 |
+| 09.7.2-T1 | `IBlobStore` + S3 and the signed video URL | BE | M (1.0) | 09.2.1-T1, 11.1.1-T2 | 09.6.3-T2, 09.7.3-T1, 02.5.2-T2, 06.2.3-T1, 13.3.1-T1 (06 CR-8), 10.6.2-T1 (10 CR-15), 07.3.1-T1 |
 | 09.7.3-T1 | Retention sweep (assets + audit rows) | BE | S (0.5) | 09.7.2-T1, 09.3.6-T1 | — |
 
 **Re-estimate: 2.0 d raw** for the folder (09.7.1 0.5 + 09.7.2 1.0 + 09.7.3 0.5), matching B8.1 and B9 ("09.7 1.5 → 2.0, 09.7.2 S → M because of `IBlobStore`, WF03"). No further change is proposed.

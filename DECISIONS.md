@@ -3,31 +3,31 @@
 > Decided: 2026-09-23. Status: **nothing installed yet**. This file is the input for per-part plans (see section 9).
 > Legend: ✅ = read from an official source or the source code; ⚠️ = **unverified**, check before relying on it.
 > Overviews: `WORKFLOW.md` (project workflow) and `DIAGRAMS.md` (diagrams, SVG in `docs/diagrams/`).
-> Delivery order: **personal-first, fully automatic** — the owner's own autopilot studio and channel first (official APIs only), the public SaaS after a go decision (§10.12).
+> Product: **personal-only, fully automatic** — one owner account + autopilot publishing to the owner's own YouTube and TikTok channels (official APIs only). The public SaaS phase was dropped by the owner on 2026-10-21 (§10.14); nothing is sold, viewers watch free.
 > Plan level: the plans in `plans/00`–`13` are **high-level and not final**. Every feature will be reviewed again and get its own detailed plan (`plans/features/`, process and template in `plans/00-overview.md` §10.1), reviewed before implementation.
 
 ---
 
 ## 1. Goal
 
-An automated pipeline for **faceless** YouTube (and TikTok) videos, published as a **public web platform** where users generate videos and post them to their own channels (section 10):
+An automated pipeline for **faceless** YouTube (and TikTok) videos that the owner publishes to their **own** channels from one studio (section 10; personal-only since DEC 10.14, §10.14):
 
 **write story → generate images → voiceover → assemble video + subtitles → auto-post**
 
 - Topics: ghost stories, spiritual stories, real-world true-crime cases.
 - Languages: **Vietnamese** and **English** (content languages).
-- Users' monetization target: YouTube Partner Program (YPP). The platform must never promise monetization.
+- Monetization target: YouTube Partner Program (YPP) for the owner's own channel. The product must never promise monetization.
 
 ## 2. Constraints
 
 | Constraint | Detail |
 |---|---|
-| Software | Prefer open source, run locally. **Only exception: OpenAI API** (story writing + image generation), reached in phase P through the owner's OpenAI-compatible relay `https://api.aixingialaire.shop/v1` (01 DEC-9, 2026-09-25; phase S [OPEN]) |
+| Software | Prefer open source, run locally. **Only exception: OpenAI API** (story writing + image generation), reached through the owner's OpenAI-compatible relay `https://api.aixingialaire.shop/v1` (01 DEC-9, 2026-09-25) |
 | License | Every model/tool must **allow commercial use** (monetized channel) |
-| Hardware | Mac M4, **16 GB RAM** = development and phase-1 trial only (one model at a time). Public traffic needs a separate worker server (section 10.4) |
+| Hardware | Mac M4, **16 GB RAM** = development and the local phase only (one model at a time). Publishing to the internet needs a separate GPU node (section 10.4, plan 11) |
 | Secrets | API keys live only in the macOS Keychain and one rendered, git-ignored `config.toml` (0600, outside the repo), **never committed**, never pasted into chat. Hard spend limits per OpenAI project (plan 01 D3, D5, D7) |
 | Posting | **Official APIs only** (YouTube/TikTok), no browser automation |
-| Human review | **Two mandatory review checkpoints** for SaaS users: after story writing, and before posting. Owner's fiction autopilot: automated gates + veto window; true-crime keeps human approval (§10.12) |
+| Human review | **Fiction autopilot:** automated gates + a veto window; **true-crime keeps human approval** (fact sheet and story) (§10.12) |
 
 ## 3. Chosen stack
 
@@ -60,7 +60,7 @@ Prices from the [OpenAI pricing page](https://developers.openai.com/api/docs/pri
 ⚠️ These are **floor** prices. With `openai_image_size = ""`, MPT picks **1536x1024** (landscape) or **1024x1536** (portrait) per video aspect (`config.example.toml:199-204`), which costs more tokens than 1024×1024 — **not measured yet**. Measure via the response `usage` field in phase 1.
 
 ⚠️ **Quality is not selectable through MPT** ✅: its `openai_image` request body is only `{model, prompt, n: 1, size}`, so the API default `quality = auto` applies (`plans/features/01-environment-setup/` README §1 M4, O6). The "medium ~$0.013" figure above is therefore an assumption, not what the trial pays; plan 03 CR-3 decides how quality is set — **decided 2026-09-24 (03 D9, owner O1/O3):** the node image relay injects `quality`; the value and the measured cost per image per aspect are recorded here by 03.3.1-T2 after the M0 contact sheet (03 CR-12). **Rate limit:** Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8 — superseded by `gpt-image-2`, 01 DEC-11; rate re-check [OPEN]), and MPT skips a keyword silently after 3 retries on 429 (M4) — see plan 03 G7.
-- [DECISION] **Credit pricing:** 1 credit = US$0.01 of price; see §10.5 for the payment provider, FX rule and funding model (12 CR-10).
+- [DECISION] **No price to anyone (DEC 10.14, owner 2026-10-21):** there is no credit, package or payment price. The only money tracked is the owner's own OpenAI spend, metered per generation (`usage_records`, §10.5). Spend caps and runway alerts (§10.5) still protect the owner's OpenAI balance.
 
 ## 5. Integration details per stage
 
@@ -138,7 +138,7 @@ In sentence mode `subtitle.correct()` replaces every cue's text with the matchin
 
 **TikTok Content Posting API** ([Content Sharing Guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines)):
 - Unaudited apps can only post **private** content. Audit at developers.tiktok.com/application/content-posting-api.
-- **Intended use:** "A utility tool to help upload contents to the account(s) you or your team manages" is listed as **not acceptable**, so a private single-owner uploader would fail the audit. The public platform (section 10) is the kind of app TikTok accepts. "An app that copies arbitrary contents from other platforms" is also not acceptable.
+- **Intended use:** "A utility tool to help upload contents to the account(s) you or your team manages" is listed as **not acceptable** ✅, so a private single-owner uploader would fail the audit. The public multi-user platform that would have been an accepted use was dropped (DEC 10.14) → the owner's TikTok lane continues on the pessimistic assumption that Direct Post stays **private-only** and low-volume until TikTok's audit posture is proven otherwise ⚠️ (plan 07 keeps the audit tasks). "An app that copies arbitrary contents from other platforms" is also not acceptable.
 - Caps for all clients: a 24-hour active-creator cap per API client (based on the audit estimate), and about **15 posts per day per creator account**, shared across every app.
 - **Content transfer, scope and tokens (07 CR-12):** video content transfers to TikTok via `PULL_FROM_URL` (a presigned https URL from our storage, under a domain/URL prefix verified in the app), never `FILE_UPLOAD`, for server-side content; the OAuth scope requested is `video.publish` only; rate limits are 6/20/30 requests per minute (endpoint-dependent); access tokens last 24 h and refresh tokens 365 days, both rotated on refresh; there is **no scheduling parameter** on Direct Post — every post is immediate, with a per-post privacy choice by the creator.
 
@@ -146,8 +146,8 @@ In sentence mode `subtitle.correct()` replaces every cue's text with the matchin
 
 - **YPP eligibility:** 1,000 subscribers + (4,000 watch hours in 12 months **or** 10M Shorts views in 90 days). Review takes ~1 month. Vietnam is a supported country.
 - Channels with **no uploads for 6 months** may lose monetization.
-- The "inauthentic content" policy (renamed 2025-07-15): **mass-produced content is not monetizable** → every video must have its own value (unique script, human review, no templated duplicates). Personal phase: the owner's fiction autopilot replaces human review with automated gates, a variety guard, a daily cap and a veto window; the owner knowingly carries this monetization risk (§10.12).
-- Design consequence: the two human review checkpoints are **mandatory**, not optional. Exception for the owner's own fiction series in the personal phase: automated gates replace them, true-crime keeps human approval (§10.12).
+- The "inauthentic content" policy (renamed 2025-07-15): **mass-produced content is not monetizable** → every video must have its own value (unique script, no templated duplicates). Personal studio (the only phase since DEC 10.14): the owner's fiction autopilot replaces human review with automated gates, a variety guard, a daily cap and a veto window; the owner knowingly carries this monetization risk (§10.12).
+- Design consequence: no "generate 100 videos in one click" feature exists. Fiction is auto-approved by gates, **true-crime keeps human approval** (fact sheet and story) (§10.12).
 
 ## 7. Reviewed and rejected
 
@@ -179,7 +179,7 @@ In sentence mode `subtitle.correct()` replaces every cue's text with the matchin
 6. VieNeu's unknown-length WAV header (`0xFFFFFFFF`): ffmpeg decodes it (exit 0 with warnings, duration +29 ms on a pipe; `features/04-voice-proxy/README.md` X1, 2026-09-24; re-confirmed at the pin by 04.1.1-T1). Option A uses PCM anyway (04 D4). pydub (option B) is still unverified ⚠️ (04 CR-15).
 7. Whether Google requires **OAuth app verification** for the `youtube.upload` scope, and how long it takes.
 8. Monthly cost of a GPU worker server, and throughput per server.
-9. A payment provider that works for a Vietnam-based business (for credits/subscriptions).
+9. ~~A payment provider that works for a Vietnam-based business (for credits/subscriptions)~~ — closed by DEC 10.14 (owner 2026-10-21): nothing is sold, so no payment provider is needed.
 10. ~~`faster-whisper` license~~ — closed: **MIT** ✅ (SYSTRAN/faster-whisper `LICENSE`; checked 2026-09-23, `plans/features/01-environment-setup/` README §1 W1).
 11. ~~Path handling of MPT's `/stream/{file_path:path}` and `/download/{file_path:path}` endpoints~~ — closed: both resolve the path with `realpath` + `commonpath` inside `storage/tasks` and require a regular file, so there is no traversal outside the task dir, but there is **no per-task scoping** (any file of any task is readable with the one key); MPT binds loopback and only the adapter calls it (05 CR-10; `plans/features/05-video-assembly-subtitles/README.md` C12).
 
@@ -200,24 +200,27 @@ Detailed plans now exist in `plans/` — start with `plans/00-overview.md` (BA r
 | `plans/09-backend-api.md` | ASP.NET Core API, PostgreSQL, job queue, story step, MPT job orchestration, metering | 01–05 |
 | `plans/10-web-ui.md` | Dashboard: story editor (checkpoint #1), video preview (checkpoint #2), channel connect, TikTok required post UI | 09 |
 | `plans/11-worker-deployment.md` | GPU server with MPT + VieNeu + proxy + whisper on a private network, object storage | 01–05 |
-| `plans/12-billing-credits.md` | Credit pricing from measured cost, per-user quotas, payment provider | 09 |
-| `plans/13-compliance.md` | Privacy policy, terms of service, Google OAuth verification, YouTube and TikTok audits, data deletion | 06, 07, 09 |
+| `plans/13-compliance.md` | Privacy policy, terms of service, YouTube and TikTok audits, data deletion | 06, 07, 09 |
 
-Plans 06 and 07 now post with **each user's own OAuth connection**, not the owner's account.
+Plan numbering is stable except **plan 12 (billing/credits) which is removed** (DEC 10.14); its former slot stays empty so no other plan is renumbered.
+
+Plans 06 and 07 post through the **owner's own OAuth connections** for the owner's own channels (personal-only product, DEC 10.14).
 
 **Phase 1 (trial, ~2 days):** produce one 5-minute video; record time per stage, token/cost for the story and each image, and the number of `moderation_blocked` errors.
 
-## 10. Public platform: Web UI + backend
+## 10. Web UI + backend
 
-### 10.1 What changes when the system is public
+> **Status after DEC 10.14 (owner 2026-10-21): the product is personal-only.** Much of this section was written for the public platform the document originally planned (accounts for strangers, credits, payments, an admin surface, compliance for third-party data). Those parts are **superseded** — kept as the record of why the system is shaped the way it is. Still in force, restated for the one-owner studio: nobody else ever calls MPT (§10.2), the architecture and network zones (§10.3–§10.4, including the deferred hosting proposal), the owner's own OpenAI spend metering (§10.5), the platform rules every YouTube/TikTok API client must follow (§10.6), the content/liability limits (§10.7), the security baseline (§10.8) and the licences (§10.9). Superseded: the public-tenant parts of §10.1, the credit-sales and payment-provider items of §10.5, the user-facing wording of §10.6–§10.7, the admin/owner-governance and credit items of §10.11, and the phase split of §10.12.
 
-| Before (single owner) | After (public platform) |
+### 10.1 What changes when the system became public (superseded by DEC 10.14)
+
+| Before (single owner) | After (public platform — no longer the plan) |
 |---|---|
 | Runs on the Mac | Mac = development only; workers on a server |
-| Owner's OpenAI key, ~$10/month | Platform pays OpenAI per user job → needs credits, quotas and metering |
-| Posts to the owner's channel | Posts to **each user's** channel through their own OAuth consent |
+| Owner's OpenAI key, ~$10/month | Platform pays OpenAI per job → credits, quotas and metering were designed for this; only the owner's spend metering survives |
+| Posts to the owner's channel | Was: posts to **each user's** channel. Now: still the owner's own channels |
 | MPT WebUI is enough | Own Web UI + backend; MPT becomes a hidden render worker |
-| No legal pages | Privacy policy, terms, data deletion, platform audits are **required** |
+| No legal pages | Privacy policy, terms, data deletion still apply to the owner's API client; the multi-user audit surface does not |
 
 ### 10.2 MPT cannot face users directly ✅
 
@@ -252,19 +255,19 @@ flowchart LR
 
 | Component | Proposal | Why |
 |---|---|---|
-| Web UI | **Angular 22** (decided), Clean Architecture per feature (`plans/00-overview.md` §5.3) | Dashboard + public landing page |
+| Web UI | **Angular 22** (decided), Clean Architecture per feature (`plans/00-overview.md` §5.3) | Dashboard for the owner (vi + en); no public landing/pricing pages (DEC 10.14) |
 | Backend API | **C# on ASP.NET Core / .NET 10 LTS** (decided; latest stable 10.0.12, §10.13), **Clean Architecture + CQRS** (`plans/00-overview.md` §5.2), **PostgreSQL** (decided), background jobs (Hangfire on PostgreSQL: LGPL-3.0 or commercial — fine for a hosted service; use unmodified from NuGet and never patch or fork it; Hangfire.PostgreSql license ⚠️ confirm) | Boring, proven; matches the team's stack |
 | Render worker | MPT + VieNeu + proxy + faster-whisper, private network only | Unmodified open-source stack |
 | Storage | S3-compatible object storage with signed, expiring links; self-hosted SeaweedFS in every env (11 CR-15) | Videos are large; delete after a retention period; no managed object storage or AWS account (owner O7 2026-09-27) |
 
-**Backend responsibilities:** user accounts and login; story step (call OpenAI, save draft, user edits/approves = checkpoint #1); render jobs to MPT with the approved script; poll job status; store output; preview and approve = checkpoint #2; publish to the user's connected YouTube/TikTok; record OpenAI `usage` per job; credits and quotas; log `moderation_blocked` errors; admin view.
+**Backend responsibilities:** the owner account and login; story step (call OpenAI, save draft, owner edits/approves or the autopilot gates approve = checkpoint #1); render jobs to MPT with the approved script; poll job status; store output; preview and approve = checkpoint #2; publish to the owner's connected YouTube/TikTok; record OpenAI `usage` per job (metering only, no charging — DEC 10.14); spend-cap and runway alerts; log `moderation_blocked` errors.
 
 ### 10.4 Capacity ✅ / ⚠️
 
 - VieNeu serves **1 stream on CPU (fp32) or 2 (int8)**, and up to **16 on GPU** (`VIENEU_MAX_STREAMS`, `openai_speech.py:35-37`) ✅. Extra requests queue, then get 429.
 - MPT runs at most `max_concurrent_tasks` jobs (default 5) per instance ✅.
-- **Publishing ceiling:** the YouTube `videos.insert` default quota is 100 calls/day **per API project**, shared by every customer → the whole product can publish ~100 YouTube videos/day until an API Compliance Audit grants an extension (the only way to raise it). Plans and pricing must not assume per-user headroom.
-- The Mac cannot serve public traffic → rent a GPU server for workers. Cost and videos per hour per server ⚠️ **not measured**; measure in phase 1 and on the first server.
+- **Publishing ceiling:** the YouTube `videos.insert` default quota is 100 calls/day **per API project** ✅. One owner channel at the default daily cap (1 video/day) stays far below it; no quota extension is needed for the personal studio.
+- The Mac runs the local studio (phase 1) only; publishing to the internet needs one GPU node. Cost and videos per hour per server ⚠️ **not measured**; measure in phase 1 and on the first server.
 - **GPU node stack (11 CR-8, verified 2026-09-24):** MPT's own GPU image is CUDA 12.1 + cuDNN 8, but its lock pins ctranslate2 4.7.1, which needs cuDNN 9 (faster-whisper README ✅) → the node installs cuBLAS 12 + cuDNN 9 as locked wheels for MPT's whisper; VieNeu's `cuda` extra is torch 2.8.0 cu128 → NVIDIA driver ≥ 570.26 ✅. MPT keeps one whisper model per process; VieNeu uses ≈ 1.1 GB VRAM at 16 streams ✅; a node needs ≥ 16 GB VRAM (24 GB preferred) [INFERENCE until measured in 11.6.3]. Details: `plans/features/11-worker-deployment/README.md` D9.
 
 #### 10.4.1 Hosting decision (11 11.2.1-T1) — PROPOSED, deferred to phase 2 (owner 2026-09-30), 2026-09-29
@@ -327,25 +330,24 @@ AWS is excluded, so its resource names are deliberately **not** listed. If the l
 
 **Revisit triggers.** (1) A GPU, disk, snapshot or egress price change on the captured pages — a new capture plus a re-run is the whole cost. (2) The 11.2.2-T1 latency check exceeding `latency_threshold_ms` = 350 ms, or showing the other finalist clearly better. (3) T74's two-zone/location volume or snapshot support failing at provisioning (11.2.2-T1). (4) A hard gate failing only after real provisioning (e.g. driver or VRAM behaviour worse than advertised, 11.3.1-T1): the affected tasks do not start and the next eligible provider is applied. (5) FQDN egress turning out to be needed *and* unavailable → 11.3.2-T1 keeps the IP/port allow-list (already the design). (6) No account or payment method for the finalist → recorded as a §5.6 failure with the reason, and the next provider is applied. (7) The Vietnam data-rule question (Decree 53/2022) resolving against Singapore. (8) GCP publishing the Cloud SQL base-backup + WAL-archive mechanism, which would make the rollback provider eligible.
 
-### 10.5 Money
+### 10.5 Money: the owner's own OpenAI spend (metering only — no billing, DEC 10.14)
 
-- The platform pays OpenAI for every user job. Image cost per video is **above** the ~$0.43–0.44 relay figure (section 4; CRV-0928-5 — ~$0.79 was the official-API flare reference) → set credit prices only after measuring real `usage`.
-- Enforce per-user quotas and a hard OpenAI spending limit so one user cannot drain the account.
-- **Users buy credits; sales fund the API** (`plans/12-billing-credits.md` Epics 12.3, 12.6–12.8): packages in VND, credit lots with expiry, promo codes, receipts, refund requests, and an admin funding view (OpenAI balance, burn, runway, set-aside per sale).
-- OpenAI API billing facts ✅ ([prepaid billing help article](https://help.openai.com/en/articles/8264644-setting-up-and-managing-prepaid-api-billing)): credits are bought in advance (minimum $5); usage stops with error `credit_balance_exhausted` when the balance is empty, and a short negative balance can occur, so the balance is not an instant cutoff; purchased credits **expire after 1 year** and are **non-refundable** except in listed cases; auto-reload has a threshold, a restore-to amount and an optional monthly limit; the trust tier caps the maximum balance.
-- Consequences [DECISION]: top up by runway (≥ 14 days of burn, ≤ ~60 days), enable auto-reload with a monthly limit, pause processing without charging users on `credit_balance_exhausted`, keep separate OpenAI organizations/projects for production and staging, and make user-purchased credits expire after 12 months (⚠️ consumer-law check).
-- ~~Users bring their own OpenAI key~~ — **not reachable with an unmodified shared MPT**: provider keys exist only in MPT's global `config.toml` and `VideoParams` has no key field (`schema.py:106-160`). BYOK would need one MPT process/config per user or a fork. **Decision: platform-paid with credits.**
-- [DECISION] **Credit unit, provider and FX (12 CR-10):** 1 credit = US$0.01 of price. **Payment provider:** the selected provider and its licence/webhook facts are recorded, with a date, in `plans/features/12-billing-credits/README.md` §1 (12.3.1-T1 output) once that task lands — this closes the payment-provider `[OPEN]` item (§1.3 above, §8 item 9) at that point, not before. **FX rule:** revenue and reporting use the latest `provider_topups.fx_rate`; the funding model itself is unchanged from the "top up by runway" rule above.
+- The owner pays OpenAI for every generation. Image cost per video is **above** the ~$0.43–0.44 relay figure (section 4; CRV-0928-5 — ~$0.79 was the official-API flare reference) → budget from measured `usage`, not from the estimate.
+- **Metering stays, charging does not:** `usage_records` (cost per job/operation), `provider_balance_snapshots` and `provider_topups` (runway), spend caps, the per-generation worst-case reservation and the circuit breaker that pauses processing when the balance is exhausted. `ICreditLedger` keeps its **metering-only** implementation (it has no other one since DEC 10.14) and money columns stay `numeric(12,6)`.
+- A hard OpenAI spending limit per project so a runaway autopilot cannot drain the account.
+- **Removed with the SaaS phase:** credit pricing, credit lots with expiry, packages, promo codes, checkout, payment webhooks, receipts, refunds, the admin funding/margin views and the FX/consumer-law rules that existed only to sell credits.
+- OpenAI API billing facts ✅ ([prepaid billing help article](https://help.openai.com/en/articles/8264644-setting-up-and-managing-prepaid-api-billing)) — these now bind the owner's own account: credits are bought in advance (minimum $5); usage stops with error `credit_balance_exhausted` when the balance is empty, and a short negative balance can occur, so the balance is not an instant cutoff; purchased credits **expire after 1 year** and are **non-refundable** except in listed cases; auto-reload has a threshold, a restore-to amount and an optional monthly limit; the trust tier caps the maximum balance.
+- Consequences [DECISION]: top up by runway (≥ 14 days of burn, ≤ ~60 days), enable auto-reload with a monthly limit, pause autopilot on `credit_balance_exhausted` and alert the owner, and keep separate OpenAI organizations/projects for production and staging.
 
-### 10.6 Platform rules for a public app ✅
+### 10.6 Platform rules that bind the owner's own API clients ✅
 
 **YouTube API Services Developer Policies:**
 - Publish a privacy policy covering what the app accesses, stores, shares and deletes.
-- Tell users they can revoke access at https://security.google.com/settings/security/permissions, and give a contact for privacy questions.
-- Offer a clear, easy in-app way to revoke consent. When a user revokes **in our app**, revoke the token with Google **right away** and delete the related data **within 7 calendar days**. User-requested data deletion and account deletion: **within 7 calendar days**. Revocation through the Google security page (detected when a token refresh fails): delete within **30 calendar days**. Stored Authorized Data: keep **at most 30 calendar days**, then delete or refresh it.
-- "You must not automate or trigger … uploads … without the user's prior specific and express consent" → every upload has its **own consent record**: given by the user, or for autopilot series derived from the owner's versioned series authorization after a veto window in which the owner is notified and can edit or cancel (§10.12). Whether YouTube accepts this as "specific and express" is unverified ⚠️.
+- Tell the owner they can revoke access at https://security.google.com/settings/security/permissions, and give a contact for privacy questions.
+- Offer a clear, easy in-app way to revoke consent. When the owner revokes **in our app**, revoke the token with Google **right away** and delete the related data **within 7 calendar days**. Owner-requested deletion and account deletion: **within 7 calendar days**. Revocation through the Google security page (detected when a token refresh fails): delete within **30 calendar days**. Stored Authorized Data: keep **at most 30 calendar days**, then delete or refresh it.
+- "You must not automate or trigger … uploads … without the user's prior specific and express consent" → every upload has its **own consent record**: given by the owner, or for autopilot series derived from the owner's versioned series authorization after a veto window in which the owner is notified and can edit or cancel (§10.12). Whether YouTube accepts this as "specific and express" is unverified ⚠️.
 - Never ask for or store YouTube passwords (OAuth only).
-- Video Uploads quota (100/day) belongs to **the whole API project**, shared by all users → apply for a quota extension through the API Compliance Audit before launch.
+- Video Uploads quota (100/day) belongs to **the whole API project** ✅. One owner channel at the default daily cap stays inside it; a quota extension is not planned (DEC 10.14).
 
 **TikTok Content Sharing Guidelines — required post screen:**
 - Fetch `creator_info` when the post page opens; show the creator's **nickname**; stop if the creator cannot post now; respect `max_video_post_duration_sec`.
@@ -356,20 +358,20 @@ AWS is excluded, so its resource names are deliberately **not** listed. If the l
 
 ### 10.7 Content and liability
 
-- Users' channels fall under YouTube's inauthentic/mass-produced content policy. The SaaS product must **enforce** both review checkpoints for users (revisit at Gate 2, §10.12); no "generate 100 videos in one click" feature; the owner's personal autopilot uses automated gates, a variety guard and a daily cap instead.
-- Terms of service must forbid realistic depictions of real victims/suspects and copyrighted material; provide a takedown/report contact.
-- Keep OpenAI moderation on (`moderation = "auto"`); log blocked prompts per user to spot abuse.
-- **TikTok while unaudited (07 CR-12):** Direct Post from an unaudited client stays private-only; the platform serves at most 5 posting users per 24 h until the audit is filed/approved, matching `TikTokOptions.MonthlyActiveCreators`; the per-creator post cap and the client-wide active-creator cap come from the audit estimate (§5.6).
+- The owner's channels fall under YouTube's inauthentic/mass-produced content policy. There is no "generate 100 videos in one click" feature; the autopilot uses automated gates, a variety guard, a daily cap (default 1 video/day) and a veto window (§10.12), and the owner carries the monetization risk.
+- Terms of service and the content policy must forbid realistic depictions of real victims/suspects and copyrighted material; provide a takedown/report contact (still required by the platform policies, even for one owner).
+- Keep OpenAI moderation on (`moderation = "auto"`); log blocked prompts per generation to spot drift.
+- **TikTok while unaudited (07 CR-12):** Direct Post from an unaudited client stays private-only; the client serves at most 5 active creators per 24 h until the audit is filed/approved, matching `TikTokOptions.MonthlyActiveCreators` (one owner account fits); the per-creator post cap and the client-wide active-creator cap come from the audit estimate (§5.6).
 
 ### 10.8 Security
 
 - OpenAI and other provider keys live only on the backend/worker, never in the browser.
-- Encrypt users' OAuth refresh tokens at rest; delete them on disconnect or account deletion.
+- Encrypt the owner's OAuth refresh tokens at rest; delete them on disconnect or account deletion.
 - MPT, VieNeu (`HOST=127.0.0.1` or private network) and the proxy are never reachable from the internet.
 
-### 10.9 Licenses for a hosted service
+### 10.9 Licences
 
-- MPT (MIT) and VieNeu v3 Turbo (Apache-2.0) are permissive, with no network-use copyleft → OK to run as a paid hosted service ✅ (license types from section 3).
+- MPT (MIT) and VieNeu v3 Turbo (Apache-2.0) are permissive, with no network-use copyleft → OK for a monetized, self-hosted studio ✅ (license types from section 3).
 - AGPL tools (e.g. VoiceStudio, already rejected) would require publishing source to network users — keep avoiding them.
 - `faster-whisper` is MIT ✅ (W1). ⚠️ Fonts shipped in rendered videos: check before launch (candidate `BeVietnamPro`, plan 05 F6).
 - **Infrastructure tools (11 CR-8, licences read 2026-09-24):** accepted — OpenTofu (MPL-2.0), SeaweedFS (Apache-2.0; local S3 emulator and, 11 CR-15 / owner O7 2026-09-27, the self-hosted object store in staging and prod), Mailpit (MIT), OpenTelemetry Collector, Prometheus, Alertmanager, Jaeger (Apache-2.0), cosign, syft (Apache-2.0), Microsoft.Data.Sqlite (MIT) with SQLitePCLRaw (Apache-2.0), Dependabot (GitHub-native). Rejected as AGPL-3.0 — MinIO (community edition is also source-only now), Garage, self-hosted Grafana, Renovate. `mpt-adapter` and mock-mpt are .NET 10 on shared `NightTales.RenderNode.*` projects. GitHub environments with required reviewers on a private repo need GitHub Pro (user) or Team (org) ✅ → the repo uses GitHub Pro (owner standing approval 2026-09-24; price not asserted).
@@ -385,25 +387,25 @@ AWS is excluded, so its resource names are deliberately **not** listed. If the l
 ### 10.11 Architecture and security review outcomes (plan level)
 
 - **`mpt-adapter`:** a thin service beside MPT on each GPU node owns the stable render contract; the backend never calls MPT directly. The 05.4 spike (L) is a hard gate before the render client and mock are built.
-- **Node image key:** MPT's OpenAI image key lives in a **separate OpenAI project** (image models only, own hard budget), is node-managed deploy config, and is not editable in the admin UI.
-- **Admin configuration:** integration keys and base URLs are editable by owners in the admin UI (encrypted, write-only); bootstrap secrets stay in the runtime secret manager. Payment and OAuth-client settings are *critical*: second-owner approval or a 24 h time-lock with a cancel link.
-- **Separation of duties:** no self-grants of credits, per-admin 24 h minting cap (2,000 credits), owner approval above it; actor role must be higher than target role; owner-on-owner actions time-locked and never delete (demote first; a recently demoted or suspended owner is touched only by the host operator), the target has one cancel per (action, target) per 30 days (re-alerts all owners), a re-issued or counter request is `disputed` and applies only by a third owner or the host operator (`nts owner resolve`), never by time-lock; promotion to owner is a time-locked request and new owners cannot approve anything for 30 days; during a dispute critical setting changes wait for the operator; every MFA reset forces a password reset; apply-time re-checks; each owner may cancel the same (action, target) at most twice per 30 days; break-glass only through the one-shot `nts-admin` job (immediate only for a sole owner; `nts owner restore` cancels involved requests, freezes new ones for 30 days and resets the restored owner's credentials; operator identity from the platform audit log).
-- **Cancel links and sessions (second security pass):** one single-use cancel token per recipient, token in the URL fragment, public `POST /security/cancel-links/{kind}/{id}` with one uniform error and a 7-day token-path cutoff after a token cancel; security stamp checked on every authenticated route; credential events revoke refresh families; MFA login step bound to a pre-auth cookie (IP change logged, not rejected), an account-wide failure detector (e-mail, alert, CAPTCHA; trusted devices never delayed, bound to their refresh family), a 50-per-24 h hard ceiling for untrusted devices, TOTP replay block, a re-auth failure limit and a `sid` claim so a revoked session fails at once; `/me/activity` returns a whitelisted projection; audit retention is per row class (12/24 months, payment-linked rows as long as the payment).
-- **Isolation:** `user_id` on every user-owned table + `SystemContext` for Worker jobs; source fetching runs in a separate container with internet-only egress (30 fetches/user/day, 4 concurrent); render nodes have an egress allow-list and never connect into the app network.
+- **Node image key:** MPT's OpenAI image key lives in a **separate OpenAI project** (image models only, own hard budget), is node-managed deploy config, and is never editable from the web UI.
+- ~~**Admin configuration**~~ — superseded by DEC 10.14: there is no admin surface and no second operator, so integration keys and base URLs stay in the runtime secret manager / `config.toml`; critical-setting approvals and time-locks are not built.
+- ~~**Separation of duties**~~ (credit minting caps, owner-on-owner actions, promotion time-locks, disputes) — superseded by DEC 10.14: the studio has one owner account and no credits to grant. Break-glass reduces to `nts owner restore` for the single owner.
+- **Cancel links and sessions (second security pass)** — the public cancel-link route is **not built (DEC 10.14):** one single-use cancel token per recipient, token in the URL fragment, ~~public `POST /security/cancel-links/{kind}/{id}` with one uniform error and a 7-day token-path cutoff after a token cancel~~ (the S governance/approval cancel is gone; the token mechanics now serve only the autopilot veto — `POST /publications/cancel-by-link` behind the public `/publications/cancel` page, plan 06, 10.7.4-T2 — and §8 of `plans/00-overview.md` no longer lists the `/security/cancel-links` route); security stamp checked on every authenticated route; credential events revoke refresh families; MFA login step bound to a pre-auth cookie (IP change logged, not rejected), ~~an account-wide failure detector (e-mail, alert, CAPTCHA; trusted devices never delayed, bound to their refresh family), a 50-per-24 h hard ceiling for untrusted devices~~ **not built (DEC 10.14)** — the detector, the CAPTCHA gate, the `mfa_locked_untrusted` ceiling and trusted devices were the multi-user login defence (09.3.3-T2/T3, 09.3-auth plan D9), and brute-force protection is now the global auth rate limit plus the per-user wrong-code window (09.3.5, 09.3.2); TOTP replay block, a re-auth failure limit and a `sid` claim so a revoked session fails at once; ~~`/me/activity` returns a whitelisted projection~~ **not built (DEC 10.14)** — `GET /me/activity`, `GET /episodes/{id}/activity` and the 10 `/account/activity` screen are phase S (09.3.4 plan §Out of scope, G11), so `audit_logs` is written but has no user-facing projection; audit retention is per row class (12/24 months).
+- **Isolation (kept as a code fact, no public tenants — DEC 10.14):** `user_id` on every user-owned table + `SystemContext` for Worker jobs, so the one owner account and every future row stay isolated by the same filter; source fetching runs in a separate container with internet-only egress (30 fetches/day, 4 concurrent); render nodes have an egress allow-list and never connect into the app network.
 - **Backups:** retained 30 days; deleted data ages out within that window.
-- **Schedule honesty:** ≈ 341.7 buffered person-days in total; personal-first (§10.12): ≈ 236.7 person-days (11 CR-15: +1.2 buffered, self-hosted storage) ≈ 11.8 months (plan 02 re-estimated to 40.25 d, 02 CR-11; 09 wave 1 +3.25 d, 09 CR-8; plan 03 re-estimated to 7.0 d, 03 CR-11; 10 CR-31 design-first retrofit +6.5) for one developer to the autopilot studio, ≈ 104 more for the SaaS after Gate 2 (10 CR-22 + 13 CR-9 + 09 W3 CR-6); building everything at once: 1 developer ≈ 13–15 calendar months to M3 (≈ 16.4 without R2), 2 developers ≈ 8 months to M2 with a rebalanced split [INFERENCE]; external waits (GPU account, merchant onboarding, lawyer, Google verification, YouTube audit) run in a separate lane (`plans/00-overview.md` §13).
+- **Schedule honesty:** the total is the **personal-only** scope after DEC 10.14 (the SaaS column and plan 12 are gone). The roll-up in `plans/00-overview.md` §13 is now recomputed from the plan §11 totals after the phase-S task files were deleted — **208.0 raw / 249.6 buffered person-days ≈ 12.5 months** for one developer at ~20 productive days/month. External waits (GPU account, lawyer, Google verification, YouTube audit, TikTok audit) run in a separate lane (`plans/00-overview.md` §13) and the Channel phase's ≥ 12 publishing weeks are not in the figure.
 
-### 10.12 Personal-first, fully automatic delivery [DECISION]
+### 10.12 Fully automatic personal delivery [DECISION] (its ordering is superseded by §10.14)
 
-- **Order:** the owner builds and runs their own channel with the studio first; the public SaaS is built only after a go decision (Gate 2) based on that channel's results, measured cost per video and time per episode (`plans/00-overview.md` §4, §4.1).
-- **Fully automatic personal studio (P):** autopilot picks ideas, writes, renders and publishes (`plans/02-story-writing.md` Epic 02.8, `plans/10-web-ui.md` 10.4.3); one seeded owner account with TOTP MFA; configuration from the environment/secret manager; one GPU node. The SaaS-ready architecture is kept (CQRS, outbox, `user_id` + tenant filters, `mpt-adapter`, fetcher isolation).
-- **Human approval only for true-crime:** fiction (`ghost`, `spiritual`) is auto-approved by gates (self-review score, moderation, similarity, length; video quality checks); true-crime fact sheets and stories always wait for the owner. This replaces the mandatory human checkpoints (§6) for the owner's own fiction series; the rule for SaaS users is decided at Gate 2 [OPEN]. A variety guard, a per-channel daily cap (default 1 video/day) and a veto window (default 12 h, owner may edit/cancel, no action required) limit the mass-produced content risk (§6). The veto notice goes by e-mail as well as in-app; if it cannot be delivered, no consent is written and the series pauses. Fiction drafts with a real-person/real-event signal and any moderation flag go to the owner; `topic` is locked while autopilot is on. **Risk owner:** the owner accepts that YouTube may refuse monetization for this channel.
+- **Order — superseded by §10.14:** this bullet used to say "the owner's channel first, the public SaaS only after a go decision (Gate 2)". The owner reopened that decision on 2026-10-21 and closed it the other way: the SaaS phase is dropped, so there is no SaaS go/no-go Gate 2 and no second phase — the personal studio is the product (the Channel-phase criteria document of 08.5.1-T1 survives, §10.14).
+- **Fully automatic personal studio (P):** autopilot picks ideas, writes, renders and publishes (`plans/02-story-writing.md` Epic 02.8, `plans/10-web-ui.md` 10.4.3); one seeded owner account with TOTP MFA; configuration from the environment/secret manager; one GPU node. The multi-tenant-ready architecture stays as a **code fact** (CQRS, outbox, `user_id` + tenant filters, `mpt-adapter`, fetcher isolation) without any public tenant.
+- **Human approval only for true-crime:** fiction (`ghost`, `spiritual`) is auto-approved by gates (self-review score, moderation, similarity, length; video quality checks); true-crime fact sheets and stories always wait for the owner. This replaces the mandatory human checkpoints (§6) — there are no other users to apply a different rule to (DEC 10.14). A variety guard, a per-channel daily cap (default 1 video/day) and a veto window (default 12 h, owner may edit/cancel, no action required) limit the mass-produced content risk (§6). The veto notice goes by e-mail as well as in-app; if it cannot be delivered, no consent is written and the series pauses. Fiction drafts with a real-person/real-event signal and any moderation flag go to the owner; `topic` is locked while autopilot is on. **Risk owner:** the owner accepts that YouTube may refuse monetization for this channel.
 - **Per-video consent kept:** the owner accepts a versioned series authorization once; the scheduler writes `consent_at` + `consent_text_version` + `consent_source = autopilot` for each publication after the veto window (`plans/06-youtube-posting.md` 06.2.2-T3), so the Publication contract (00 §7) and the audit record are unchanged. YouTube requires that users "have final control over the data that will be published" (Developer Policies III.C.3 ✅); whether the audit accepts series-level authorization is unverified ⚠️ — fallback: one-tap per-video approval.
 - **Official APIs only ✅:** YouTube's Terms forbid accessing the Service "using any automated means (such as robots, botnets or scrapers)" without prior written permission ([YouTube Terms of Service](https://www.youtube.com/t/terms), Permissions and Restrictions, item 3). No browser automation on YouTube or TikTok; jev-ultrafast only for research on allow-listed sites that permit it (§10.10, 02.7).
 - **YouTube:** `videos.insert` uploads from an unaudited API project created after 28 July 2020 are restricted to private viewing ✅ ([Videos: insert](https://developers.google.com/youtube/v3/docs/videos/insert); lifted only by the [API compliance audit](https://support.google.com/youtube/contact/yt_api_form), §5.5) → 06 is built in the personal phase and the YouTube API audit is filed as soon as upload works and the policy pages are public (M1 phase 2, owner 2026-09-30); public autopilot waits for it (unknown duration ⚠️; approval for a single-owner tool unverified ⚠️). The OAuth app runs **In production, unverified** because Testing status caps test users at 100 and expires every authorization and refresh token after 7 days ✅ ([Manage App Audience](https://support.google.com/cloud/answer/15549945)); the owner accepts the unverified-app warning once. **Two separate gates:** OAuth verification (unverified-app screen, 100-user cap) is not the YouTube audit; In production fixes the 7-day expiry but not the private lock. Options: (a) API + early audit — **chosen**; (b) API without audit — private forever; (c) browser automation — rejected (Terms). The client must have its own terms and privacy policy (Developer Policies III.A.1–2 ✅, [Developer Policies](https://developers.google.com/youtube/terms/developer-policies)) → 13.1.1-T1, 13.1.2-T1, the 10.3.1-T1 pages, 13.2.1-T1 acceptance and the 13.3.1-T1 / 06.4.3-T1 deletion jobs (III.D.2) are P.
-- **TikTok stays SaaS/R2 ✅:** unaudited Direct Post is private-only ([Direct Post](https://developers.tiktok.com/doc/content-posting-api-get-started)); a tool for uploading to your own or your team's accounts is not an acceptable audit use (§5.6); the inbox-upload path only creates a draft the creator must post in the TikTok app ([Upload](https://developers.tiktok.com/doc/content-posting-api-get-started-upload-content)).
-- **Estimates:** P ≈ 197.25 raw / 236.7 buffered person-days (≈ 11.8 months for one developer); S ≈ 87.5 / 105.0 (02 CR-11, 09 CR-8, 03 CR-11, 10 CR-31, 10 CR-22, 13 CR-9, 09 W3 CR-6, 10 CR-39/40, 11 CR-15) (`plans/00-overview.md` §4.1).
-- [OPEN] Gate 2 criteria (for example subscribers, watch hours, monetization status, cost per video) — set by the owner before the Channel phase starts; drafted with proposed defaults in `docs/ops/gate-2.md` by 08.5.1-T1 and signed by the owner before public autopilot (08 CR-2).
+- **TikTok is phase P and kept (DEC 10.14) ⚠️:** unaudited Direct Post is private-only ([Direct Post](https://developers.tiktok.com/doc/content-posting-api-get-started)); a tool for uploading to your own or your team's accounts is not an acceptable audit use (§5.6), so the owner's TikTok lane assumes **private-only, low-volume** posting until TikTok's audit posture changes; the inbox-upload path only creates a draft the creator must post in the TikTok app ([Upload](https://developers.tiktok.com/doc/content-posting-api-get-started-upload-content)). Plan 07 and the web TikTok post screen stay, retagged **P**.
+- **Estimates:** **208.0 raw / 249.6 buffered person-days ≈ 12.5 months for one developer** — the sum of the twelve remaining plan §11 totals (`plans/00-overview.md` §4.1, §13), each itself the sum of its remaining task files. The pre-drop figure for the personal studio was ≈ 197.25 raw / 236.7 buffered person-days, an upper bound that counted S items inside mixed plans and predates the wave-1/2 detailed re-estimates; the former S column (≈ 87.5 / 105.0) no longer exists.
+- **Gate 2 as a business go/no-go is removed** (DEC 10.14): there is no second phase, so nothing is decided about building the SaaS. What stays is the Channel-phase measurement document: `08.5.1-T1` still drafts `docs/ops/gate-2.md` with the owner's cost/quality/uptime criteria and the week-4/8/12 checkpoint questions (08.5), whose only outcomes are continue / adjust settings / stop.
 
 ### 10.13 Backend language and runtime [DECISION]
 
@@ -412,6 +414,16 @@ AWS is excluded, so its resource names are deliberately **not** listed. If the l
 - **.NET 11** is RC1, an STS release (same source) → not used. Upgrade to the next LTS release when it ships and before 10.0 support ends [INFERENCE: next LTS expected November 2027 ⚠️].
 - **Phase 1 is local only [DECISION, owner 2026-09-30]:** every service runs on the owner's Mac; deploy to the internet (hosting sign-off 10.4.1, plan 11 cloud tasks) and the legal operator identity (13 OI-1) move to phase 2.
 - **Local development is native, no Docker [DECISION, owner 2026-09-28]:** on the owner's Mac (M4, 16 GB) every dev service runs natively — Homebrew `postgresql@17` 17.x (bind `127.0.0.1`), `seaweedfs` (Apache-2.0), `mailpit` (MIT), .NET SDK 10.0.401, Node 26.10.0 (Angular 22 supports `^22.22.3 || ^24.15.0 || ^26.0.0` ✅ [angular.dev/reference/versions](https://angular.dev/reference/versions), checked 2026-09-28) — so nothing is installed twice and no VM holds RAM (keeps the D11 swap gate reachable). Integration tests use a real PostgreSQL 17 through `NTS_TEST_PG` (local server in dev, GitHub Actions `postgres:17` service in CI); Testcontainers is dropped. Docker is used only for deploy images (CI build + smoke, staging, production). ⚠️ Risk: dev is macOS, production is Linux containers; mitigated by building and smoke-testing the images in CI on every PR (`plans/00-overview.md` §5.1).
+
+### 10.14 Personal-only product: phase S dropped, TikTok kept [DECISION] (owner 2026-10-21)
+
+- **Decision:** the public SaaS phase is **dropped**. The product is the owner's personal studio: **one owner account + autopilot**, publishing to the owner's own YouTube and TikTok channels. Nobody pays and nothing is sold, so there is no billing, no credit system, no payments surface and no public web platform.
+- **Owner's words (2026-10-21):** "không muốn tính phí nữa, miễn phí cho mọi người sau khi xong" — the owner will not charge anyone and gives the videos away free once the studio works.
+- **Removed with the SaaS phase:** public sign-up and multi-tenant user operations, the admin surface for other users, owner governance/critical-setting approvals, SaaS checkpoints and their go/no-go gate, data-rights flows for public users, the public landing/pricing pages, and **plan 12 in full** (credit lots, packages, promo codes, payments, webhooks, refunds, receipts, funding and margin views). The phase-S plan files are **deleted, not archived in place**; `git history` keeps every removed file, and this decision plus §11 are the record of why.
+- **Kept:** TikTok publishing (plan 07 and the web TikTok post screen) moves from phase S to **phase P** — the studio publishes to both of the owner's channels through the official APIs (§5.6, §10.12). The TikTok audit caveat stands: unaudited Direct Post is private-only and a single-owner uploader is not an accepted audit use (§5.6), so TikTok runs private-only until proven otherwise ⚠️.
+- **Money metering is not billing and stays:** the owner still pays OpenAI, so per-generation cost metering stays — `usage_records`, `provider_balance_snapshots`, `provider_topups`, spend caps and runway alerts (§10.5), the **metering-only** `ICreditLedger` (now its only implementation), and money columns in `numeric(12,6)`. What disappears is charging: no credit lots, packages, checkout, webhooks, refunds or receipts.
+- **Supersedes:** the ordering of §10.12 (personal first, SaaS after Gate 2 — the owner reopened it and closed it the other way), the phase split of `plans/00-overview.md` §4.1 (there is one phase, P), the credit/payment items of §10.5 and §10.11, the credit-pricing decision of §4, and the plan 12 row of §9.
+- **Consequences for the docs:** every task is phase **P**; plan numbers stay stable with **12 removed** (no renumbering); new work is planned only for the personal studio.
 
 ## 11. Sources opened
 

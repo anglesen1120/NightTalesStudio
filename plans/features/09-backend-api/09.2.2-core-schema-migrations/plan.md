@@ -23,7 +23,7 @@
 - [09.10.1 / 11] `worker_nodes`, `system_settings`, `system_setting_versions`.
 - [06] `channel_connections`, `publications`, `platform_quota_usage`.
 - [05] `music_tracks` — created by 05.3.2-T3 (`AddMusicTracks`), after 09.2.2-T2 (05 CR-12).
-- [13] `data_deletion_requests` (13.3.1-T1); `legal_documents` is S and not created in P (13 CR-1).
+- [13] `data_deletion_requests` (13.3.1-T1); `legal_documents` is **not created** — the task that designed it (13.2.2-T1) is deleted by DEC 10.14 and legal versions stay in the `LegalDocuments:Current:*` config (13 CR-1).
 - All S-only tables (not in P).
 - Behaviour methods on the entities: Series (09.4.1), Episode (09.5.1, 02), autopilot (02.8.3).
 
@@ -49,8 +49,8 @@ Conventions for every table (D8): `id uuid` PK (UUIDv7, app-generated) unless no
 | `role` | text | no | CHECK `user`/`admin`/`owner`, default `user` — authoritative role [DECISION]; the Identity role tables stay empty |
 | `status` | text | no | CHECK `active`/`suspended`/`deleted` |
 | `last_totp_step` | bigint | yes | |
-| `owner_dispute_freeze_until`, `last_login_at` | timestamptz | yes | |
-| `email_verified_at` | timestamptz | yes | stamped by 09.3.1-T3's verify flow next to Identity's `email_confirmed` (09 W3 CR-39) |
+| `owner_dispute_freeze_until`, `last_login_at` | timestamptz | yes | `owner_dispute_freeze_until` is a **shipped column, unused after DEC 10.14** — no P feature reads or writes it (dropped owner-dispute feature); `last_login_at` is stamped on login |
+| `email_verified_at` | timestamptz | yes | stamped by an e-mail verify flow next to Identity's `email_confirmed` (that task was phase S, dropped by DEC 10.14; 09 W3 CR-39) |
 | `created_at`, `updated_at` | timestamptz | no | |
 
 Unique index `ux_users_normalized_email` on `normalized_email` (G4, F12; it **replaces** the non-unique Identity `email_index`, 09 W3 CR-41). The Identity `security_stamp` and `two_factor_enabled` columns cover 00 §6.
@@ -67,7 +67,7 @@ Unique index `ux_users_normalized_email` on `normalized_email` (G4, F12; it **re
 
 **`moderation_events`** (entity, `IUserOwned`): `episode_id` FK CASCADE, null (G3); `source` CHECK `openai_image`/`openai_text`/`internal`; `stage text`; `categories text[]`; `excerpt varchar(300)` null. Index `(user_id, created_at DESC)`.
 
-**`usage_records`** (entity, `IUserOwned`, append-only): `episode_id` FK SET NULL, null; `series_id uuid` null FK `series` RESTRICT; `generation_run_id uuid` null (FK added by 02.2.2-T1, G2); `render_job_id uuid` null (FK by 09.6.1); `reservation_id uuid` null; `provider text`; `operation` CHECK `story`/`story_review`/`story_revision`/`fact_sheet`/`image`/`tts`/`render`/`bible_proposal`/`idea`/`source_find`/`moderation`; `model text` null; `input_tokens`, `cached_input_tokens`, `output_tokens`, `image_count int` default 0; `gpu_seconds numeric(10,2)` default 0; `estimated bool`; `cost_usd numeric(12,6)`; `price_version int` null; `provider_request_id text` null. Indexes `(created_at, operation)` (00 §6:296; 12.5.2-T1, 12 CR-13, shared with 08.1.1-T1 — its leading column serves the whole-platform cost window, which is why the separate global `(created_at)` index of 08 CR-11 is **not** added, 09 W3 CR-39), `(reservation_id)`, `(generation_run_id)`, `(user_id, created_at DESC)`.
+**`usage_records`** (entity, `IUserOwned`, append-only): `episode_id` FK SET NULL, null; `series_id uuid` null FK `series` RESTRICT; `generation_run_id uuid` null (FK added by 02.2.2-T1, G2); `render_job_id uuid` null (FK by 09.6.1); `reservation_id uuid` null; `provider text`; `operation` CHECK `story`/`story_review`/`story_revision`/`fact_sheet`/`image`/`tts`/`render`/`bible_proposal`/`idea`/`source_find`/`moderation`; `model text` null; `input_tokens`, `cached_input_tokens`, `output_tokens`, `image_count int` default 0; `gpu_seconds numeric(10,2)` default 0; `estimated bool`; `cost_usd numeric(12,6)`; `price_version int` null; `provider_request_id text` null. Indexes `(created_at, operation)` (00 §6:296; kept by DEC 10.14 for the owner's whole-platform cost window — the former owners 12.5.2-T1/12 CR-13 and 08.1.1-T1 are dropped; its leading column serves that window, which is why the separate global `(created_at)` index of 08 CR-11 is **not** added, 09 W3 CR-39), `(reservation_id)`, `(generation_run_id)`, `(user_id, created_at DESC)`.
 
 **`assets`** (entity, `IUserOwned`): `episode_id` FK CASCADE; `kind` CHECK `video`/`thumbnail`/`audio`/`subtitle`/`image`; `storage_key varchar(512)` unique; `content_type text`; `size_bytes bigint`; `duration_sec numeric(9,2)` null; `sha256 char(64)`; `retention_until` null; `deleted_at` null. Index `(episode_id)` only — the retention index is **not** created here: `ix_assets_retention_due` (`(retention_until) WHERE deleted_at IS NULL AND retention_until IS NOT NULL`) is owned by 09.7.3-T1's index-only migration (09 W3 CR-40). The column types (`StorageKey` `varchar(512)`, `Sha256` `char(64)`) live in 09.2.2-T1's `AssetConfiguration`.
 
@@ -120,7 +120,7 @@ T1: CHECKs and FKs behave (constraint tests on raw inserts). T2: migration tests
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
 | 09.2.2-T1 | Core entity shells and EF configurations | L (2.0) | 09.2.1-T1 | 09.2.2-T2, 09.2.3-T1, 09.2.4-T1 |
-| 09.2.2-T2 | `InitialCore` migration, bundle, CI migration check | M (1.0) | 09.2.2-T1, 09.1.5-T1 | 09.1.3-T2, 09.2.5-T1, every feature migration (incl. 11.3.3-T1, 11 CR-11), 09.10.1-T1 (09 W3 CR-17) |
+| 09.2.2-T2 | `InitialCore` migration, bundle, CI migration check | M (1.0) | 09.2.2-T1, 09.1.5-T1 | 09.1.3-T2, 09.2.5-T1, every feature migration (incl. 11.3.3-T1, 11 CR-11) |
 
 Total **3.0 d** (unchanged; the scope moved from "every table" to the core set, and the freed time pays for the full CHECK/index set).
 

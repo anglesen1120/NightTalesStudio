@@ -15,7 +15,7 @@
 - M1: source research (user-supplied links → safe fetch → fact sheet), one self-review and auto-revision pass, series bible.
 - M1 (personal phase): "Find sources for me" assistant (Epic 02.7) and autopilot idea → story → video → publish (Epic 02.8).
 
-**Out of scope:** image prompts (03), voice (04), UI layout (10), billing rules (12).
+**Out of scope:** image prompts (03), voice (04), UI layout (10), billing (dropped, DEC 10.14).
 
 ## 2. BA review of this part
 
@@ -24,9 +24,9 @@
 | G1 | Moving story writing out of MPT means we also own **keyword generation** (MPT `video_terms`) | The output schema includes `keywords` per paragraph (§5.2) |
 | G2 | Length targets were never measured | Rates measured per language from the VieNeu baselines (02 T103: vi 260 syl/min, en 200 wpm); `words_per_minute_measured` from plan 01 (01.3.1-T4) re-measures them; length stays a range, not a promise |
 | G3 | True crime involves real people → defamation, privacy, victims' dignity | Fact-source rules + mandatory user attestation (02.3) |
-| G4 | "Mass-produced" policy risk if every episode sounds the same | Presets vary structure; the rubric checks originality; variety guard + gates for the owner's fiction autopilot (02.8.4); human approval for SaaS users and true-crime (DECISIONS §6, §10.12) |
+| G4 | "Mass-produced" policy risk if every episode sounds the same | Presets vary structure; the rubric checks originality; variety guard + gates for the owner's fiction autopilot (02.8.4); human approval for true-crime (DECISIONS §6, §10.12) |
 | G5 | Model may refuse or be moderated on horror/violence | Record `moderation_events`; tone rules avoid gore; the UI explains what to change |
-| G6 | Cost abuse via endless regeneration | Regeneration limits + credits (plan 12) |
+| G6 | Cost abuse via endless regeneration | Regeneration limits + the per-episode spend cap from `usage_records` (DEC 10.14: metering only, no credits) |
 | A1 | gpt-6-luna is good enough for Vietnamese | ⚠️ Assumption — M0 A/B test against gpt-6-sol decides (02.1.3) |
 | G7 | Model-written `fact_sources` URLs can be invented, so "≥ 2 URLs" proves nothing | Sources are supplied by the user and fetched by the backend; the model only cites fact ids (Epic 02.5) |
 | G8 | "Aggregate other channels' videos into a story" was proposed | Rejected: YouTube Terms ✅ forbid downloading/reproducing Content and automated access (DECISIONS §10.10); the expression of other narrators is copyrighted. Text sources + fact sheet + similarity check instead |
@@ -46,7 +46,7 @@
 - **FR-02-9** Every generated draft gets one automatic self-review; blocking objective issues trigger at most one automatic revision; the rest are shown to the user as hints.
 - **FR-02-10** A story whose word overlap with any source text exceeds the threshold cannot be approved (§5.9).
 - **FR-02-11** Prompts are original work of this project; external projects inspire ideas only and are listed in `prompts/REFERENCES.md` (02.1.4).
-- **NFR-02-1** Writer call p95 < 60 s; the whole `GenerateStoryJob` (local checks + model review + ≤ 1 revision) p95 < 120 s ⚠️ measure in M1; runs as a background job with progress events. Cost: the `story_generate` price (12.1.1) covers the worst case (writer + review + one revision); the reserve is taken at the worst case and settled at the actual cost.
+- **NFR-02-1** Writer call p95 < 60 s; the whole `GenerateStoryJob` (local checks + model review + ≤ 1 revision) p95 < 120 s ⚠️ measure in M1; runs as a background job with progress events. Cost: the worst case (writer + review + one revision) is bounded by `max_output_tokens` per step from `price_versions` and checked against `IBudgetGuard` before the call, so one generation cannot exceed the configured spend cap.
 - **NFR-02-2** Prompts are versioned files (`prompt_version` saved on each story version) so quality changes are traceable.
 
 ## 4. Epics and user stories
@@ -75,10 +75,10 @@
 
 **02.2.1 Structured output** — *As the backend I want schema-valid JSON so that downstream steps never parse prose.* Must · M
 - Given a request, When OpenAI returns, Then the JSON matches the schema in §5.2 (structured outputs ⚠️ confirm feature availability for gpt-6-luna in the official .NET SDK).
-- Given invalid JSON, When validation fails, Then one retry runs; a second failure sets the episode to `story_review` with error `story_invalid_output` and releases the reserved credits.
+- Given invalid JSON, When validation fails, Then one retry runs; a second failure sets the episode to `story_review` with error `story_invalid_output` and releases the metering reservation.
 
 **02.2.2 Generate story job** — *As a creator I want to click "Generate" and see progress so that I know it is working.* Must · M
-- Given an episode in `draft` or `story_review`, When `POST /episodes/{id}/story/generate` is called with an `Idempotency-Key`, Then the status becomes `story_generating`, credits are reserved (12), and a `GenerateStoryJob` is queued.
+- Given an episode in `draft` or `story_review`, When `POST /episodes/{id}/story/generate` is called with an `Idempotency-Key`, Then the status becomes `story_generating`, the usage-metering reservation is taken (`ICreditLedger`, metering-only in the personal product, DEC 10.14), and a `GenerateStoryJob` is queued.
 - Given the job succeeds, When it finishes, Then a `story_versions` row (`source = generated`) is saved, the episode moves to `story_review`, and SignalR sends `EpisodeUpdated`.
 - Given the same `Idempotency-Key` is reused, When called again, Then no second job is queued and the original response is returned.
 
@@ -86,7 +86,7 @@
 - Given a series (topic, language, `story_preset`), When generating, Then the preset, language and the user's idea/brief (≤ 1,000 chars) are combined; the brief is treated as data, not instructions (prompt-injection guard in the system prompt).
 
 **02.2.4 Metering** — *As the operator I want every call metered so that margin is known.* Must · S
-- Given any OpenAI call, When it returns (success or error), Then `usage_records` stores `operation = story`, `reservation_id`, model, input/cached/output tokens, `cost_usd` computed with the job's `price_versions` rates (12 §5.7), `provider_request_id`; every call sends a `max_output_tokens` limit from the same price version.
+- Given any OpenAI call, When it returns (success or error), Then `usage_records` stores `operation = story`, `reservation_id`, model, input/cached/output tokens, `cost_usd` computed with the job's `price_versions` rates, `provider_request_id`; every call sends a `max_output_tokens` limit from the same price version.
 
 ### Epic 02.3 — Review checkpoint #1
 
@@ -108,7 +108,7 @@
 ### Epic 02.4 — Safety
 
 **02.4.1 Moderation handling** — *As the operator I want refusals recorded so that abuse and prompt problems are visible.* Must · S
-- Given OpenAI refuses or returns a moderation error, When the job ends, Then a `moderation_events` row is saved, reserved credits are refunded, and the UI message says what to change (e.g. "reduce graphic violence").
+- Given OpenAI refuses or returns a moderation error, When the job ends, Then a `moderation_events` row is saved, the metering reservation is released, and the UI message says what to change (e.g. "reduce graphic violence").
 
 **02.4.2 Regeneration limit** — *As the operator I want a daily cap so that one user cannot loop generations.* Must · XS
 - Given 5 generations today for an episode, When another is requested, Then 429 `story_generation_limit` is returned.
@@ -128,7 +128,7 @@
 - Given spike 02.5.2-T0, Then a main-text extraction library is chosen with a commercial-safe license and recent maintenance (candidates: a .NET Readability port such as SmartReader, or trafilatura in a sidecar ⚠️ licenses unverified); decision recorded in DECISIONS.md.
 
 **02.5.3 Build the fact sheet** — *As a creator I want the key facts pulled out with their sources so that I check them quickly.* Must · M
-- Given ≥ 1 `fetched` source, When `POST /episodes/{id}/fact-sheet/generate` (Idempotency-Key, credits reserved), Then `gpt-6-luna` receives the extracted texts as delimited data and returns `facts[] { statement, source_aliases[], confidence }` (§5.8); the backend assigns fact ids `f1…` and maps aliases `s1…` to `story_sources.id` (02 CR-21); statements are paraphrased in the target language, never copied sentences.
+- Given ≥ 1 `fetched` source, When `POST /episodes/{id}/fact-sheet/generate` (Idempotency-Key, metering reservation taken), Then `gpt-6-luna` receives the extracted texts as delimited data and returns `facts[] { statement, source_aliases[], confidence }` (§5.8); the backend assigns fact ids `f1…` and maps aliases `s1…` to `story_sources.id` (02 CR-21); statements are paraphrased in the target language, never copied sentences.
 - Given a fact without a valid `source_id`, Then it is dropped by the validator (never shown as sourced).
 - Given the result, Then a `fact_sheets` row (`status = draft`, `version` n) is saved and SignalR `EpisodeUpdated` fires.
 
@@ -154,7 +154,7 @@
 **02.6.2 One automatic revision** — *As the platform I want to fix clear errors automatically, but only once, so that cost and drift stay bounded.* Must · S
 - Given ≥ 1 `blocking` + `objective` issue, Then exactly one revision call fixes those issues only, a new `story_versions` row (`source = revised`) becomes current, and the review runs once more for the hints; remaining issues are never auto-revised again.
 - Given `taste` issues, Then they are shown as hints only (the user decides).
-- Given self-review and revision calls, Then they are metered in `usage_records` (`operation = story_review`/`story_revision`) and priced inside the story generation credit price (12), not counted toward the daily generation limit.
+- Given self-review and revision calls, Then they are metered in `usage_records` (`operation = story_review`/`story_revision`) under the story generation operation, not counted toward the daily generation limit.
 
 **02.6.3 Series bible** — *As a creator I want my series to remember its narrator, places and past plots so that episodes feel like one channel.* Should · M
 - Given a series, Then `series_bibles` holds `content jsonb { narrator, recurring_characters[], places[], rules[], episode_summaries[] }` editable via `GET/PUT /series/{id}/bible` (`If-Match`).
@@ -186,7 +186,7 @@
 **02.8.3 Cadence and publishing** — *As the channel owner I want episodes published on a schedule so that the channel grows without me.* Must (P) · M
 - Given the series cadence (days, publish time, time zone), a per-channel daily cap ([DECISION] default 1 video per day) and a buffer of ready episodes, Then the orchestrator starts generation early enough for the publish time (render time estimate) and creates the publication with `publishAt` through 06 (`containsSyntheticMedia = true` always).
 - Given the owner turns autopilot on for a series, Then the owner accepts a versioned series authorization ("upload each autopilot episode of this series to channel X on this cadence with the generated metadata, unless I edit or cancel it during the veto window"); 06.2.2-T3 writes a per-publication consent from it after the veto window. Turning autopilot off or changing the text revokes it until re-accepted.
-- Given any of: two gate failures in a row; the daily/monthly spend cap from `usage_records` reached (personal phase; 12.8 low funds in the SaaS); the channel connection not `active` (revoked/expired, 06.4); an OAuth client incident (06.2.3); a YouTube quota error, upload failure or rejected video; a veto notice that could not be delivered — Then autopilot pauses the series (no new idea/story/render jobs), records `autopilot_pause_reason` and e-mails the owner through the outbox (the "autopilot alert channel"), listing videos already scheduled on YouTube with a Studio link (they go live unless changed there). The owner can pause/resume and cancel any publication, but no action is needed for fiction episodes.
+- Given any of: two gate failures in a row; the daily/monthly spend cap from `usage_records` reached; the channel connection not `active` (revoked/expired, 06.4); an OAuth client incident (06.2.3); a YouTube quota error, upload failure or rejected video; a veto notice that could not be delivered — Then autopilot pauses the series (no new idea/story/render jobs), records `autopilot_pause_reason` and e-mails the owner through the outbox (the "autopilot alert channel"), listing videos already scheduled on YouTube with a Studio link (they go live unless changed there). The owner can pause/resume and cancel any publication, but no action is needed for fiction episodes.
 - Given the audit has not passed (project setting `youtube_audit_status = pending`), Then the owner's **pre-audit mode** applies ([DECISION] default: keep the cadence and upload as private; runs end as `published_private_locked` and skip the go-live check of 06.2.5; alternative: pause after N private videos) — this also provides real-use evidence for the audit.
 - The authorization text names the series, topic, channel, cadence, daily cap, privacy status on publish (public/unlisted/private, chosen by the owner, Developer Policies III.E.3.f) and the veto window; accepting it creates a `series_autopilot_authorizations` row (00 §6).
 
@@ -202,7 +202,7 @@
 - `NightTales.Application/Features/SeriesBible/`: `UpdateBibleCommand`, `AcceptBibleProposalCommand`, `DismissBibleProposalCommand`, `GetBibleQuery`.
 - `NightTales.Infrastructure/OpenAI/OpenAiStoryWriter` and `OpenAiFactExtractor` using the official OpenAI .NET SDK; prompts in `prompts/story/{topic}.{language}.v{n}.md`, `prompts/review/v{n}.md`, `prompts/facts/v{n}.md`, loaded at startup; `prompts/REFERENCES.md` for idea provenance.
 - `NightTales.Fetcher.Core/Research/SafeHttpSourceFetcher` (rules §5.7) behind `ISourceFetcher`; hosted only in the `fetcher` container (`NightTales.Fetcher`), which posts results to an internal Api endpoint (02 T40: the fetcher classes moved out of `NightTales.Infrastructure/Research` into the Domain-only `NightTales.Fetcher.Core` library).
-- Pricing: text rates (`gpt-6-luna`: $0.10 in / $0.50 out per 1M ✅; `gpt-6-sol`: $2 / $10 ✅) live in `price_versions.rates` (12 §5.7), seeded from config — data, not code.
+- Pricing: text rates (`gpt-6-luna`: $0.10 in / $0.50 out per 1M ✅; `gpt-6-sol`: $2 / $10 ✅) live in `price_versions.rates`, seeded from config — data, not code.
 
 ### 5.2 Output schema (JSON)
 
@@ -232,12 +232,12 @@ sequenceDiagram
   participant W as OpenAiStoryWriter
   participant DB as PostgreSQL
   UI->>API: POST /episodes/{id}/story/generate (Idempotency-Key)
-  API->>DB: reserve credits, status=story_generating
+  API->>DB: take metering reservation, status=story_generating
   API->>Q: enqueue GenerateStoryJob
   API-->>UI: 202 Accepted
   Q->>W: prompt(series preset, brief)
   W-->>Q: JSON + usage
-  Q->>DB: story_versions, usage_records, settle credits, status=story_review
+  Q->>DB: story_versions, usage_records, settle metering, status=story_review
   Q-->>UI: SignalR EpisodeUpdated
 ```
 
@@ -322,7 +322,7 @@ Normalise text (lowercase, strip punctuation, keep Vietnamese diacritics), build
 | 02.3.2-T1 | Approve/reopen commands | BE | S | 02.3.1 |
 | 02.3.3-T1 | Attestation + sources validation | BE | S | 02.3.2 |
 | 02.3.4-T1 | `StoryQualityChecker` rules | BE | M | 02.2.1 |
-| 02.4.1-T1 | Moderation/refusal mapping + refund | BE | S | 09.5.2-T1 (`ICreditLedger` port; personal phase: metering-only, 12 ledger at M2) |
+| 02.4.1-T1 | Moderation/refusal mapping + metering release | BE | S | 09.5.2-T1 (`ICreditLedger` port, metering-only) |
 | 02.4.2-T1 | Daily generation limit | BE | XS | 02.2.2 |
 | 02.1.4-T1 | `prompts/REFERENCES.md` + PR provenance checkbox | TL | XS | — |
 | 02.1.5-T1 | Written-for-the-ear rules + overused-phrase lists (vi, en) | BA | S | 02.1.1 |
@@ -374,7 +374,6 @@ Normalise text (lowercase, strip punctuation, keep Vietnamese diacritics), build
 
 ## 10. Open questions and contract change requests
 
-- [OPEN] Should users pick the model (quality tier) with different credit prices? Proposed: no in MVP.
 - ⚠️ Whether English keyword phrases give better images than Vietnamese — test in M0.
 - **Contract changes (applied to 00):** `story_versions.content jsonb`, `prompt_version`, `audit_report jsonb`, `similarity_score numeric(5,4)`, `source` value `revised`; new tables `story_sources`, `fact_sheets`, `series_bibles`; source, fact-sheet and bible routes in 00 §8; `usage_records.operation` values `story_review`, `story_revision`, `fact_sheet`.
 - ⚠️ Main-text extraction library and license (02.5.2-T0).

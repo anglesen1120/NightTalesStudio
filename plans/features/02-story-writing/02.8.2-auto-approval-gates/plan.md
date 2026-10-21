@@ -114,7 +114,7 @@ Input: the `render_jobs` row of the finished render (`status = succeeded`), its 
 
 - `strict` is a partial overlay on `default` (missing keys inherit). `loose` exists only as a documented example and is **not** shipped enabled — [DECISION] loosening a gate is an owner decision recorded in the run log, never a default.
 - Every threshold appears in `gate_results` as the `threshold` of its check, so a verdict is reproducible from the stored run row alone. That is what makes T3's calibration possible without re-evaluating.
-- Config is bound with `IOptionsMonitor<AutopilotGateOptions>` so a change does not need a restart ⚠️ (09.10.3 `SettingsChanged` handles DB-backed settings; these are appsettings values in P).
+- Config is bound with `IOptionsMonitor<AutopilotGateOptions>` so a change does not need a restart (the DB-backed `SettingsChanged` path of 09.10.3 was dropped by DEC 10.14; these are appsettings values).
 
 ### 3.4 `gate_results` payload (`gates.v1`) on `autopilot_runs.gate_results`
 

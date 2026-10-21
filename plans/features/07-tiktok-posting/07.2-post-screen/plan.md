@@ -126,9 +126,9 @@ Gates: `07-screen-contract` (live option set; the 200-error case sets `canPost =
 
 | Task | Size | Area | Depends on | Blocks | Phase / flag |
 |---|---|---|---|---|---|
-| 07.2.1-T1 | S (0.5) | BE | 07.1.2-T1, 07.1.2-T2, 09.2.1-T1 (soft) | 07.2.2-T1, 10.7.3-T1 (07 CR-7, soft) | S · R2 · flag `tiktok_publish` |
-| 07.2.2-T1 | M (1.0) | BE + Security | 07.2.1-T1, 06.2.2-T1 | 07.2.2-T2, 07.3.1-T1, 10.7.3-T1 (07 CR-7, soft) | S · R2 · flag `tiktok_publish` |
-| 07.2.2-T2 | XS (0.25) | BE | 07.2.2-T1, 06.2.2-T2, 09.2.6-T3 | — | S · R2 · flag `tiktok_publish` |
+| 07.2.1-T1 | S (0.5) | BE | 07.1.2-T1, 07.1.2-T2, 09.2.1-T1 (soft) | 07.2.2-T1, 10.7.3-T1 (07 CR-7, soft) | P · R2 · flag `tiktok_publish` |
+| 07.2.2-T1 | M (1.0) | BE + Security | 07.2.1-T1, 06.2.2-T1 | 07.2.2-T2, 07.3.1-T1, 10.7.3-T1 (07 CR-7, soft) | P · R2 · flag `tiktok_publish` |
+| 07.2.2-T2 | XS (0.25) | BE | 07.2.2-T1, 06.2.2-T2, 09.2.6-T3 | — | P · R2 · flag `tiktok_publish` |
 
 Identical to `../README.md` §8.1 (canonical). Folder total **1.75 d raw / 2.1 d buffered**, composing into the plan's 7.75/9.3 (§10 O2) — no CR to `00-overview.md` §4.1.
 

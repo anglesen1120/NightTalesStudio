@@ -94,7 +94,7 @@ Integration tests through `WorkerHost.RunOutboxOnceAsync` with `FakeClock`, no s
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.4-T1 | Outbox interceptor, registry, `OutboxDispatcher`, handlers, metrics, cleanup | L (2.0) | 09.2.2-T1, 09.2.3-T1, 09.2.6-T1 | 09.5.1-T1, every 02 outbox handler, 09.8.1-T1, 09.3.6-T1, 09.2.6-T3 (09 W2 CR-9), 09.3.2-T2, 09.10.3-T1 (09 W3 CR-17) |
+| 09.2.4-T1 | Outbox interceptor, registry, `OutboxDispatcher`, handlers, metrics, cleanup | L (2.0) | 09.2.2-T1, 09.2.3-T1, 09.2.6-T1 | 09.5.1-T1, every 02 outbox handler, 09.8.1-T1, 09.3.6-T1, 09.2.6-T3 (09 W2 CR-9) |
 
 Total **2.0 d** (+1.0, README §9).
 

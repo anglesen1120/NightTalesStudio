@@ -16,12 +16,12 @@ Wave 2 (**P**) platform slice of epic 09.9: the feature-flag **read** service, t
 
 **Out of scope (owned elsewhere — do not duplicate).**
 - 09.9.1 admin endpoints and the flag **write** API, plus `/internal/jobs` (Hangfire dashboard) hosting: `09.9.1` is **S** (W17); the dashboard itself is `09.2.6` (wave 1, signed). This folder only adds the job-span filter and the dashboard's access-log line.
-- `SecretString` log masking policy and `system_settings` purposes: `09.10.1-T1` (S). `09.9.3-T2` adds the query/property redaction set only.
+- `SecretString` log masking policy and `system_settings` purposes belonged to the phase-S settings store (dropped by DEC 10.14). `09.9.3-T2` adds the query/property redaction set only.
 - Rate limiting policies `auth`/`paid`/`hub`: `09.3.5-T1` (BD14).
 - The Angular client and its generator: plan 10 (`09.9.5-T1` publishes the spec and the gate; `10.1.4` regenerates).
-- The second *test table* for cross-tenant checks: `09.2.3-T2` (S) — it consumes the gate, it does not own it.
+- The second *test table* for cross-tenant checks was `09.2.3-T2` (phase S, dropped by DEC 10.14) — it consumed the gate, it did not own it.
 
-**Consumers that make this folder hard-gated:** 02.7 / 02.8.3 (`feature_disabled`), 06 (flags), 11.6.2-T1 (metrics, traces, alerts), `09.10.4-T1` (DP key ring; the TOTP store uses `IDataProtectionProvider.CreateProtector("identity.totp.v1")` directly, **not** `ITokenProtector` **[RULED — README §B10 WT43]**), `09.2.3-T2` + `10.1.4` (spec diff).
+**Consumers that make this folder hard-gated:** 02.7 / 02.8.3 (`feature_disabled`), 06 (flags), 11.6.2-T1 (metrics, traces, alerts), `09.10.4-T1` (DP key ring; the TOTP store uses `IDataProtectionProvider.CreateProtector("identity.totp.v1")` directly, **not** `ITokenProtector` **[RULED — README §B10 WT43]**), the deleted S `09.2.3-T2` + `10.1.4` (spec diff).
 
 ## 2. Confirmed facts
 
@@ -171,7 +171,7 @@ HTTP server metrics for latency/5xx come from the AspNetCore instrumentation (no
 
 | Event | Outbox type | Payload | Raised by | Handled by |
 |---|---|---|---|---|
-| `FeatureFlagsChanged` | `feature_flags_changed.v1` **[RULED — README §B10 WT13]** | `{ Key, Enabled, OccurredAt }` | the flag write path (CLI verb here; 09.9.1-T1 in S) | cache eviction (Worker handler + Api `LISTEN` invalidator) |
+| `FeatureFlagsChanged` | `feature_flags_changed.v1` **[RULED — README §B10 WT13]** | `{ Key, Enabled, OccurredAt }` | the flag write path (CLI verb here; the phase-S admin write path is dropped by DEC 10.14) | cache eviction (Worker handler + Api `LISTEN` invalidator) |
 
 Platform events carry no `user_id` (D11 `[PlatformEvent]`); the audit row is written by the writer, not by a handler.
 
@@ -250,16 +250,16 @@ Integration tests never sleep (D13): cache expiry and health transitions are dri
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.9.2-T2 | (P) Feature-flag read service + `RequireFeature` + `nts-worker flags` (09 W2 CR-3) | BE | S (0.5) | 09.2.5-T1 | 02.8.3-T2 soft, 06.1.2-T1 (06 CR-8), 09.9.2-T1 (09 W3 CR-17), 06.5.2-T1, 13.4.1-T1 |
-| 09.9.3-T1 | Serilog + OpenTelemetry (Npgsql instrumentation, no EF instrumentation) + health + custom metrics (09 W2 CR-3) | BE | M (1.0) | 09.1.1-T1, 09.2.6-T1 | 09.9.3-T2, 11.6.2-T1, 08.2.1-T1, 08.1.1-T1 |
+| 09.9.2-T2 | (P) Feature-flag read service + `RequireFeature` + `nts-worker flags` (09 W2 CR-3) | BE | S (0.5) | 09.2.5-T1 | 02.8.3-T2 soft, 06.1.2-T1 (06 CR-8) |
+| 09.9.3-T1 | Serilog + OpenTelemetry (Npgsql instrumentation, no EF instrumentation) + health + custom metrics (09 W2 CR-3) | BE | M (1.0) | 09.1.1-T1, 09.2.6-T1 | 09.9.3-T2, 11.6.2-T1 |
 | 09.9.3-T2 | Query-string redaction (`access_token`, `ticket`, `token`, `code`, `state`) in logs/spans + capture test | BE | S (0.5) | 09.9.3-T1, 09.8.1-T2 | — |
-| 09.9.4-T1 | Security headers, CORS, Data Protection keys, vuln scan | BE | M (1.0) | 09.2.1-T1 | 09.10.4-T1, 06.1.2-T1 (06 CR-8), 09.10.1-T1 (09 W3 CR-17), 07.1.2-T1 |
-| 09.9.5-T1 | OpenAPI doc + contract diff check | Ops | S (0.5) | 09.1.5-T1 | 09.2.3-T2 |
+| 09.9.4-T1 | Security headers, CORS, Data Protection keys, vuln scan | BE | M (1.0) | 09.2.1-T1 | 09.10.4-T1, 06.1.2-T1 (06 CR-8), 07.1.2-T1 |
+| 09.9.5-T1 | OpenAPI doc + contract diff check | Ops | S (0.5) | 09.1.5-T1 | — (phase S, dropped by DEC 10.14) |
 
 Folder total **3.5 d raw**, matching B9 ("09.9 (P part) … 3.5"). Dependency cells are copied verbatim from README B8.1 (the `Title` column matches the `09 §6` task table, `plans/09-backend-api.md:538–542`); B8.1 additionally records `Phase = P · M1` for all five tasks.
 
 **Open items**
-- **[RESOLVED — README §B10 WT13]** `feature_flags.rules jsonb` (00 §6:306) is **unused in P**: this plan reads `enabled` only, and a seeded non-empty `rules` must not affect P behaviour (rule evaluation is `06.5.2`, S).
+- **[RESOLVED — README §B10 WT13]** `feature_flags.rules jsonb` (00 §6:306) is **unused in P**: this plan reads `enabled` only, and a seeded non-empty `rules` must not affect P behaviour (rule evaluation was `06.5.2`, dropped by DEC 10.14).
 - **[RESOLVED — README §B10 WT13]** the eviction outbox type string is fixed as `feature_flags_changed.v1` (the event type name `FeatureFlagsChanged` is per BD13).
 - **[RESOLVED — README §B10 WT13]** cross-instance eviction uses a PostgreSQL `NOTIFY feature_flags_changed` + a `FeatureFlagsCacheInvalidator` `LISTEN` service (mirroring BD11's LISTEN pattern) with the 30 s TTL as backstop (only the invalidator type name remains `[INFERENCE]`).
 - `09.9.3-T1` introduces the shared metrics holder (`Application/Telemetry/NightTalesMetrics.cs`, `Meter` = `NightTales`) so 02/03/06/09.6.3 can record without touching the SDK — new cross-plan type names **[INFERENCE]**; names in 11.6.2-T1 stay frozen.
@@ -307,7 +307,7 @@ caller needs `IgnoreQueryFilters`. `rules` is never selected (P answers from `en
 
 | Path | Producer | Consumer | Scope |
 |---|---|---|---|
-| `NOTIFY feature_flags_changed` (payload = the key) **in the writer's transaction**, delivered at commit | the CLI verb (and 09.9.2-T1's `PATCH` in S) through `IFeatureFlagChangeNotifier` | `FeatureFlagsCacheInvalidator` — one `LISTEN` session per instance, in the **Api and the Worker** | every instance |
+| `NOTIFY feature_flags_changed` (payload = the key) **in the writer's transaction**, delivered at commit | the CLI verb (the phase-S `PATCH` write path is dropped by DEC 10.14) through `IFeatureFlagChangeNotifier` | `FeatureFlagsCacheInvalidator` — one `LISTEN` session per instance, in the **Api and the Worker** | every instance |
 | outbox `feature_flags_changed.v1` (`FeatureFlagsChanged`, `[PlatformEvent]`) | the write path, through `IFeatureFlagChangeNotifier` | `FeatureFlagsChangedHandler` (`IOutboxHandler`, evict-only, idempotent), registered in the Worker's composition root | the Worker |
 
 The 30 s window is the **hard bound** when a notification is lost; a dropped `LISTEN` session or a failed

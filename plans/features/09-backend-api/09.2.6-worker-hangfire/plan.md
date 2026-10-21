@@ -88,9 +88,9 @@ T1 integration tests with a real Hangfire server on the test database (short `Sc
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.6-T1 | Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration | M (1.0) | 09.2.1-T1 | 09.2.4-T1, 09.1.3-T2 (cleanup job registration), every 02 job, 09.10.1-T2 (09 W3 CR-17) |
+| 09.2.6-T1 | Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration | M (1.0) | 09.2.1-T1 | 09.2.4-T1, 09.1.3-T2 (cleanup job registration), every 02 job |
 | 09.2.6-T2 | `/internal/jobs` dashboard auth | S (0.5) | 09.2.6-T1, 09.10.4-T1, 09.3.6-T1 | — |
-| 09.2.6-T3 | E-mail pipeline: `IEmailSender`, outbox `EmailRequested`, `SendEmailJob` (queue `email`, 5 retries), templates, `email_messages`, `IEmailDeliveryStatus` | M (1.0) | 09.2.6-T1, 09.2.4-T1 | 09.3.3-T1, 09.3.1-T3, 02.8.2-T1, 02.8.3-T4, 06.1.2-T2, 06.2.2-T2 (06 CR-8), 09.3.3-T3, 09.3.7-T1, 09.10.8-T1 (09 W3 CR-17), 12.6.3-T1, 12.5.1-T2, 07.1.2-T2, 07.2.2-T2 |
+| 09.2.6-T3 | E-mail pipeline: `IEmailSender`, outbox `EmailRequested`, `SendEmailJob` (queue `email`, 5 retries), templates, `email_messages`, `IEmailDeliveryStatus` | M (1.0) | 09.2.6-T1, 09.2.4-T1 | 09.3.3-T1, 02.8.2-T1, 02.8.3-T4, 06.1.2-T2, 06.2.2-T2 (06 CR-8), 12.6.3-T1, 12.5.1-T2, 07.1.2-T2 (the S consumers 09.3.3-T3, 09.3.7-T1 and 09.10.8-T1 are deleted by DEC 10.14), 07.2.2-T2 |
 
 Total **1.5 d** (high-level M 1.0; +0.5 because the dashboard is split out, README §9).
 

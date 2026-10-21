@@ -21,7 +21,7 @@
 **Out of scope (explicit non-goals).**
 - The publish form, consent step, publication status widgets, cancel and the veto e-mail pages — 10.7.2-T1, 10.7.4-T1, 10.7.4-T2 (this task blocks 10.7.2-T1 and 06.5.1-T1).
 - Any backend work: `POST …/connect`, the callback, `GET /channels`, `DELETE /channels/{id}`, the re-auth guard, the legal gate, the `__Host-nts_oauth` cookie and the audit/outbox rows are 06.1.2-T1/T2 and 06.4.1-T1 (already signed).
-- TikTok, multi-client settings, per-client counts (06.1.2-T3, S) and the admin channel view — out.
+- TikTok (10.7.3), multi-client settings and per-client counts (the former `06.1.2-T3`, deleted by DEC 10.14) and the admin channel view — out.
 - Client polling of a channel's health: 06.4.2-T1's `TokenHealthJob` is the server's; the page shows only the status it reads.
 - The 10.10.2-T1 journeys (that task consumes this page).
 
