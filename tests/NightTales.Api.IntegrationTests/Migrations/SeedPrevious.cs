@@ -27,7 +27,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The same N-1 rule applies to the columns: <see cref="CaptureTablesAsync"/> records the columns each
 /// table has *before* the migration runs, and <see cref="SnapshotAsync"/> hashes exactly that projection
 /// on both sides. A migration that adds a column therefore does not disturb the comparison, while a
-/// rewrite of an inherited column still does.
+/// rewrite of an inherited column still does. A migration that adds columns to an *existing* table (with
+/// or without a backfill) is exercised by a row of that table in its old shape — see the
+/// <c>autopilot_runs</c> row 02.8.3-T1 added, which pins the backfill of `_02_AutopilotRunsStateAndSlot`.
 /// </para>
 /// </remarks>
 internal static class SeedPrevious
@@ -431,6 +433,40 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-00000000001d',
                     'awaiting_consent', 'Seed publication', 'Seed publication description', 'private', true,
                     now(), now(), 'youtube')
+            """),
+        (
+            // 02.8.3-T1: no table is created here — the row is the OLD shape of an existing table, which is what
+            // `_02_AutopilotRunsStateAndSlot` backfills. The table has existed since `InitialCore`, so this insert
+            // runs from the first migration after it. Its columns are conditional because the dataset outlives the
+            // migration under test: schema N-1 of `_02_AutopilotRunsStateAndSlot` has only the shell's columns (the
+            // case the backfill is proved against), while the N-1 of every later migration has them NOT NULL, so an
+            // old-shape insert there would fail with 23502. Same shape as the `episodes.approved_at` block above.
+            "autopilot_runs",
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = 'public' AND table_name = 'autopilot_runs'
+                             AND column_name = 'slot_at') THEN
+                    INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, slot_at, start_at,
+                                                state, outcome, pause_reason, attempt, render_attempts,
+                                                last_transition_at, finished_at, created_at, updated_at)
+                    VALUES ('01920000-0000-7000-8000-00000000001f', '01920000-0000-7000-8000-000000000001',
+                            '01920000-0000-7000-8000-000000000002', '01920000-0000-7000-8000-000000000005',
+                            TIMESTAMPTZ '2026-10-19 09:00:00+00', TIMESTAMPTZ '2026-10-19 09:00:00+00',
+                            TIMESTAMPTZ '2026-10-19 09:00:00+00', 'gate_failed', 'gate_failed',
+                            'gate_failed_streak', 0, 0, TIMESTAMPTZ '2026-10-19 10:00:00+00',
+                            TIMESTAMPTZ '2026-10-19 10:00:00+00', TIMESTAMPTZ '2026-10-19 08:00:00+00',
+                            TIMESTAMPTZ '2026-10-19 10:00:00+00');
+                ELSE
+                    INSERT INTO autopilot_runs (id, user_id, series_id, episode_id, started_at, outcome, pause_reason,
+                                                created_at, updated_at)
+                    VALUES ('01920000-0000-7000-8000-00000000001f', '01920000-0000-7000-8000-000000000001',
+                            '01920000-0000-7000-8000-000000000002', '01920000-0000-7000-8000-000000000005',
+                            TIMESTAMPTZ '2026-10-19 09:00:00+00', 'gate_failed', 'gate_failed_streak',
+                            TIMESTAMPTZ '2026-10-19 08:00:00+00', TIMESTAMPTZ '2026-10-19 10:00:00+00');
+                END IF;
+            END $$;
             """),
     ];
 

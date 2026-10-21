@@ -244,6 +244,9 @@ public static class ErrorCatalogue
     public static readonly FrozenSet<string> NonHttpCodes =
         new HashSet<string>(StringComparer.Ordinal)
         {
+            ErrorCodes.AutopilotUserRequired,
+            ErrorCodes.AutopilotRunNotFound,
+            ErrorCodes.AutopilotStepFailed,
             ErrorCodes.ImageModerated,
             ErrorCodes.ImageGenerationFailed,
             ErrorCodes.TtsFailed,

@@ -87,8 +87,9 @@ public sealed class CoreSchemaConstraintTests(TestDatabase database) : Integrati
         },
         {
             "autopilot_runs.outcome",
-            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, outcome, created_at, updated_at) "
-            + "VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), now(), 'bogus', now(), now())"
+            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, slot_at, start_at, state, outcome, "
+            + "last_transition_at, created_at, updated_at) VALUES (gen_random_uuid(), gen_random_uuid(), "
+            + "gen_random_uuid(), now(), now(), now(), 'planned', 'bogus', now(), now(), now())"
         },
         {
             "moderation_events.source",

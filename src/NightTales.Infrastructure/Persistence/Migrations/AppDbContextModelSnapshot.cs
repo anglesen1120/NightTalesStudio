@@ -2123,6 +2123,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int>("Attempt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempt");
+
+                    b.Property<Guid?>("AuthorizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("authorization_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("created_at");
@@ -2130,6 +2140,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("EpisodeId")
                         .HasColumnType("uuid")
                         .HasColumnName("episode_id");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("finished_at");
 
                     b.Property<string>("GateResults")
                         .HasColumnType("jsonb")
@@ -2139,6 +2153,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("idea_id");
 
+                    b.Property<DateTimeOffset>("LastTransitionAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_transition_at");
+
                     b.Property<string>("Outcome")
                         .HasColumnType("text")
                         .HasColumnName("outcome");
@@ -2147,13 +2165,40 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("text")
                         .HasColumnName("pause_reason");
 
+                    b.Property<Guid?>("PublicationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("publication_id");
+
+                    b.Property<int>("RenderAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("render_attempts");
+
                     b.Property<Guid>("SeriesId")
                         .HasColumnType("uuid")
                         .HasColumnName("series_id");
 
+                    b.Property<DateTimeOffset>("SlotAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("slot_at");
+
+                    b.Property<DateTimeOffset>("StartAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("start_at");
+
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("started_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Step")
+                        .HasColumnType("text")
+                        .HasColumnName("step");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamptz")
@@ -2169,11 +2214,21 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<string>("WaitingFor")
+                        .HasColumnType("text")
+                        .HasColumnName("waiting_for");
+
                     b.HasKey("Id")
                         .HasName("pk_autopilot_runs");
 
+                    b.HasIndex("PublicationId")
+                        .HasDatabaseName("ix_autopilot_runs_publication_id");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_autopilot_runs_user_id");
+
+                    b.HasIndex("AuthorizationId", "UserId")
+                        .HasDatabaseName("ix_autopilot_runs_authorization_id_user_id");
 
                     b.HasIndex("EpisodeId", "UserId")
                         .HasDatabaseName("ix_autopilot_runs_episode_id_user_id");
@@ -2182,12 +2237,32 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .IsDescending(false, true)
                         .HasDatabaseName("ix_autopilot_runs_series_id_started_at");
 
+                    b.HasIndex("SeriesId", "State")
+                        .HasDatabaseName("ix_autopilot_runs_series_id_state");
+
                     b.HasIndex("SeriesId", "UserId")
                         .HasDatabaseName("ix_autopilot_runs_series_id_user_id");
+
+                    b.HasIndex("State", "StartAt")
+                        .HasDatabaseName("ix_autopilot_runs_state_start_at");
+
+                    b.HasIndex(new[] { "SeriesId", "SlotAt" }, "ix_autopilot_runs_series_id_slot_at")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_autopilot_runs_series_id_slot_at");
+
+                    b.HasIndex(new[] { "SeriesId", "SlotAt" }, "ux_autopilot_runs_series_id_slot_at")
+                        .IsUnique()
+                        .HasDatabaseName("ux_autopilot_runs_series_id_slot_at");
 
                     b.ToTable("autopilot_runs", null, t =>
                         {
                             t.HasCheckConstraint("ck_autopilot_runs_outcome", "\"outcome\" IN ('awaiting_authorization', 'cancelled_by_owner', 'failed', 'gate_failed', 'paused', 'published', 'published_private_locked', 'waiting_owner')");
+
+                            t.HasCheckConstraint("ck_autopilot_runs_pause_reason", "\"pause_reason\" IN ('autopilot_channel_unsupported', 'channel_not_active', 'content_reported', 'gate_failed_streak', 'oauth_client_incident', 'owner_paused', 'pre_audit_private_limit', 'provider_funds_exhausted', 'repeated_run_failures', 'run_cost_cap_reached', 'slot_missed', 'spend_cap_reached', 'upload_failed', 'veto_notice_undelivered', 'video_rejected', 'youtube_quota_exhausted')");
+
+                            t.HasCheckConstraint("ck_autopilot_runs_state", "\"state\" IN ('awaiting_authorization', 'cancelled_by_owner', 'failed', 'gate_failed', 'idea_picked', 'paused', 'planned', 'publication_created', 'published', 'published_private_locked', 'rendering', 'researching', 'scheduled', 'story_gate', 'story_generating', 'veto_window', 'video_gate', 'waiting_owner')");
+
+                            t.HasCheckConstraint("ck_autopilot_runs_waiting_for", "\"waiting_for\" IN ('fact_sheet', 'sources', 'story', 'video')");
                         });
                 });
 
@@ -3873,12 +3948,25 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("NightTales.Domain.Series.Autopilot.AutopilotRun", b =>
                 {
+                    b.HasOne("NightTales.Domain.Publishing.Publication", null)
+                        .WithMany()
+                        .HasForeignKey("PublicationId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_autopilot_runs_publications_publication_id");
+
                     b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_autopilot_runs_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Series.Autopilot.SeriesAutopilotAuthorization", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorizationId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_autopilot_runs_series_autopilot_authorizations_authorization");
 
                     b.HasOne("NightTales.Domain.Episodes.Episode", null)
                         .WithMany()

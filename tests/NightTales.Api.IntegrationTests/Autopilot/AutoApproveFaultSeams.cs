@@ -82,6 +82,15 @@ internal sealed class AutoApproveSeamSystemWork(ISystemWorkQuery inner, AutoAppr
             yield return pair;
         }
     }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T, TKey>(
+        Expression<Func<T, bool>> where,
+        Expression<Func<T, TKey>> orderBy,
+        int batch,
+        CancellationToken ct)
+        where T : Entity, IUserOwned =>
+        inner.PendingAsync<T, TKey>(where, orderBy, batch, ct);
 }
 
 /// <summary>

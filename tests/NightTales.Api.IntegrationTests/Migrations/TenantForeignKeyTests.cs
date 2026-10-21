@@ -34,6 +34,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     private static readonly string[] SameOwnerForeignKeys =
     [
         "assets.episode_id,user_id->episodes(id,user_id)",
+        "autopilot_runs.authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
         "autopilot_runs.episode_id,user_id->episodes(id,user_id)",
         "autopilot_runs.series_id,user_id->series(id,user_id)",
         "episode_ideas.episode_id,user_id->episodes(id,user_id)",
@@ -75,15 +76,20 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
 
     /// <summary>
     /// Every nullable <c>ON DELETE SET NULL</c> foreign key in the schema, in constraint-name order: the
-    /// same-owner ones (<c>InitialCore</c>'s four plus 02.8.1-T1's <c>episode_ideas</c> key), whose column
-    /// list the migration writes with raw SQL because EF cannot emit it (a plain <c>SET NULL</c> would null
-    /// <c>user_id</c> too and fail on the first delete of a parent), plus 09.3.2-T1's self-reference and
-    /// 06.2.1-T1's autopilot authorization reference, which need no column list and no same-owner rule.
+    /// same-owner ones (<c>InitialCore</c>'s four plus 02.8.1-T1's <c>episode_ideas</c> key and 02.8.3-T1's
+    /// <c>autopilot_runs.authorization_id</c>), whose column list the migration writes with raw SQL because EF cannot
+    /// emit it (a plain <c>SET NULL</c> would null <c>user_id</c> too and fail on the first delete of a parent), plus
+    /// the single-column references that need no column list and no same-owner rule: 09.3.2-T1's self-reference,
+    /// 06.2.1-T1's autopilot authorization reference and 02.8.3-T1's <c>autopilot_runs.publication_id</c>.
     /// </summary>
     private static readonly string[] NullableSameOwnerDefinitions =
     [
         "fk_autopilot_runs_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
+        "fk_autopilot_runs_publications_publication_id|FOREIGN KEY (publication_id) "
+        + "REFERENCES publications(id) ON DELETE SET NULL",
+        "fk_autopilot_runs_series_autopilot_authorizations_authorization|FOREIGN KEY (authorization_id, user_id) "
+        + "REFERENCES series_autopilot_authorizations(id, user_id) ON DELETE SET NULL (authorization_id)",
         "fk_episode_ideas_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
         "fk_episodes_assets_final_video_asset_id_user_id|FOREIGN KEY (final_video_asset_id, user_id) "
@@ -169,13 +175,15 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         },
         {
             "autopilot_runs.series_id",
-            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, created_at, updated_at) "
-            + "VALUES (gen_random_uuid(), '{b}', '{s_a}', now(), now(), now())"
+            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, slot_at, start_at, state, "
+            + "last_transition_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{s_a}', now(), "
+            + "now(), now(), 'planned', now(), now(), now())"
         },
         {
             "autopilot_runs.episode_id",
-            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, episode_id, created_at, updated_at) "
-            + "VALUES (gen_random_uuid(), '{b}', '{s_a}', now(), '{ep_a}', now(), now())"
+            "INSERT INTO autopilot_runs (id, user_id, series_id, started_at, slot_at, start_at, state, episode_id, "
+            + "last_transition_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{s_a}', now(), now(), "
+            + "now(), 'planned', '{ep_a}', now(), now(), now())"
         },
         {
             "usage_records.episode_id",
@@ -396,6 +404,10 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     /// column. 02.8.3 writes it from the authenticated series' own authorization, so the application refuses a
     /// foreign one; the database cannot, because a composite form would need an alternate key on
     /// <c>series_autopilot_authorizations(id, user_id)</c> that D20 does not define.
+    /// 02.8.3-T1's <c>autopilot_runs.publication_id</c> is the same kind of optional reference and is outside this
+    /// scan because <c>publications</c> is not one of the scanned parents (06's table has no alternate key to point
+    /// at); the run's own series key plus its <c>user_id</c> carry the tenant, and the column is never read as an
+    /// authorization.
     /// </remarks>
     [Fact]
     public void NoSingleColumnForeignKey_ReachesAUserOwnedParent()

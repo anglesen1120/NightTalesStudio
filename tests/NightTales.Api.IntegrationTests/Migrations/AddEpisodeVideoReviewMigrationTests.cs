@@ -17,9 +17,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_09_EpisodeVideoReview</c> migration (09.7.1-T1, 09 CR-48): the two nullable video-review columns of
 /// <c>episodes</c> — <c>ready_at timestamptz</c> and <c>video_reject_reason varchar(500)</c>. <c>Up</c> is
 /// expand-only (two <c>AddColumn</c>s, no data change, no backfill) and <c>Down</c> drops exactly those two
-/// columns. 06.2.1-T1 appended <c>_06_Publications</c> after it, so the newest migration's test
-/// (<c>AddPublicationsMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this class
-/// finds its own migration by name.
+/// columns. 02.8.3-T1 appended <c>_02_AutopilotRunsStateAndSlot</c> after it, so the newest migration's test
+/// (<c>AddAutopilotRunsStateAndSlotMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this
+/// class finds its own migration by name.
 /// </summary>
 /// <remarks>
 /// A column-adding migration is proved the way <c>EpisodeApprovedAtMigrationTests</c> proves its own: the schema

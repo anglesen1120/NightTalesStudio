@@ -34,6 +34,12 @@ Replaced text (verbatim), the oldest backend Resume bullet (moved so the block s
 
 - **Backend (Session 64 closed, merged #249 → `develop` `ee3de595`):** **09.7.1-T1** approve/reject video: `POST /api/v1/episodes/{id}/video/approve` (If-Match required, 200 `ready`, re-stamps `retention_until = approve + Assets:RetentionDays` (30) on every live asset of the episode, newest 50, WT56) and `POST /api/v1/episodes/{id}/video/reject` (If-Match + Idempotency-Key, target `story` 200 `story_review` clearing the approved pointer, target `re_render` 202 `story_approved`, no Location). Events `video_approved.v1` / `video_rejected.v1` (no text in payload, audit has only `notePresent`/`reasonPresent`); Worker `VideoReRenderHandler` sends `RenderEpisodeCommand` (key `video-reject-rerender:{messageId}`, reused key = already ran, other errors throw so the outbox retries). **One migration `09_EpisodeVideoReview`** (`episodes.ready_at`, `episodes.video_reject_reason varchar(500)`, expand-only, 09 CR-48): **deferred owner review**, coordinator auto-pick A 2026-10-18, the merge does not ratify it. Gate ``GATE_RC=0` on `aa32087d` (remote, Ubuntu arm64; the tip adds docs only)`. Open: §Open tasks rows `09.7.1-T1 …`. Next (backend): coordinator assigns; 09.7.1 unblocks 10.6.2-T1 and 02.8.2-T1.
 
+### Superseded Resume bullet (2026-10-20, replaced by the Session 71 Resume bullet)
+
+Replaced text (verbatim), the oldest delivered Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Web (Session 54 closed):** **10.5.3-T2** self-review issues panel + score table, "Automatically corrected once" badge, drift note and similarity highlights merged as #227 (`f9a37b26`, tip `d0f2f429`, code tip `3c7e66f4`, `feature/10.5.3-T2-s54`, from `develop` `cb491bbf`; web lane; FE only, no `web/openapi.json` change). Coordinator decision A (deferred owner review): counts and inline rows only from `qualityHints`; model-review issues only in the "why" panel because the server does not flatten them (new §Open tasks row `qualityHints-model-review-flatten`). Closes the `story-review.page.scss` budget row; the 4-GET gate read stays open. Local web gate exit 0 on `3c7e66f4`, T2 gates closed; CI refused: CI-01 (`build-test` jobs `117412350028`, `117412349894`, 0 steps, billing annotation), owner treats as pass. Accepted lows: §Open tasks `L1-S54`, `L2-S54`.
+
 ### Superseded Session 67 rows (2026-10-19, replaced when the Session 67 02.8.2-T1 PR opened)
 
 Replaced text (verbatim), the oldest Resume bullet (moved so the block stays within its 15-bullet cap):
@@ -1518,3 +1524,9 @@ Closed Open finding S75-1 (owner approved the deck wording 2026-10-21), verbatim
 Replaced session-log row (PR open state), verbatim:
 
 | 2026-10-21 | Session 75: 10.7.1-T0 `/channels` UI design reconciled (PR open, not merged) | `design-ui` agent reworked the 16 `f-channels-*` frames against the merged backend (06.1.2-T1/T2, 06.4.1-T1); separate design/a11y reviewer: 10 findings (R1-R10), one `judge_batch` triage (`typesafe/jev-1.13.0`, 10/10; labels under 0.7 hand-read) → R1-R3, R5-R8 fixed in the deck, R4 closed by the `plan.md` §6 sync, R9 recorded as design notes, R10 recorded (S75-2). Gate: `git diff --check` clean; deck render matrix (12 combos, 16 frames each) no overflow, no console error. Design-only (no `web/`/`src/`). Owner re-approval pending. |
+
+### Superseded Resume bullet (2026-10-21, replaced by the Session 71 Resume bullet)
+
+Replaced text (verbatim), the oldest delivered Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Web (Session 65 closed, merged #251 → `develop` `596da141`):** **10.6.1-T2** "Make video" action (Idempotency-Key, `If-Match`, keyword gate) + cancel render on `/episodes/:id` merged as #251 (`596da141`, tip `8b4cd110`, Session 65, from `develop` `d5fd2a46`; web lane, FE only; tier T2); `web/openapi.json` + `web/tools/web/openapi.lock.json` re-pinned from `develop` `d5fd2a46` (coordinator-authorised, limited Api-project build). Local web gate exit 0 on the tip `8b4cd110` (all 10 `web.yml` steps), e2e stubbed 38/38, CI refused (billing, CI-01, owner treats as pass). Open items S65-1..S65-7 stay `[OPEN]` (§Open findings).

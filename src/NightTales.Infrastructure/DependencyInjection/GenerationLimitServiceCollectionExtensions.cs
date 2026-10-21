@@ -7,8 +7,10 @@ using NightTales.Infrastructure.Persistence.Queries;
 namespace NightTales.Infrastructure.DependencyInjection;
 
 /// <summary>
-/// The FR-02-7 rolling-window limit (02.4.2-T1). Only the Api composes it: the Worker's autopilot runs are capped
-/// by D17's per-run limits, not by this guard, and a user-triggered generate call is an Api request.
+/// The FR-02-7 rolling-window limit (02.4.2-T1). Both hosts compose it: the Api serves the owner's own generate
+/// call, and the Worker resolves the same command's handler because 02.8.3-T1's autopilot step dispatches a slot's
+/// first story through it. Step 5 of the handler counts user-triggered runs only, so the autopilot never spends
+/// the owner's limit; the registration is what lets Mediator activate the handler in either host.
 /// </summary>
 public static class GenerationLimitServiceCollectionExtensions
 {

@@ -179,5 +179,14 @@ public sealed class AutopilotApprovalServiceTests
 
             yield return (RunId, Guid.Parse("018f0000-0000-7000-8000-00000000000c"));
         }
+
+        /// <inheritdoc />
+        public IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T, TKey>(
+            Expression<Func<T, bool>> where,
+            Expression<Func<T, TKey>> orderBy,
+            int batch,
+            CancellationToken ct)
+            where T : Entity, IUserOwned =>
+            throw new NotSupportedException("The approval service resolves one owner; it never scans a queue.");
     }
 }

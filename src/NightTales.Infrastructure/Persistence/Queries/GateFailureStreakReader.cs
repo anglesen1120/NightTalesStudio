@@ -12,11 +12,16 @@ namespace NightTales.Infrastructure.Persistence.Queries;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The ordering column.</b> The plan's SQL orders by the run's slot column and takes two rows; this reader
-/// orders by <c>autopilot_runs.started_at DESC</c> with the v7 id as the tie-break, because the run shell of
-/// 09.2.2-T1 has no <c>slot_at</c> column yet (02.8.3-T1 adds the state machine and the slot with it). The
-/// existing descending index <c>(series_id, started_at DESC)</c> serves the read, and the id tie-break keeps the
-/// answer deterministic when two runs of one series were started in the same instant.
+/// <b>The ordering column.</b> The plan's SQL orders by the run's slot column and takes two rows; 02.8.3-T1's
+/// <c>UNIQUE (series_id, slot_at)</c> makes that column the slot's identity, so this reader orders by
+/// <c>autopilot_runs.slot_at DESC</c> with the v7 id as the tie-break (STATUS S67-6). The
+/// <c>(series_id, slot_at DESC)</c> index serves the read, and the id tie-break keeps the answer deterministic even
+/// though a series' slots are unique.
+/// </para>
+/// <para>
+/// <b>The pause reason.</b> <see cref="AutopilotRun.PauseReason"/> is the 02.8.3 enum; the snapshot 02.8.3-T4
+/// consumes keeps its snake_case wire value (<see cref="AutopilotPauseReasonWire"/>), which is what the column
+/// stores and what the alert copy key names.
 /// </para>
 /// <para>
 /// <b>The scope is the caller's.</b> It runs on the scope's write model, so the D10 tenant filter applies and the
@@ -32,6 +37,11 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
 {
     /// <summary>The plan §3.5 <c>LIMIT 2</c>: only the two most recent terminal runs are counted.</summary>
     public const int StreakWindow = 2;
+
+    // The terminal marker is `finished_at`, not `outcome`: 02.8.3 writes the outcome on every stop, including the
+    // non-terminal ones (`waiting_owner`, `paused`, `awaiting_authorization`), so filtering on `outcome` would put a
+    // stopped-but-open run (a buffered slot waiting for the owner's consent) inside the two-row window and reset the
+    // streak although the last two finished runs both failed the gate.
 
     /// <inheritdoc />
     public async ValueTask<int> GetStreakAsync(Guid seriesId, CancellationToken ct)
@@ -57,12 +67,12 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
     {
         EnsureUserScope();
 
-        return await db.AutopilotRuns
+        var latest = await db.AutopilotRuns
             .AsNoTracking()
             .Where(run => run.SeriesId == seriesId)
-            .OrderByDescending(run => run.StartedAt)
+            .OrderByDescending(run => run.SlotAt)
             .ThenByDescending(run => run.Id)
-            .Select(run => new AutopilotRunGateSnapshot(
+            .Select(run => new LatestRun(
                 run.Id,
                 run.EpisodeId,
                 run.StartedAt,
@@ -71,12 +81,23 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
                 run.GateResults))
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
+
+        return latest is null
+            ? null
+            : new AutopilotRunGateSnapshot(
+                latest.RunId,
+                latest.EpisodeId,
+                latest.StartedAt,
+                latest.Outcome,
+                latest.PauseReason is { } reason ? AutopilotPauseReasonWire.ToWire(reason) : null,
+                latest.GateResults);
     }
 
     /// <summary>
-    /// The outcomes of the <paramref name="take"/> most recent runs of the series that have stopped, newest first.
-    /// A run whose <c>outcome</c> is still null has not stopped and is not part of the answer, so it cannot be
-    /// mistaken for a failure it never was (nor for the end of a streak).
+    /// The outcomes of the <paramref name="take"/> most recent runs of the series that have finished, newest first.
+    /// A run that has not finished (<c>finished_at IS NULL</c>) is not part of the answer, so neither a run in
+    /// flight nor one merely stopped on the owner or the consent gate can be mistaken for a failure it never was
+    /// (nor for the end of a streak).
     /// </summary>
     /// <param name="seriesId">The series to read.</param>
     /// <param name="take">How many outcomes to read; the caller's window.</param>
@@ -87,13 +108,32 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
         CancellationToken ct) =>
         await db.AutopilotRuns
             .AsNoTracking()
-            .Where(run => run.SeriesId == seriesId && run.Outcome != null)
-            .OrderByDescending(run => run.StartedAt)
+            .Where(run => run.SeriesId == seriesId && run.FinishedAt != null)
+            .OrderByDescending(run => run.SlotAt)
             .ThenByDescending(run => run.Id)
             .Select(run => run.Outcome)
             .Take(take)
             .ToListAsync(ct)
             .ConfigureAwait(false);
+
+    /// <summary>
+    /// The columns <see cref="GetLatestAsync"/> reads, before the pause reason is turned into its wire value. The
+    /// projection stays a record of the entity's own types so EF translates it to one <c>SELECT</c>; the enum-to-text
+    /// step is client-side because the column's value converter is a store detail of the write model.
+    /// </summary>
+    /// <param name="RunId">The run row.</param>
+    /// <param name="EpisodeId">The episode it is producing, or <see langword="null"/> before one exists.</param>
+    /// <param name="StartedAt">The instant the row was planned.</param>
+    /// <param name="Outcome">The stored outcome.</param>
+    /// <param name="PauseReason">The stored pause trigger, or <see langword="null"/>.</param>
+    /// <param name="GateResults">The stored <c>gates.v1</c> document, or <see langword="null"/>.</param>
+    private sealed record LatestRun(
+        Guid RunId,
+        Guid? EpisodeId,
+        DateTimeOffset StartedAt,
+        AutopilotRunOutcome? Outcome,
+        AutopilotPauseReason? PauseReason,
+        string? GateResults);
 
     /// <summary>
     /// Refuses the read when the scope has no user (09 README D10): the tenant filter would drop every row, and a

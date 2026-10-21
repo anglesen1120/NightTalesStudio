@@ -9,8 +9,10 @@ namespace NightTales.Application.Abstractions;
 /// <remarks>
 /// <para>
 /// The streak is derived, never stored: 02.8.3-T4 pauses a series when it reaches its bound, so a column would be
-/// a second source of truth for the same fact. A run is terminal when its <c>outcome</c> is not null (02.8.3-T1
-/// writes it when the state machine stops); a run still in flight is <em>skipped</em> rather than counted, and a
+/// a second source of truth for the same fact. A run is terminal when its <c>finished_at</c> is not null — not when
+/// its <c>outcome</c> is: 02.8.3-T1 writes the outcome on every stop, including the non-terminal ones
+/// (<c>waiting_owner</c>, <c>paused</c>, <c>awaiting_authorization</c>), and a stopped-but-open run must not enter
+/// the window. A run still in flight is <em>skipped</em> rather than counted, and a
 /// terminal run that did not fail ends the streak: a <c>published</c> run in between two failures is not a run of
 /// two failures, so the answer is 0. The count also stops at the reader's own window — the plan's <c>LIMIT 2</c> —
 /// so it answers 0, 1 or 2.
@@ -46,9 +48,15 @@ public interface IGateFailureStreakReader
 /// </summary>
 /// <param name="RunId">The run row.</param>
 /// <param name="EpisodeId">The episode it is producing, or <see langword="null"/> before one exists.</param>
-/// <param name="StartedAt">The ordering column this reader uses (<c>autopilot_runs.started_at</c>).</param>
-/// <param name="Outcome">The stored terminal outcome, or <see langword="null"/> while the run is in flight.</param>
-/// <param name="PauseReason">The code the run state machine wrote when it paused the run, or <see langword="null"/>.</param>
+/// <param name="StartedAt">The instant the row was planned (<c>autopilot_runs.started_at</c>).</param>
+/// <param name="Outcome">
+/// The stored outcome — <see langword="null"/> while the run is in flight, and not a terminal marker: 02.8.3 writes
+/// it on every stop, so a <c>waiting_owner</c>/<c>paused</c>/<c>awaiting_authorization</c> run carries one too.
+/// </param>
+/// <param name="PauseReason">
+/// The wire value (<c>gate_failed_streak</c>, <c>autopilot_channel_unsupported</c>, …) of the trigger the run state
+/// machine wrote when it paused the run, or <see langword="null"/>.
+/// </param>
 /// <param name="GateResults">The <c>gates.v1</c> document of the run's verdicts, or <see langword="null"/> before one.</param>
 public sealed record AutopilotRunGateSnapshot(
     Guid RunId,
