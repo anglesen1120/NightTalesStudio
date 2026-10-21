@@ -47,4 +47,26 @@ public sealed class AuthLinksTests
         Should.Throw<ArgumentException>(() => AuthLinks.PasswordReset(Origin, " "));
         Should.Throw<ArgumentNullException>(() => AuthLinks.PasswordReset(null!, "t"));
     }
+
+    [Fact]
+    public void PublicationCancel_PutsTheTokenAfterTheHash()
+    {
+        // 06.2.2-T2 (06 CR-6): the same fragment invariant as reset/verify, plus the publication the token is
+        // scoped to — the page reads both from the fragment, so neither reaches a server log nor a `Referer`.
+        var publicationId = Guid.Parse("018f3c3e-7a2b-7c40-8e11-1a2b3c4d5e6f");
+
+        var cancel = AuthLinks.PublicationCancel(Origin, publicationId, "tok-123");
+
+        cancel.ShouldBe("https://app.nighttales.app/publications/cancel#p=018f3c3e-7a2b-7c40-8e11-1a2b3c4d5e6f&t=tok-123");
+
+        cancel[(cancel.IndexOf('#', StringComparison.Ordinal) + 1)..]
+            .ShouldBe("p=018f3c3e-7a2b-7c40-8e11-1a2b3c4d5e6f&t=tok-123");
+
+        // The authority is the only part of the origin that a link uses, exactly as for the other two.
+        AuthLinks.PublicationCancel(new Uri("https://app.nighttales.app/ignored/path"), publicationId, "tok-123")
+            .ShouldBe(cancel);
+
+        Should.Throw<ArgumentException>(() => AuthLinks.PublicationCancel(Origin, publicationId, " "));
+        Should.Throw<ArgumentNullException>(() => AuthLinks.PublicationCancel(null!, publicationId, "t"));
+    }
 }

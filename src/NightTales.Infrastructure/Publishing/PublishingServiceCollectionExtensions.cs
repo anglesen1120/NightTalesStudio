@@ -88,6 +88,10 @@ public static class PublishingServiceCollectionExtensions
         // Worker composes it on its own (see the method's remarks).
         services.AddChannelConnections();
 
+        // 06.2.2-T2: the locked read of the anonymous cancel-by-link route. Scoped like the context it wraps: it
+        // joins the request's unit of work, whose transaction holds the row lock.
+        services.TryAddScoped<IPublicationCancelLock, PublicationCancelLock>();
+
         // The form posts: the timeout is the configured one, the transport is shared with the API client below, and
         // the buffered body is bounded. A token answer is a few hundred bytes, so a compromised or misconfigured
         // token endpoint must not be able to make the callback buffer an arbitrary body inside that timeout.
@@ -162,6 +166,13 @@ public static class PublishingServiceCollectionExtensions
         services.TryAddScoped<IChannelConnectionLocker, ChannelConnectionLocker>();
         services.TryAddScoped<ITokenService, TokenService>();
         services.TryAddScoped<IConnectChannelConnection, ConnectChannelConnectionHandler>();
+
+        // 06.2.2-T2: the two publication notices (06 README D7). It belongs with these registrations because both
+        // hosts compose this method — the Api's create/consent handlers queue the consent receipt and the veto
+        // notice, and the Worker's autopilot consent job (06.2.2-T3) queues for the same port — while everything it
+        // needs (the write model, IEmailSender, the profile read and the link origin) is composed by AddPersistence
+        // and AddEmail, which both hosts already run.
+        services.TryAddScoped<IPublicationNotices, PublicationNotices>();
 
         return services;
     }

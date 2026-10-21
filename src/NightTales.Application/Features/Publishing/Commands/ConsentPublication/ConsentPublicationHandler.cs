@@ -3,6 +3,7 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Dtos;
@@ -36,10 +37,11 @@ namespace NightTales.Application.Features.Publishing.Commands.ConsentPublication
 /// code for the same reason.
 /// </para>
 /// <para>
-/// <b>Round trips.</b> Three on the success path: the publication with its connection's display name (one
-/// statement), the episode, and the save that writes the row, the episode and the outbox message. Only the
-/// lost-update catch adds a fourth, a single existence read that separates a deleted row (404) from a moved one
-/// (409). No external call is made.
+/// <b>Round trips.</b> Five on the success path: the publication with its connection's display name (one
+/// statement), the episode, the owner's profile and the channel title the consent receipt needs (two
+/// projections, 06.2.2-T2), and the save that writes the row, the episode, the e-mail row and their outbox
+/// messages. Only the lost-update catch adds a fifth, a single existence read that separates a deleted row (404)
+/// from a moved one (409). No external call is made: the receipt is queued, never sent.
 /// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the tenant filter is what turns "another owner's row" into a 404.</param>
@@ -49,11 +51,16 @@ namespace NightTales.Application.Features.Publishing.Commands.ConsentPublication
 /// reference <c>Microsoft.Extensions.Options</c>). The current consent-text version is read once per command (D11).
 /// </param>
 /// <param name="clock">The scope's clock; one instant is read for the whole command.</param>
+/// <param name="notices">
+/// The consent receipt of 06.2.2-T2 (D7/YR9). It queues only — it never sends and never commits — so calling it
+/// before the handler's own save keeps the message and the publication in one transaction.
+/// </param>
 /// <param name="logger">The id-only log lines of this path.</param>
 public sealed partial class ConsentPublicationHandler(
     IAppDbContext db,
     YouTubeOptions options,
     IClock clock,
+    IPublicationNotices notices,
     ILogger<ConsentPublicationHandler> logger)
     : ICommandHandler<ConsentPublicationCommand, ErrorOr<PublicationDto>>
 {
@@ -134,6 +141,21 @@ public sealed partial class ConsentPublicationHandler(
         if (scheduled.IsError)
         {
             return scheduled.Errors;
+        }
+
+        // Step 6: the consent receipt of D7/YR9, queued inside this same unit of work. `IEmailSender.QueueAsync`
+        // never commits on its own, so the message row and its `email_requested.v1` event commit with the
+        // publication and the episode in the one save below, and a queueing failure fails the whole command — no
+        // `consent_at`, no episode transition, no outbox row (06.2.2-T2 §Failure handling). It therefore runs only
+        // on the path that writes: the idempotent repeat of step 2 answered before this point, so a retried consent
+        // queues nothing (acceptance: exactly once per consent).
+        var notice = await notices
+            .QueueConsentedAsync(publication, ConsentSource.User, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (notice.IsError)
+        {
+            return notice.Errors;
         }
 
         // ONE transaction: the publication row, the episode row and the outbox message commit together. The flush

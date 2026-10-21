@@ -185,11 +185,11 @@ public sealed partial class PasswordResetService(
         //    the same lock first (EfMfaEnrolmentService.DisableAsync), so a reset and an MFA change
         //    serialize on the account and both take family locks only after it — one lock order, no
         //    inversion (09.3.2-T2/D9, 09.10.4-T1).
-        await SecuritySql.LockUserAsync(database, consumed.Value, cancellationToken).ConfigureAwait(false);
+        await SecuritySql.LockUserAsync(database, consumed.Value.UserId, cancellationToken).ConfigureAwait(false);
 
         // 3. The account must still be active; a suspended one answers the same 400, never "suspended".
         var user = await database.Users
-            .FirstOrDefaultAsync(candidate => candidate.Id == consumed.Value, cancellationToken)
+            .FirstOrDefaultAsync(candidate => candidate.Id == consumed.Value.UserId, cancellationToken)
             .ConfigureAwait(false);
 
         if (user is null || user.Status != UserStatus.Active)

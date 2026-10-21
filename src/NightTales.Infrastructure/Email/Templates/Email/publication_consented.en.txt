@@ -1,0 +1,12 @@
+Subject: Approved to publish: {{videoTitle}}
+
+Hello {{displayName}},
+
+{{videoTitle}} is approved to publish to YouTube channel {{channelTitle}}.
+
+Privacy: {{privacy}} {{privacyNote}}
+Publishing slot (UTC): {{scheduledAt}}
+
+When the slot shows no time, the upload starts as soon as the video is ready. You can still review or cancel it at {{publicationUrl}}.
+
+{{approvalLine}}
