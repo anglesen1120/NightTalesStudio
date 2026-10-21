@@ -71,6 +71,11 @@ internal static class AllowLists
             // of a channel whoever owns it, because its caller is 06.1.2-T1's anonymous callback, which cannot
             // be tenant-pinned; the connect write checks row.UserId before anything is written.
             "NightTales.Infrastructure.Publishing.ChannelConnectionLocker",
+            // 06.2.2-T2: the one locked read of the anonymous cancel-by-link route. Its statement carries the
+            // tenancy itself (`id = @id AND user_id = @tokenOwner`) and the owner comes from the consume of the
+            // single-use token, never from the request; the scope cannot be tenant-pinned because the route has no
+            // principal and the unit of work builds the context before the handler runs.
+            "NightTales.Infrastructure.Publishing.PublicationCancelLock",
         };
 
     /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>

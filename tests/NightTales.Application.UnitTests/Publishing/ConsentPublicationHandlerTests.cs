@@ -14,6 +14,7 @@ using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Publishing;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -333,6 +334,7 @@ public sealed class ConsentPublicationHandlerTests(TestDatabase database) : Inte
             context,
             new YouTubeOptions { ConsentTextVersion = currentVersion },
             clock,
+            new FakePublicationNotices(),
             logger ?? NullLogger<ConsentPublicationHandler>.Instance);
 
         var result = await handler.Handle(command, ct);

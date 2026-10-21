@@ -179,7 +179,7 @@
 
 **10.7.1 Channels page** — *As a creator I want to connect my YouTube channel so that I can publish from here.* Must · S
 - Given `/channels`, Then connected accounts show name, platform, status, last verified; "Connect YouTube" redirects to Google (`POST /channels/youtube/connect` → URL); callback page shows success/failure.
-- "Disconnect" explains: we revoke access with Google right away and delete related data within 7 days; also links https://security.google.com/settings/security/permissions (DECISIONS §10.6 ✅).
+- "Disconnect" explains: access at Night Tales is removed now, revocation at Google is only requested, pending publications are cancelled and related data is scheduled for deletion 7 days after the disconnect; also links https://security.google.com/settings/security/permissions (DECISIONS §10.6 ✅) *(10.7.1-T0 S75)*.
 
 **10.7.2 YouTube publish form** — *As a creator I want to publish or schedule with explicit consent so that uploads only happen when I say so.* Must · M
 - Given a `ready` episode and flag `youtube_publish`, Then the form has channel, title (prefilled), description, tags, privacy, optional schedule date/time (converted to UTC; scheduled posts are uploaded as private with `publishAt` ✅ — only valid with privacy private per YouTube docs ✅), and read-only "Altered or synthetic content: Yes" (`containsSyntheticMedia = true`).

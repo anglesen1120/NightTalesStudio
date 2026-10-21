@@ -353,7 +353,7 @@ internal static class AuthTestFlow
     /// <param name="token">The presented plaintext token.</param>
     /// <param name="kind">The flow the caller is performing.</param>
     /// <param name="ct">Cancels the statement.</param>
-    internal static async Task<ErrorOr<Guid>> ConsumeActionTokenAsync(
+    internal static async Task<ErrorOr<ConsumedActionToken>> ConsumeActionTokenAsync(
         IServiceProvider services,
         string token,
         UserActionKind kind,

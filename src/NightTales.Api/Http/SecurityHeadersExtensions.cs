@@ -196,6 +196,16 @@ public static class SecurityHeadersExtensions
         response.Headers[ReferrerPolicyHeader] = "no-referrer";
         response.Headers[FrameOptionsHeader] = "DENY";
 
+        // A 429 is a refusal, not a representation: it says only "come back later" and must not be kept by
+        // a shared cache, which would replay it for every caller behind it. The routes that require it by
+        // contract (the anonymous cancel-by-link POST, 06.2.2-T2 D17) are answered by the limiter before
+        // their handler — and so before their own header filter — runs, so the refusal's `no-store` is
+        // stamped here, in the same pass that states the `Referrer-Policy` it already carries (BD12).
+        if (response.StatusCode == StatusCodes.Status429TooManyRequests)
+        {
+            response.Headers.CacheControl = "no-store";
+        }
+
         // The Api's HTML surfaces are the documentation page (OpenAPI/Swagger) and the jobs dashboard
         // (`/internal/jobs`, 09.2.6-T2), so an HTML answer is one of the two: each gets the policy its
         // own assets need, and an ordinary JSON answer never does (BD12). The path — not the handler —

@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Resume bullet (2026-10-21, replaced by the Session 74 06.2.2-T2 PR)
+
+Replaced text (verbatim), the oldest backend Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Backend (Session 67 closed, merged #257 → `develop` `ddb05b38`; branch `feature/02.8.2-T1-s67` from `develop` `fa6c0aa2`, merged develop `c53efc0c`):** **02.8.2-T1** auto-approval gate engine: Domain `Stories/Gates` (15 true-crime / 13 fiction story checks, 10 video checks, threshold profile overlay `default`/`strict`), `StoryGateEvaluator`/`VideoGateEvaluator` behind an `IAutoApprovalGate` facade, `GateResultWriter` (`gates.v1` into `autopilot_runs.gate_results`), `GateOutcomeRecorder`, `AutopilotApprovalService` (sends the same `ApproveStoryCommand`/`ApproveVideoCommand` under `ISystemContext.For(owner)`; the story ETag is bound to the evaluated version and the video `IfMatch` comes from the checked snapshot), `AutopilotNotificationService` (owner e-mail + audit + outbox in the verdict's own transaction; the handler only publishes realtime), `GateFailureStreakReader`, options/metrics/DI in Api and Worker, `AutopilotRun.RecordGateResults`/`RaiseOwnerActionRequired`, and a defence-in-depth `trueCrime && Source == Autopilot` guard in `ApproveStoryCommandHandler`. No migration, no public route, `openapi.json`/`web/openapi.json` untouched, `Autopilot:Gates:DryRun` defaults true. Gates: build-only and targeted remote runs `GATE_RC=0`, full remote `GATE_RC=0` on `98df4ada`. T3 gates: QA agent (defect D1 fixed), code review 15, perf 5, security 9, one `judge_batch` triage (`typesafe/jev-1.13.0`, 27/27, USD 0.0005), 19 fixed, delta review: R1 and R2 regressions fixed, R3 and R4 open as S67-8 and S67-9. Open items S67-1..S67-9 (§Open findings); contract deviations in the task §Notes. Next (backend): 02.8.2-T2 merged #263 → `develop` `11d22f48`; next 02.8.2-T3 (thresholds config + dry-run calibration) or 02.8.3-T1.
+
 ### Superseded backend Next clause (2026-10-21, replaced when the Session 73 06.4.1-T1 PR opened)
 
 Replaced text (verbatim), the tail of the Session 72 backend Resume bullet:
@@ -1494,3 +1500,33 @@ Also replaced (verbatim), the `Next (backend)` sentence of the Session 67 Resume
 Replaced Resume header (Session 73 bullet, PR open state), verbatim:
 
 - **Backend (Session 73, PR #265 open, not merged; `feature/06.4.1-T1-s73` from `develop` `3e168ca5`):**
+
+## Session 75 (10.7.1-T0), archived 2026-10-21
+
+Replaced Resume bullet (Web Session 54 closed), verbatim:
+
+- **Web (Session 54 closed):** **10.5.3-T2** self-review issues panel + score table, "Automatically corrected once" badge, drift note and similarity highlights merged as #227 (`f9a37b26`, tip `d0f2f429`, code tip `3c7e66f4`, `feature/10.5.3-T2-s54`, from `develop` `cb491bbf`; web lane; FE only, no `web/openapi.json` change). Coordinator decision A (deferred owner review): counts and inline rows only from `qualityHints`; model-review issues only in the "why" panel because the server does not flatten them (new §Open tasks row `qualityHints-model-review-flatten`). Closes the `story-review.page.scss` budget row; the 4-GET gate read stays open. Local web gate exit 0 on `3c7e66f4`, T2 gates closed; CI refused: CI-01 (`build-test` jobs `117412350028`, `117412349894`, 0 steps, billing annotation), owner treats as pass. Accepted lows: §Open tasks `L1-S54`, `L2-S54`.
+
+## Session 75 close-out (2026-10-21)
+
+Replaced Resume bullet (Web Session 75, PR open state), verbatim:
+
+- **Web (Session 75, PR open, not merged; `feature/10.7.1-T0-s75` from `develop` `acb48dee`):** **10.7.1-T0** `/channels` UI design reconciled with the merged backend (06.1.2-T1 #237, 06.1.2-T2 #241, 06.4.1-T1 #265): the 16 `f-channels-*` frames in `design/ui/screens/06-render-publish.html` (approved 2026-10-02, deck `192cc73`) now carry the shipped disconnect behaviour (tokens removed now, Google revoke requested not guaranteed, awaiting_consent/scheduled publications cancelled, uploading/processing not stopped, data scheduled for deletion 7 days after, published videos untouched), no menu on revoked rows, null `displayName` / null `lastVerifiedAt` rows, connect and disconnect error variants, frame-specific a11y notes. Design-only: no `web/` or `src/` change, no `web/openapi.json` re-pin. Copy keys in `10-web-ui/10.7.1-channels/plan.md` §6 amended (10.7.1-T0 S75). Gate: `git diff --check` clean + deck render matrix (360/768/1280 x dark/light x vi/en) with no overflow, no console error; T0 doc review + separate design/a11y review. **Owner re-approval of the reconciled frames pending** (task file §Outputs); open items S75-1, S75-2 (§Open findings).
+
+Removed Open-tasks row (10.7.1-T0 merged, owner approved), verbatim:
+
+| 10.7.1-T0 `/channels` UI design (reconciliation) | PR open (Session 75, `feature/10.7.1-T0-s75`), docs/design only; not merged; owner re-approval pending | Deck frames + `plan.md` §6 copy keys + task Notes + 10.7.1-T1 Notes hand-over (from 10.7.1-T0, S75). Blocks 10.7.1-T1 until the owner approves the reconciled frames (2026-10-02 approval covers deck `192cc73` only). No ⚠️ or STATUS hand-over row was specific to this task (checked: `web/openapi.json` not re-pinned, 10.7.2-T1 consumes it later). |
+
+Closed Open finding S75-1 (owner approved the deck wording 2026-10-21), verbatim:
+
+- **S75-1** (10.7.1-T0 design, S75, 2026-10-21) — `[OPEN]` owner: owner / 10.7.1-T1. `06-youtube-posting/06.4-revocation/plan.md:229` says the disconnect body must state that the channel's data is deleted on Google's side; shipped 06.4.1-T1 deletes Night Tales' own channel data (request due 7 days after) and only requests revocation at Google, so the design says that instead. Confirm the wording (the 06 plan text stays as is). (from 10.7.1-T0, S75)
+
+Replaced session-log row (PR open state), verbatim:
+
+| 2026-10-21 | Session 75: 10.7.1-T0 `/channels` UI design reconciled (PR open, not merged) | `design-ui` agent reworked the 16 `f-channels-*` frames against the merged backend (06.1.2-T1/T2, 06.4.1-T1); separate design/a11y reviewer: 10 findings (R1-R10), one `judge_batch` triage (`typesafe/jev-1.13.0`, 10/10; labels under 0.7 hand-read) → R1-R3, R5-R8 fixed in the deck, R4 closed by the `plan.md` §6 sync, R9 recorded as design notes, R10 recorded (S75-2). Gate: `git diff --check` clean; deck render matrix (12 combos, 16 frames each) no overflow, no console error. Design-only (no `web/`/`src/`). Owner re-approval pending. |
+
+### Superseded Resume bullet (2026-10-21, replaced by the Session 71 Resume bullet)
+
+Replaced text (verbatim), the oldest delivered Resume bullet (moved so the block stays within its 15-bullet cap):
+
+- **Web (Session 65 closed, merged #251 → `develop` `596da141`):** **10.6.1-T2** "Make video" action (Idempotency-Key, `If-Match`, keyword gate) + cancel render on `/episodes/:id` merged as #251 (`596da141`, tip `8b4cd110`, Session 65, from `develop` `d5fd2a46`; web lane, FE only; tier T2); `web/openapi.json` + `web/tools/web/openapi.lock.json` re-pinned from `develop` `d5fd2a46` (coordinator-authorised, limited Api-project build). Local web gate exit 0 on the tip `8b4cd110` (all 10 `web.yml` steps), e2e stubbed 38/38, CI refused (billing, CI-01, owner treats as pass). Open items S65-1..S65-7 stay `[OPEN]` (§Open findings).

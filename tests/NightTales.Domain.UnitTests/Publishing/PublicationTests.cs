@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ErrorOr;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Publishing;
@@ -254,6 +255,94 @@ public sealed class PublicationTests
         var raised = publication.DomainEvents.OfType<PublicationUpdated>().Last();
         raised.Status.ShouldBe(PublicationStatus.Scheduled);
         raised.OccurredAt.ShouldBe(at);
+    }
+
+    [Fact]
+    public void SetVetoNoticeEmailId_WritesTheKeyBesideThePreAuditStamp()
+    {
+        // 06.2.2-T2: the create queues the veto notice on the still-unsaved row, so the id it answers lands in
+        // `platform_payload` beside 06.2.1-T1's two keys — which must survive untouched (the column is shared).
+        var publication = Create(
+            autopilotAuthorizationId: AuthorizationId,
+            vetoEndsAt: Now.AddHours(2),
+            platformPayloadJson: """{"preAudit":true,"requestedPrivacy":"public"}""");
+        var emailMessageId = Guid.Parse("0199a2b3-0000-7000-8000-0000000000aa");
+        var eventsBefore = publication.DomainEvents.Count;
+
+        var result = publication.SetVetoNoticeEmailId(emailMessageId);
+
+        result.IsError.ShouldBeFalse();
+
+        using var payload = JsonDocument.Parse(publication.PlatformPayloadJson!);
+        payload.RootElement.GetProperty("vetoNoticeEmailId").GetString().ShouldBe(emailMessageId.ToString());
+        payload.RootElement.GetProperty("preAudit").GetBoolean().ShouldBeTrue("06.2.1-T1's key is left as it was");
+        payload.RootElement.GetProperty("requestedPrivacy").GetString().ShouldBe("public");
+
+        // D8: the delivery stamp is 06.2.2-T3's, and this write raises nothing — the create's own event is the
+        // one the outbox stores.
+        publication.VetoNoticeSentAt.ShouldBeNull();
+        publication.DomainEvents.Count.ShouldBe(eventsBefore);
+        publication.Status.ShouldBe(PublicationStatus.AwaitingConsent);
+    }
+
+    [Fact]
+    public void SetVetoNoticeEmailId_WithoutAPayload_StartsTheDocumentWithTheOneKey()
+    {
+        // The approved-audit create stamps no pre-audit payload at all, so the id is the document's first key.
+        var publication = Create(autopilotAuthorizationId: AuthorizationId, vetoEndsAt: Now.AddHours(2));
+        var emailMessageId = Guid.CreateVersion7();
+
+        publication.PlatformPayloadJson.ShouldBeNull();
+        publication.SetVetoNoticeEmailId(emailMessageId).IsError.ShouldBeFalse();
+
+        using var payload = JsonDocument.Parse(publication.PlatformPayloadJson!);
+        payload.RootElement.EnumerateObject().Select(property => property.Name).ShouldBe(["vetoNoticeEmailId"]);
+        payload.RootElement.GetProperty("vetoNoticeEmailId").GetString().ShouldBe(emailMessageId.ToString());
+    }
+
+    [Fact]
+    public void SetVetoNoticeEmailId_ReplacesAnUnparsablePayloadInsteadOfThrowing()
+    {
+        // An aggregate never throws for the shape of a column it did not write: a payload nobody can parse is
+        // bookkeeping, so the write replaces it.
+        var publication = Create(
+            autopilotAuthorizationId: AuthorizationId,
+            vetoEndsAt: Now.AddHours(2),
+            platformPayloadJson: "not-json");
+
+        var emailMessageId = Guid.CreateVersion7();
+
+        publication.SetVetoNoticeEmailId(emailMessageId).IsError.ShouldBeFalse();
+
+        using var payload = JsonDocument.Parse(publication.PlatformPayloadJson!);
+        payload.RootElement.GetProperty("vetoNoticeEmailId").GetString().ShouldBe(emailMessageId.ToString());
+    }
+
+    [Fact]
+    public void SetVetoNoticeEmailId_OnAManualPublication_IsRefused()
+    {
+        // A manual row has no veto window and nobody to send a notice to (D6/YR1): the write is a bug, not a
+        // transition, and it writes nothing.
+        var publication = Created();
+
+        var result = publication.SetVetoNoticeEmailId(Guid.CreateVersion7());
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(PublicationErrors.InvalidStateCode);
+        publication.PlatformPayloadJson.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetVetoNoticeEmailId_OnceTheRowIsConsented_IsRefused()
+    {
+        // The notice belongs to the veto window, which the consent closes: a consented row can no longer name it.
+        var publication = ConsentedByAutopilot();
+
+        var result = publication.SetVetoNoticeEmailId(Guid.CreateVersion7());
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(PublicationErrors.InvalidStateCode);
+        publication.PlatformPayloadJson.ShouldBeNull();
     }
 
     [Theory]

@@ -122,4 +122,10 @@ internal static class CancelAuditKeys
     /// channel: nobody clicked cancel on these rows, the channel's disconnect did (D17, STATUS S72-4).
     /// </summary>
     internal const string ActorDisconnect = "system:disconnect";
+
+    /// <summary>
+    /// The <see cref="ActorKey"/> value 06.2.2-T2's cancel-by-link route passes: the owner clicked the single-use
+    /// link of the veto notice, with no session (D7, D17, STATUS S72-4).
+    /// </summary>
+    internal const string ActorLink = "system:link";
 }

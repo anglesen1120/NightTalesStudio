@@ -708,8 +708,8 @@ public sealed class PasswordResetTests(TestDatabase database) : IntegrationTest(
             CancellationToken cancellationToken) =>
             inner.IssueAsync(userId, kind, subjectId, expiresAt, info, cancellationToken);
 
-        public Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
-            Task.FromResult<ErrorOr<Guid>>(
+        public Task<ErrorOr<ConsumedActionToken>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
+            Task.FromResult<ErrorOr<ConsumedActionToken>>(
                 Error.Failure(
                     code: ErrorCodes.ServiceUnavailable,
                     description: "The database is temporarily unavailable; retry."));
@@ -734,7 +734,7 @@ public sealed class PasswordResetTests(TestDatabase database) : IntegrationTest(
             CancellationToken cancellationToken) =>
             inner.IssueAsync(userId, kind, subjectId, expiresAt, info, cancellationToken);
 
-        public Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
+        public Task<ErrorOr<ConsumedActionToken>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
             inner.ConsumeAsync(token, kind, cancellationToken);
     }
 

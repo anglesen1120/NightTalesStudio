@@ -284,7 +284,7 @@ internal sealed class FakeUserActionTokenService : IUserActionTokenService
             "The e-mail pipeline issues no subject-scoped token; that member belongs to 06.2.2-T2's consumer.");
 
     /// <inheritdoc />
-    public Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
+    public Task<ErrorOr<ConsumedActionToken>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
         throw new NotSupportedException(
             "The e-mail pipeline never consumes a token; consuming belongs to 09.3.3-T1's own tests.");
 }

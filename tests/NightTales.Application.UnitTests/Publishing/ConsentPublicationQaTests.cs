@@ -16,6 +16,7 @@ using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Publishing;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -67,6 +68,7 @@ public sealed class ConsentPublicationQaTests(TestDatabase database) : Integrati
             context,
             new YouTubeOptions { ConsentTextVersion = TextVersion },
             clock,
+            new FakePublicationNotices(),
             NullLogger<ConsentPublicationHandler>.Instance);
 
         var result = await handler.Handle(command, TestContext.Current.CancellationToken);
@@ -134,6 +136,7 @@ public sealed class ConsentPublicationQaTests(TestDatabase database) : Integrati
             context,
             new YouTubeOptions { ConsentTextVersion = TextVersion },
             clock,
+            new FakePublicationNotices(),
             NullLogger<ConsentPublicationHandler>.Instance);
 
         var result = await handler.Handle(command, TestContext.Current.CancellationToken);
@@ -180,6 +183,7 @@ public sealed class ConsentPublicationQaTests(TestDatabase database) : Integrati
             context,
             new YouTubeOptions { ConsentTextVersion = TextVersion },
             clock,
+            new FakePublicationNotices(),
             NullLogger<ConsentPublicationHandler>.Instance);
 
         var result = await handler.Handle(command, TestContext.Current.CancellationToken);
