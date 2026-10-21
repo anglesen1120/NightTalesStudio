@@ -1,0 +1,14 @@
+Night Tales Studio
+Copyright 2026 Nguyen Minh Tuan
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository also contains third-party material under its own licence:
+
+- Be Vietnam Pro font files (design/ui/assets/fonts/*.woff2), licensed under
+  the SIL Open Font License 1.1; see design/ui/assets/fonts/OFL-LICENSE.txt.
+
+Third-party packages restored at build or install time (NuGet, npm, Python)
+are not part of this repository and keep their own licences. Music tracks
+listed in worker-node/music/LICENSES.csv are not distributed with this
+repository.
