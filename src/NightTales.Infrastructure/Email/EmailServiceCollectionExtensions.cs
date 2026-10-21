@@ -8,6 +8,7 @@ using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Features.Email;
 using NightTales.Application.Features.Email.Outbox;
 using NightTales.Application.Features.Email.TokenMinters;
+using NightTales.Domain.Common;
 using NightTales.Domain.Communication;
 using NightTales.Infrastructure.Security;
 
@@ -81,6 +82,18 @@ public static class EmailServiceCollectionExtensions
             static (provider, _) => new PasswordResetTokenMinter(
                 provider.GetRequiredService<IUserActionTokenService>(),
                 provider.GetRequiredService<IEmailLinkOrigin>()));
+
+        // 06.2.2-T2 (06 README D7, 09 README §B10 WT17): the single-use cancel link of the veto notice. It is
+        // registered because the catalog declares the `cancelUrl` minter key for `publication_veto_notice` — a
+        // template with minter keys and no minter is a build error at send time, not a boot error. Same
+        // factory shape as the reset minter: its dependencies are resolved on first use, and the clock comes
+        // from the persistence composition the Worker already has.
+        services.AddKeyedScoped<IEmailTokenMinter>(
+            PublicationCancelTokenMinter.TemplateName,
+            static (provider, _) => new PublicationCancelTokenMinter(
+                provider.GetRequiredService<IUserActionTokenService>(),
+                provider.GetRequiredService<IEmailLinkOrigin>(),
+                provider.GetRequiredService<IClock>()));
 
         // 09.3.3-T1: the send-time mint above resolves this store, so it is registered with the pipeline —
         // every host that can render a `password_reset` message must be able to create its token row, and

@@ -4,7 +4,8 @@ namespace NightTales.Application.Abstractions.Security;
 
 /// <summary>
 /// The single-use action tokens of 09 README BD3 (WF11), table <c>user_action_tokens</c>: 32 random bytes
-/// whose SHA-256 — never the token — is stored, at most one live token per <c>(user, kind)</c>.
+/// whose SHA-256 — never the token — is stored, at most one live token per <c>(user, kind)</c> and per
+/// <c>(user, kind, subject)</c> for a subject-scoped flow (06 CR-6/YR8).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -60,12 +61,18 @@ public interface IUserActionTokenService
 
     /// <summary>
     /// Spends one token: a single replay-proof round trip (<c>UPDATE … WHERE used_at IS NULL AND
-    /// expires_at &gt; now() RETURNING user_id</c>), so two callers cannot both succeed.
+    /// expires_at &gt; now() RETURNING user_id, subject_id</c>), so two callers cannot both succeed.
     /// </summary>
     /// <param name="token">The plaintext token the caller presented.</param>
     /// <param name="kind">The flow the caller is performing; a token of another kind is refused.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
-    /// <returns>The user the token authorized, or <c>validation_failed</c> for a used, expired or unknown
-    /// token — the same answer for all three (09 §4).</returns>
-    Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken);
+    /// <returns>
+    /// The user the token authorized and its subject (06 README YR8), or <c>validation_failed</c> for a used,
+    /// expired or unknown token — the same answer for all three (09 §4). A transient store failure is the 503
+    /// the implementation maps, never this validation error.
+    /// </returns>
+    Task<ErrorOr<ConsumedActionToken>> ConsumeAsync(
+        string token,
+        UserActionKind kind,
+        CancellationToken cancellationToken);
 }

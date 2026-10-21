@@ -90,7 +90,7 @@ public sealed class EfUserActionTokenService(
     }
 
     /// <inheritdoc />
-    public async Task<ErrorOr<Guid>> ConsumeAsync(
+    public async Task<ErrorOr<ConsumedActionToken>> ConsumeAsync(
         string token,
         UserActionKind kind,
         CancellationToken cancellationToken)
@@ -114,14 +114,17 @@ public sealed class EfUserActionTokenService(
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
             // Zero rows is the single answer for used, expired and unknown (09 §4 validation_failed, 400).
+            // The subject comes back from the same row: the token itself never carries it (06 README YR8).
             return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-                ? reader.GetFieldValue<Guid>(0)
+                ? new ConsumedActionToken(
+                    reader.GetFieldValue<Guid>(0),
+                    reader.IsDBNull(1) ? null : reader.GetFieldValue<Guid>(1))
                 : InvalidToken();
         }
         catch (Exception exception) when (SecuritySql.IsTransient(exception))
         {
             // 09 README D5: a transient database failure is 503, never an unhandled 500.
-            return SecuritySql.Unavailable<Guid>();
+            return SecuritySql.Unavailable<ConsumedActionToken>();
         }
     }
 
@@ -232,8 +235,8 @@ public sealed class EfUserActionTokenService(
         VALUES (@id, @user_id, @kind, @subject_id, @token_hash, @created_at, @expires_at, NULL)
         """;
 
-    // The replay-proof consume: the row is spent and its owner returned in one round trip, so a second
-    // caller with the same token updates zero rows and gets the same 400 as an expired or unknown token.
+    // The replay-proof consume: the row is spent and its owner (and subject) returned in one round trip, so a
+    // second caller with the same token updates zero rows and gets the same 400 as an expired or unknown token.
     private const string ConsumeSql =
         """
         UPDATE user_action_tokens
@@ -242,6 +245,6 @@ public sealed class EfUserActionTokenService(
               AND kind = @kind
               AND used_at IS NULL
               AND expires_at > @now
-        RETURNING user_id
+        RETURNING user_id, subject_id
         """;
 }

@@ -1,0 +1,12 @@
+Subject: Đã duyệt đăng: {{videoTitle}}
+
+Xin chào {{displayName}},
+
+{{videoTitle}} đã được duyệt để đăng lên kênh YouTube {{channelTitle}}.
+
+Chế độ hiển thị: {{privacy}} {{privacyNote}}
+Thời gian đăng (UTC): {{scheduledAt}}
+
+Nếu dòng thời gian để trống, video được tải lên ngay khi sẵn sàng. Bạn vẫn có thể xem lại hoặc huỷ tại {{publicationUrl}}.
+
+{{approvalLine}}

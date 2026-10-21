@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using ErrorOr;
 using NightTales.Domain.Common;
 
@@ -67,6 +69,12 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
 
     /// <summary>The catalogued code of every <see cref="YouTubeMetadataRules"/> failure (09 §5.4).</summary>
     private const string ValidationFailedCode = "validation_failed";
+
+    /// <summary>
+    /// The <c>platform_payload</c> key naming the queued veto notice (06 README D7): the task that owns the
+    /// document's other keys reads and writes its own and never this one.
+    /// </summary>
+    private const string VetoNoticeEmailIdKey = "vetoNoticeEmailId";
 
     private Publication()
     {
@@ -373,6 +381,82 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
         Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
 
         return Result.Success;
+    }
+
+    /// <summary>
+    /// Records the <c>email_messages.id</c> of the veto notice 06.2.2-T2 queued for this autopilot publication
+    /// (06 README D7): one key of <see cref="PlatformPayloadJson"/>, so 06.2.2-T3 can poll the notice's delivery
+    /// without a column of its own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The notice is queued inside the create's own unit of work, on the tracked, still-unsaved row, which is why
+    /// this method writes the document in place instead of asking the caller for a second update: the create's one
+    /// <c>SaveChanges</c> stores the row, the <c>email_messages</c> row and both outbox events together, and the
+    /// <c>xmin</c> the 201 answer carries is the one of that single write.
+    /// </para>
+    /// <para>
+    /// <b>Only the one key.</b> The document belongs to 06.2.1-T1 (<c>preAudit</c>, <c>requestedPrivacy</c>) and
+    /// to the later tasks that add their own keys (<c>uploadSessionEnc</c>, 06.2.3-T2), so it is parsed, one
+    /// property is set and the rest is written back untouched. A document nobody can parse — only a hand-edited
+    /// row reaches that state — is replaced rather than thrown out of: an aggregate never throws for the shape of
+    /// a column it did not write.
+    /// </para>
+    /// <para>
+    /// <b>Not the delivery stamp.</b> <see cref="VetoNoticeSentAt"/> stays <see langword="null"/>: 06.2.2-T3
+    /// writes it when the message's delivery status says it was sent (D8), and this key only names the message.
+    /// </para>
+    /// </remarks>
+    /// <param name="emailMessageId">The id <c>IEmailSender.QueueAsync</c> answered for the veto notice.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not an unsent autopilot
+    /// publication — a manual row (no authority, no notice), a row without a veto window (D6/YR1: nobody could
+    /// read the deadline) or one that already left <see cref="PublicationStatus.AwaitingConsent"/>.
+    /// </returns>
+    public ErrorOr<Success> SetVetoNoticeEmailId(Guid emailMessageId)
+    {
+        if (Status != PublicationStatus.AwaitingConsent
+            || AutopilotAuthorizationId is null
+            || VetoEndsAt is null)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        PlatformPayloadJson = WithPlatformPayloadKey(
+            PlatformPayloadJson,
+            VetoNoticeEmailIdKey,
+            emailMessageId.ToString());
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Sets one key of the <c>platform_payload</c> document, leaving every other key exactly as it was.
+    /// </summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <param name="key">The key to write.</param>
+    /// <param name="value">The key's string value.</param>
+    /// <returns>The document to store.</returns>
+    private static string WithPlatformPayloadKey(string? json, string key, string value)
+    {
+        JsonObject payload;
+
+        try
+        {
+            payload = string.IsNullOrWhiteSpace(json)
+                ? new JsonObject()
+                : JsonNode.Parse(json) as JsonObject ?? new JsonObject();
+        }
+        catch (JsonException)
+        {
+            // A payload nobody can parse is bookkeeping, not a contract: it is replaced rather than thrown out
+            // of, so one hand-edited row can never fail a create (the 02 autopilot-settings precedent).
+            payload = new JsonObject();
+        }
+
+        payload[key] = value;
+
+        return payload.ToJsonString();
     }
 
     /// <summary>
