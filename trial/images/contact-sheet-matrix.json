@@ -1,0 +1,17 @@
+{
+  "schema": "contact-sheet-matrix.v1",
+  "source": "03.3.2-T1 Design table; keywords from 02.1.2-T1 good examples",
+  "negativeClauseVersion": "v1",
+  "rows": [
+    {"id": "k01", "topic": "ghost", "keyword": "dim corridor with a single flickering bulb", "template": "dark-folklore-ink"},
+    {"id": "k02", "topic": "ghost", "keyword": "empty rocking chair by a window at dusk", "template": "foggy-cinematic"},
+    {"id": "k03", "topic": "ghost", "keyword": "handprint on a fogged bathroom mirror", "template": "vintage-photo-grain"},
+    {"id": "k04", "topic": "ghost", "keyword": "single lit window in a dark apartment block, rain", "template": "dark-folklore-ink"},
+    {"id": "k05", "topic": "spiritual", "keyword": "small roadside shrine with incense smoke at dawn", "template": "watercolor-night"},
+    {"id": "k06", "topic": "spiritual", "keyword": "ancestor altar with fruit and a lit lamp in a family home", "template": "temple-candlelight"},
+    {"id": "k07", "topic": "spiritual", "keyword": "river bank with a paper lantern drifting at night", "template": "watercolor-night"},
+    {"id": "k08", "topic": "true_crime", "keyword": "rural road at night, single streetlight, wet asphalt", "template": "noir-sketch"},
+    {"id": "k09", "topic": "true_crime", "keyword": "case file folder and reading glasses on a desk, lamp light", "template": "case-file-illustration"},
+    {"id": "k10", "topic": "true_crime", "keyword": "interview room with a metal table and two chairs, fluorescent light", "template": "noir-sketch"}
+  ]
+}

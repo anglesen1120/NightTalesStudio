@@ -1,0 +1,4530 @@
+
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Night Tales Studio — Phòng thu Kể chuyện Đêm Bán tự động cho Creator</title>
+  <meta name="description" content="Phòng thu video kể chuyện đêm bán tự động dành cho nhà sáng tạo YouTube. Viết ý tưởng ngắn, kiểm duyệt kịch bản và xuất bản video chuẩn thời lượng.">
+  <style>
+    /* -------------------------------------------------------------
+       DESIGN TOKENS & SYSTEM VARIABLES
+       ------------------------------------------------------------- */
+    :root {
+      /* Dark Theme (Default) */
+      --canvas-room: #202523;
+      --cue-sheet: #2A312E;
+      --soft-surface: #343C38;
+      --primary-ink: #F4F5EF;
+      --muted-ink: #BFC9C4;
+      --line: #52605A;
+      --line-subtle: #3E4944;
+      --signal-teal: #6ECAC0;
+      --signal-teal-dim: rgba(110, 202, 192, 0.15);
+      --coral-playhead: #FF786C;
+      --coral-glow: rgba(255, 120, 108, 0.25);
+      --danger: #FF786C;
+
+      /* Topic Accents */
+      --accent-ghost: #9EC9C4;
+      --accent-spiritual: #C1B6C5;
+      --accent-crime: #D5B3A8;
+
+      /* Typography */
+      --font-primary: 'Be Vietnam Pro', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+
+      /* Structural Radii */
+      --radius-sheet: 3px;
+      --radius-ctrl: 6px;
+      --radius-dialog: 10px;
+
+      /* Transitions */
+      --tr-fast: 160ms cubic-bezier(0.16, 1, 0.3, 1);
+      --tr-smooth: 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    :root[data-theme="light"] {
+      --canvas-room: #EEF2F0;
+      --cue-sheet: #FFFFFF;
+      --soft-surface: #E2E8E5;
+      --primary-ink: #16211D;
+      --muted-ink: #4B5A54;
+      --line: #B8C2BD;
+      --line-subtle: #D5DCD8;
+      --signal-teal: #006C65;
+      --signal-teal-dim: rgba(0, 108, 101, 0.12);
+      --coral-playhead: #B43B35;
+      --coral-glow: rgba(180, 59, 53, 0.2);
+
+      --accent-ghost: #5C8C87;
+      --accent-spiritual: #7C6F82;
+      --accent-crime: #94695D;
+    }
+
+    /* Reset & Base Setup */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      background-color: var(--canvas-room);
+      color: var(--primary-ink);
+      overflow-x: clip;
+      width: 100%;
+      max-width: 100vw;
+    }
+
+    body {
+      font-family: var(--font-primary);
+      background-color: var(--canvas-room);
+      color: var(--primary-ink);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: clip;
+      width: 100%;
+      max-width: 100vw;
+      display: flex;
+      flex-direction: column;
+      transition: background-color var(--tr-smooth), color var(--tr-smooth);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: inherit;
+    }
+
+    /* Accessibility Focus Ring */
+    :focus-visible {
+      outline: 2px solid var(--signal-teal);
+      outline-offset: 3px;
+    }
+
+    /* Container Utility */
+    .container {
+      width: 100%;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Studio Watermark Texture Pattern */
+    .studio-grid-bg {
+      position: relative;
+    }
+    .studio-grid-bg::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(to right, var(--line-subtle) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--line-subtle) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* -------------------------------------------------------------
+       STUDIO HEADER & NAVIGATION
+       ------------------------------------------------------------- */
+    .studio-header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background-color: var(--canvas-room);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: background-color var(--tr-smooth), border-color var(--tr-smooth), box-shadow var(--tr-smooth);
+    }
+
+    .studio-header.header-scrolled {
+      background-color: rgba(26, 31, 29, 0.95);
+      border-bottom-color: rgba(110, 202, 192, 0.25);
+      box-shadow: 0 6px 28px rgba(0, 0, 0, 0.55);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 68px;
+      gap: 1.5rem;
+    }
+
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-size: 1.0625rem;
+    }
+
+    .brand-icon-box {
+      width: 34px;
+      height: 34px;
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--signal-teal);
+      position: relative;
+    }
+
+    .brand-icon-box::after {
+      content: '';
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background-color: var(--coral-playhead);
+      top: 4px;
+      right: 4px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .brand-title {
+      line-height: 1.2;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .brand-title .brand-title-full {
+      display: inline;
+    }
+
+    .brand-title .brand-title-short,
+    .brand-title .brand-title-abbr {
+      display: none;
+    }
+
+    .brand-sub {
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .nav-menu {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      list-style: none;
+    }
+
+    .nav-link {
+      font-size: 0.875rem;
+      color: var(--muted-ink);
+      font-weight: 500;
+      padding: 0.4rem 0.2rem;
+      position: relative;
+      transition: color var(--tr-fast);
+    }
+
+    .nav-link:hover {
+      color: var(--primary-ink);
+    }
+
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 0;
+      height: 1px;
+      background-color: var(--signal-teal);
+      transition: width var(--tr-fast);
+    }
+
+    .nav-link:hover::after {
+      width: 100%;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    /* Studio Tool Button */
+    .ctrl-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.65rem;
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-ctrl);
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      color: var(--muted-ink);
+      transition: all var(--tr-fast);
+      user-select: none;
+    }
+
+    .ctrl-pill:hover {
+      color: var(--primary-ink);
+      border-color: var(--signal-teal);
+    }
+
+    .ctrl-pill.active {
+      color: var(--signal-teal);
+      border-color: var(--signal-teal);
+      background-color: var(--signal-teal-dim);
+    }
+
+    .btn-auth-link {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--muted-ink);
+      padding: 0.4rem 0.6rem;
+      transition: color var(--tr-fast);
+    }
+
+    .btn-auth-link:hover {
+      color: var(--primary-ink);
+    }
+
+    .btn-studio-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: var(--signal-teal);
+      color: #121917;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 0.55rem 1.15rem;
+      border-radius: var(--radius-ctrl);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      transition: all var(--tr-fast);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    .btn-studio-cta:hover {
+      background-color: #83dcd3;
+      transform: translateY(-1px);
+    }
+
+    /* Mobile Menu Toggle */
+    .mobile-menu-toggle {
+      display: none;
+      padding: 0.5rem;
+      color: var(--primary-ink);
+    }
+
+    /* -------------------------------------------------------------
+       HERO SECTION: THE NARRATION CONTROL ROOM
+       ------------------------------------------------------------- */
+    .hero-section {
+      padding: 3.5rem 0 5rem;
+      position: relative;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 3.5rem;
+      align-items: start;
+    }
+
+    .hero-left {
+      position: relative;
+      z-index: 1;
+    }
+
+    .kicker-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--signal-teal);
+      background-color: var(--signal-teal-dim);
+      border: 1px solid var(--line);
+      padding: 0.3rem 0.75rem;
+      border-radius: var(--radius-sheet);
+      margin-bottom: 1.5rem;
+    }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--coral-playhead);
+      box-shadow: 0 0 8px var(--coral-playhead);
+      animation: pulseAnimation 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseAnimation {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .hero-heading {
+      font-size: clamp(2rem, 3.8vw, 3.25rem);
+      font-weight: 800;
+      line-height: 1.18;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.25rem;
+      color: var(--primary-ink);
+    }
+
+    .hero-heading span.highlight {
+      color: var(--signal-teal);
+    }
+
+    .hero-sub {
+      font-size: 1.0625rem;
+      color: var(--muted-ink);
+      line-height: 1.65;
+      margin-bottom: 2rem;
+      max-width: 540px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-hero-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background-color: var(--signal-teal);
+      color: #111a17;
+      font-weight: 700;
+      font-size: 0.9375rem;
+      padding: 0.8rem 1.6rem;
+      border-radius: var(--radius-ctrl);
+      border: 1px solid rgba(0,0,0,0.12);
+      transition: all var(--tr-fast);
+    }
+
+    .btn-hero-primary:hover {
+      background-color: #83dcd3;
+      transform: translateY(-1px);
+    }
+
+    .btn-hero-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background-color: var(--soft-surface);
+      color: var(--primary-ink);
+      font-weight: 600;
+      font-size: 0.9375rem;
+      padding: 0.8rem 1.4rem;
+      border-radius: var(--radius-ctrl);
+      border: 1px solid var(--line);
+      transition: all var(--tr-fast);
+    }
+
+    .btn-hero-secondary:hover {
+      border-color: var(--signal-teal);
+      color: var(--signal-teal);
+    }
+
+    /* Trust Row */
+    .hero-trust-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      border-top: 1px solid var(--line-subtle);
+      padding-top: 1.5rem;
+    }
+
+    .trust-label {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted-ink);
+    }
+
+    .trust-badges {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .trust-badge-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--muted-ink);
+    }
+
+    .trust-badge-item svg {
+      color: var(--signal-teal);
+      flex-shrink: 0;
+    }
+
+    /* -------------------------------------------------------------
+       HERO ARTIFACT: 6-STATION SPINE & SPLIT CUE SHEET
+       ------------------------------------------------------------- */
+    .hero-artifact-wrap {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      box-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(110, 202, 192, 0.12);
+      position: relative;
+      z-index: 2;
+      overflow: hidden;
+    }
+
+    /* Top Station Spine Header */
+    .artifact-spine-header {
+      background: linear-gradient(180deg, var(--soft-surface) 0%, rgba(32, 37, 35, 0.98) 100%);
+      border-bottom: 1px solid var(--line);
+      padding: 0.85rem 1.15rem 0.95rem;
+    }
+
+    .spine-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .spine-left-group {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .console-leds {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .led-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .led-red { background-color: var(--coral-playhead); box-shadow: 0 0 6px var(--coral-playhead); }
+    .led-amber { background-color: #F59E0B; opacity: 0.85; }
+    .led-teal { background-color: var(--signal-teal); box-shadow: 0 0 6px var(--signal-teal); }
+
+    .spine-status {
+      font-family: var(--font-primary);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--primary-ink);
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-width: 0;
+    }
+
+    .spine-status .spine-status-full {
+      display: inline;
+    }
+
+    .spine-status .spine-status-short,
+    .spine-status .spine-status-abbr {
+      display: none;
+    }
+
+    .spine-rec-light {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--coral-playhead);
+      box-shadow: 0 0 8px var(--coral-playhead);
+      animation: pulseAnimation 1.4s infinite;
+      flex-shrink: 0;
+    }
+
+    .spine-gate-pill {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background-color: var(--signal-teal-dim);
+      color: var(--signal-teal);
+      border: 1px solid rgba(110, 202, 192, 0.35);
+    }
+
+    .spine-meta-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+    }
+
+    .telemetry-tc {
+      color: var(--coral-playhead);
+      font-weight: 700;
+      background: rgba(255, 120, 108, 0.1);
+      padding: 0.15rem 0.45rem;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 120, 108, 0.25);
+      letter-spacing: 0.05em;
+    }
+
+    .telemetry-spec {
+      color: var(--muted-ink);
+    }
+
+    /* Mini Dual VU Meter */
+    .vu-meter-mini {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 2px 4px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 2px;
+      border: 1px solid var(--line-subtle);
+    }
+    .vu-ch {
+      display: flex;
+      gap: 2px;
+    }
+    .vu-bar {
+      width: 4px;
+      height: 4px;
+      border-radius: 1px;
+      background-color: var(--line);
+    }
+    .vu-bar.v1 { background-color: #10B981; }
+    .vu-bar.v2 { background-color: #10B981; }
+    .vu-bar.v3 { background-color: #F59E0B; }
+    .vu-bar.v4 { background-color: #EF4444; }
+
+    /* The 6 Stations Stepper */
+    .station-spine {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px;
+      background-color: var(--canvas-room);
+      padding: 6px;
+      border-radius: var(--radius-sheet);
+      border: 1px solid var(--line);
+      position: relative;
+    }
+
+    .station-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+      padding: 0.45rem 0.25rem;
+      border-radius: 4px;
+      background-color: transparent;
+      border: 1px solid transparent;
+      transition: all var(--tr-fast);
+      text-align: center;
+      cursor: default;
+      user-select: none;
+      min-height: 52px;
+    }
+
+    .node-badge {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--muted-ink);
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 3px;
+      background-color: rgba(255, 255, 255, 0.05);
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .node-name {
+      font-family: var(--font-primary);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted-ink);
+      line-height: 1.25;
+      letter-spacing: -0.01em;
+      white-space: normal;
+      word-break: normal;
+      overflow: visible;
+    }
+
+    /* Completed station (01, 02) */
+    .station-node.completed {
+      background-color: rgba(255, 255, 255, 0.02);
+      border-color: var(--line-subtle);
+    }
+    .station-node.completed .node-badge {
+      color: var(--signal-teal);
+      background-color: rgba(110, 202, 192, 0.12);
+    }
+    .station-node.completed .node-name {
+      color: var(--primary-ink);
+    }
+
+    /* Active station (03 - Current station) */
+    .station-node.active-station {
+      background: linear-gradient(180deg, rgba(110, 202, 192, 0.15) 0%, rgba(110, 202, 192, 0.06) 100%);
+      border: 1px solid var(--signal-teal);
+      box-shadow: 0 0 14px rgba(110, 202, 192, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      position: relative;
+    }
+    .station-node.active-station::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: 15%;
+      right: 15%;
+      height: 2px;
+      background-color: var(--coral-playhead);
+      border-radius: 2px;
+      box-shadow: 0 0 6px var(--coral-playhead);
+    }
+    .station-node.active-station .node-badge.active {
+      color: #121917;
+      background-color: var(--signal-teal);
+      font-weight: 800;
+    }
+    .station-node.active-station .node-name {
+      color: var(--signal-teal);
+      font-weight: 700;
+    }
+
+    .station-node:hover {
+      border-color: var(--line);
+    }
+
+    /* Active Script Line Highlight in Manuscript */
+    .manuscript-line.active-script-line {
+      background-color: rgba(110, 202, 192, 0.08);
+      border-left: 2px solid var(--signal-teal);
+      padding-left: 1.8rem;
+      border-radius: 0 4px 4px 0;
+      transition: background-color var(--tr-fast);
+    }
+
+    .line-status-indicator {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: var(--coral-playhead);
+      margin-left: 0.4rem;
+      font-weight: 600;
+    }
+
+    /* Manuscript & Cue Sheet Split Panel */
+    .artifact-split-panel {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      min-height: 420px;
+      background-color: var(--cue-sheet);
+    }
+
+    /* Left Pane: Manuscript */
+    .pane-manuscript {
+      border-right: 1px solid var(--line);
+      padding: 1.25rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      background-color: rgba(0, 0, 0, 0.06);
+    }
+
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px dashed var(--line-subtle);
+    }
+
+    .pane-label {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted-ink);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .manuscript-body {
+      font-family: var(--font-primary);
+      font-size: 0.84rem;
+      line-height: 1.7;
+      color: var(--primary-ink);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      overflow-y: auto;
+      max-height: 320px;
+    }
+
+    .manuscript-line {
+      position: relative;
+      padding-left: 1.6rem;
+    }
+
+    .line-num {
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--line);
+      user-select: none;
+    }
+
+    .manuscript-cue-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 2px;
+      background-color: var(--soft-surface);
+      color: var(--signal-teal);
+      border: 1px solid var(--line-subtle);
+      margin: 0.2rem 0;
+    }
+
+    .manuscript-pause-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 2px;
+      background-color: rgba(255, 120, 108, 0.12);
+      color: var(--coral-playhead);
+      border: 1px dashed var(--coral-playhead);
+      margin: 0.2rem 0;
+    }
+
+    /* Right Pane: Timecoded Cue Sheet */
+    .pane-cuesheet {
+      padding: 1.25rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      position: relative;
+      background-color: var(--cue-sheet);
+    }
+
+    /* Audio Lane Ruler */
+    .audio-ruler {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 0.4rem;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: var(--muted-ink);
+      position: relative;
+    }
+
+    .ruler-tick {
+      position: relative;
+    }
+    .ruler-tick::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 50%;
+      width: 1px;
+      height: 4px;
+      background-color: var(--line);
+    }
+
+    /* Cue Sheet Rows */
+    .cue-rows-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      position: relative;
+      flex: 1;
+    }
+
+    .cue-card {
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-sheet);
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.78125rem;
+      position: relative;
+      transition: border-color var(--tr-fast);
+    }
+
+    .cue-card:hover {
+      border-color: var(--line);
+    }
+
+    .cue-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+    }
+
+    .cue-stamp {
+      color: var(--signal-teal);
+      font-weight: 600;
+    }
+
+    .cue-type-badge {
+      padding: 0.05rem 0.35rem;
+      border-radius: 2px;
+      font-size: 0.625rem;
+      background-color: rgba(255,255,255,0.05);
+      color: var(--muted-ink);
+      border: 1px solid var(--line-subtle);
+    }
+
+    .cue-text {
+      color: var(--primary-ink);
+      line-height: 1.45;
+    }
+
+    .cue-audio-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+    }
+
+    /* THE EXACT ONE CORAL PLAYHEAD */
+    .cue-card.active-playhead-target {
+      border: 1px solid var(--coral-playhead);
+      background-color: rgba(255, 120, 108, 0.04);
+      box-shadow: 0 0 12px var(--coral-glow);
+    }
+
+    .coral-playhead-marker {
+      position: absolute;
+      top: -9px;
+      left: 12px;
+      background-color: var(--coral-playhead);
+      color: #FFFFFF;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 2px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      box-shadow: 0 2px 8px var(--coral-glow);
+      z-index: 10;
+      letter-spacing: 0.02em;
+    }
+
+    .coral-playhead-marker::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background-color: #FFFFFF;
+      animation: pulseAnimation 1.2s infinite;
+    }
+
+    /* Artifact Control Footer */
+    .artifact-footer {
+      background-color: var(--soft-surface);
+      border-top: 1px solid var(--line);
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .audio-waveform-sim {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 18px;
+    }
+
+    .wave-bar {
+      width: 2px;
+      background-color: var(--line);
+      border-radius: 1px;
+    }
+
+    .wave-bar.active {
+      background-color: var(--signal-teal);
+    }
+
+    .artifact-playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .btn-play-sim {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-ctrl);
+      background-color: var(--canvas-room);
+      border: 1px solid var(--line);
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--primary-ink);
+      transition: all var(--tr-fast);
+    }
+
+    .btn-play-sim:hover {
+      border-color: var(--signal-teal);
+      color: var(--signal-teal);
+    }
+
+    /* -------------------------------------------------------------
+       SECTION: 3-STEP HUMAN-IN-THE-LOOP WORKFLOW
+       ------------------------------------------------------------- */
+    .section-wrap {
+      padding: 5rem 0;
+      border-bottom: 1px solid var(--line);
+      position: relative;
+    }
+
+    .section-header-block {
+      max-width: 680px;
+      margin-bottom: 3.5rem;
+    }
+
+    .section-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--signal-teal);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-title {
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    .section-desc {
+      font-size: 1rem;
+      color: var(--muted-ink);
+      line-height: 1.6;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .workflow-card {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: transform var(--tr-fast), border-color var(--tr-fast);
+    }
+
+    .workflow-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--signal-teal);
+    }
+
+    .step-badge {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--signal-teal);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .step-time-est {
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+      background-color: var(--soft-surface);
+      padding: 0.15rem 0.5rem;
+      border-radius: 2px;
+      border: 1px solid var(--line-subtle);
+    }
+
+    .step-card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--primary-ink);
+      letter-spacing: -0.01em;
+    }
+
+    .step-card-desc {
+      font-size: 0.875rem;
+      color: var(--muted-ink);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+      flex: 1;
+    }
+
+    .step-artifact-snippet {
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-sheet);
+      padding: 0.85rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--muted-ink);
+    }
+
+    .snippet-line {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+    .snippet-line:last-child {
+      margin-bottom: 0;
+    }
+
+    .snippet-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background-color: var(--signal-teal);
+    }
+
+    /* -------------------------------------------------------------
+       SECTION: 3 STORY LINE VERTICALS
+       ------------------------------------------------------------- */
+    .verticals-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .vertical-card {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all var(--tr-fast);
+    }
+
+    .vertical-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+    }
+
+    .vertical-card.ghost::before {
+      background-color: var(--accent-ghost);
+    }
+    .vertical-card.spiritual::before {
+      background-color: var(--accent-spiritual);
+    }
+    .vertical-card.true-crime::before {
+      background-color: var(--accent-crime);
+    }
+
+    .vertical-card:hover {
+      border-color: var(--line);
+      box-shadow: 0 12px 28px rgba(0,0,0,0.22);
+    }
+
+    .vertical-tag-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .vertical-genre-pill {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.2rem 0.5rem;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+    }
+
+    .ghost .vertical-genre-pill { color: var(--accent-ghost); }
+    .spiritual .vertical-genre-pill { color: var(--accent-spiritual); }
+    .true-crime .vertical-genre-pill { color: var(--accent-crime); }
+
+    .vertical-cadence-badge {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+    }
+
+    .vertical-title {
+      font-size: 1.375rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.01em;
+    }
+
+    .vertical-desc {
+      font-size: 0.875rem;
+      color: var(--muted-ink);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+      flex: 1;
+    }
+
+    .vertical-sound-specs {
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-sheet);
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      font-size: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .spec-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted-ink);
+    }
+    .spec-val {
+      font-family: var(--font-mono);
+      color: var(--primary-ink);
+      font-weight: 500;
+    }
+
+    .compliance-callout {
+      font-size: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 2px;
+      background-color: rgba(213, 179, 168, 0.08);
+      border: 1px solid var(--accent-crime);
+      color: var(--muted-ink);
+      line-height: 1.5;
+    }
+
+    .compliance-callout strong {
+      color: var(--accent-crime);
+    }
+
+    /* -------------------------------------------------------------
+       SECTION: PRODUCTION-UNIT PRICING
+       ------------------------------------------------------------- */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      align-items: stretch;
+      margin-bottom: 3rem;
+    }
+
+    .pricing-card {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      padding: 2.25rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all var(--tr-fast);
+    }
+
+    .pricing-card:hover {
+      border-color: var(--line);
+      box-shadow: 0 16px 36px rgba(0,0,0,0.25);
+    }
+
+    /* Featured Plan Focus */
+    .pricing-card.featured-plan {
+      border: 2px solid var(--signal-teal);
+      background-color: var(--cue-sheet);
+      transform: scale(1.02);
+      z-index: 2;
+    }
+
+    .featured-ribbon {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: var(--signal-teal);
+      color: #121917;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.2rem 0.85rem;
+      border-radius: 2px;
+      white-space: nowrap;
+    }
+
+    .plan-header {
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--line-subtle);
+      padding-bottom: 1.25rem;
+    }
+
+    .plan-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .plan-name {
+      font-size: 1.375rem;
+      font-weight: 700;
+      color: var(--primary-ink);
+    }
+
+    .plan-badge {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--muted-ink);
+      background-color: var(--soft-surface);
+      padding: 0.15rem 0.45rem;
+      border-radius: 2px;
+      border: 1px solid var(--line-subtle);
+    }
+
+    .plan-price-wrap {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .plan-price-num {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--primary-ink);
+      font-family: var(--font-mono);
+    }
+
+    .plan-currency {
+      font-size: 1.125rem;
+      color: var(--muted-ink);
+      font-weight: 600;
+    }
+
+    .plan-unit-desc {
+      font-size: 0.8125rem;
+      color: var(--muted-ink);
+      font-family: var(--font-mono);
+    }
+
+    .plan-core-metric {
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-sheet);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .core-metric-val {
+      font-size: 1.0625rem;
+      font-weight: 700;
+      color: var(--signal-teal);
+      font-family: var(--font-mono);
+    }
+
+    .core-metric-sub {
+      font-size: 0.75rem;
+      color: var(--muted-ink);
+    }
+
+    .plan-features-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      flex: 1;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      font-size: 0.84375rem;
+      color: var(--primary-ink);
+      line-height: 1.45;
+    }
+
+    .feature-check {
+      color: var(--signal-teal);
+      flex-shrink: 0;
+      margin-top: 0.15rem;
+    }
+
+    .feature-bonus {
+      color: var(--coral-playhead);
+      font-weight: 600;
+    }
+
+    .btn-plan-action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border-radius: var(--radius-ctrl);
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: all var(--tr-fast);
+      border: 1px solid var(--line);
+      background-color: var(--soft-surface);
+      color: var(--primary-ink);
+    }
+
+    .btn-plan-action:hover {
+      border-color: var(--signal-teal);
+      color: var(--signal-teal);
+    }
+
+    .featured-plan .btn-plan-action {
+      background-color: var(--signal-teal);
+      color: #121917;
+      border-color: transparent;
+      font-weight: 700;
+    }
+
+    .featured-plan .btn-plan-action:hover {
+      background-color: #83dcd3;
+      color: #121917;
+    }
+
+    /* Trust & Policy Grid under Pricing */
+    .pricing-policy-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      padding: 1.5rem;
+    }
+
+    .policy-box {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .policy-icon-box {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-sheet);
+      background-color: var(--soft-surface);
+      border: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--signal-teal);
+      flex-shrink: 0;
+    }
+
+    .policy-content h4 {
+      font-size: 0.9375rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+      color: var(--primary-ink);
+    }
+
+    .policy-content p {
+      font-size: 0.8125rem;
+      color: var(--muted-ink);
+      line-height: 1.5;
+    }
+
+    /* -------------------------------------------------------------
+       SECTION: INTERACTIVE FAQ (ACCORDION)
+       ------------------------------------------------------------- */
+    .faq-container {
+      max-width: 880px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .faq-item {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      overflow: hidden;
+      transition: border-color var(--tr-fast);
+    }
+
+    .faq-item:hover {
+      border-color: var(--line);
+    }
+
+    .faq-item[open] {
+      border-color: var(--signal-teal);
+    }
+
+    .faq-summary {
+      padding: 1.25rem 1.5rem;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      user-select: none;
+      list-style: none;
+      color: var(--primary-ink);
+    }
+
+    .faq-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-summary::after {
+      content: '+';
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 400;
+      color: var(--muted-ink);
+      transition: transform var(--tr-fast);
+      flex-shrink: 0;
+    }
+
+    .faq-item[open] .faq-summary::after {
+      content: '−';
+      color: var(--signal-teal);
+    }
+
+    .faq-content {
+      padding: 0 1.5rem 1.35rem 1.5rem;
+      font-size: 0.90625rem;
+      color: var(--muted-ink);
+      line-height: 1.65;
+      border-top: 1px dashed var(--line-subtle);
+      padding-top: 1rem;
+    }
+
+    /* -------------------------------------------------------------
+       SECTION: BOTTOM STUDIO CTA
+       ------------------------------------------------------------- */
+    .cta-banner {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sheet);
+      padding: 3.5rem 2.5rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 5rem;
+    }
+
+    .cta-banner::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--signal-teal), var(--coral-playhead));
+    }
+
+    .cta-heading {
+      font-size: clamp(1.75rem, 3.2vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    .cta-sub {
+      font-size: 1.0625rem;
+      color: var(--muted-ink);
+      max-width: 600px;
+      margin: 0 auto 2rem;
+      line-height: 1.6;
+    }
+
+    .cta-btn-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* -------------------------------------------------------------
+       STUDIO FOOTER
+       ------------------------------------------------------------- */
+    .studio-footer {
+      background-color: var(--canvas-room);
+      border-top: 1px solid var(--line);
+      padding: 4.5rem 0 2.5rem;
+      color: var(--muted-ink);
+      font-size: 0.84375rem;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 3rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .footer-brand-col {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .footer-brand-desc {
+      line-height: 1.6;
+      max-width: 320px;
+    }
+
+    .footer-col-title {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--primary-ink);
+      margin-bottom: 1.25rem;
+      font-weight: 700;
+    }
+
+    .footer-links-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .footer-link {
+      transition: color var(--tr-fast);
+      color: var(--muted-ink);
+    }
+
+    .footer-link:hover {
+      color: var(--signal-teal);
+    }
+
+    .footer-bottom-row {
+      border-top: 1px solid var(--line-subtle);
+      padding-top: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+    }
+
+    .api-disclosure {
+      color: var(--muted-ink);
+      max-width: 650px;
+      line-height: 1.5;
+    }
+
+    /* -------------------------------------------------------------
+       MODAL: STUDIO DEMO DRAWER
+       ------------------------------------------------------------- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background-color: rgba(10, 14, 12, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--tr-smooth);
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-dialog {
+      background-color: var(--cue-sheet);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-dialog);
+      width: 100%;
+      max-width: 620px;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+      overflow: hidden;
+      transform: translateY(12px);
+      transition: transform var(--tr-smooth);
+    }
+
+    .modal-overlay.open .modal-dialog {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      background-color: var(--soft-surface);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 1.125rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .modal-close-btn {
+      color: var(--muted-ink);
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.25rem;
+      border-radius: var(--radius-sheet);
+    }
+
+    .modal-close-btn:hover {
+      color: var(--primary-ink);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-label {
+      font-size: 0.8125rem;
+      font-family: var(--font-mono);
+      color: var(--muted-ink);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .form-input, .form-textarea, .form-select {
+      background-color: var(--canvas-room);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-ctrl);
+      padding: 0.7rem 0.85rem;
+      color: var(--primary-ink);
+      font-family: var(--font-primary);
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color var(--tr-fast);
+    }
+
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      border-color: var(--signal-teal);
+    }
+
+    .modal-footer {
+      padding: 1.25rem 1.5rem;
+      background-color: var(--soft-surface);
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+    }
+
+    /* -------------------------------------------------------------
+       FLOATING STUDIO ELEVATOR & QUICK NAV (TOP / BOTTOM)
+       ------------------------------------------------------------- */
+    .studio-elevator {
+      position: fixed;
+      right: 1.5rem;
+      bottom: 2rem;
+      z-index: 950;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(32, 37, 35, 0.92);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      padding: 4px;
+      gap: 2px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(12px);
+      transition: opacity var(--tr-smooth), transform var(--tr-smooth), visibility var(--tr-smooth), border-color var(--tr-fast), box-shadow var(--tr-fast);
+    }
+
+    .studio-elevator.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    .studio-elevator:hover {
+      border-color: rgba(110, 202, 192, 0.4);
+      box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6), 0 0 16px rgba(110, 202, 192, 0.15);
+    }
+
+    .elevator-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted-ink);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: color var(--tr-fast), background-color var(--tr-fast), transform var(--tr-fast);
+    }
+
+    .elevator-btn:hover {
+      color: var(--signal-teal);
+      background-color: var(--soft-surface);
+      transform: scale(1.08);
+    }
+
+    .elevator-btn:active {
+      transform: scale(0.95);
+    }
+
+    .elevator-btn.disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .elevator-divider {
+      width: 22px;
+      height: 1px;
+      background-color: var(--line-subtle);
+    }
+
+    /* Screen reader only helper */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    /* Mobile drawer quick nav */
+    .mobile-only-quick-nav {
+      display: none;
+      width: 100%;
+      margin-top: 0.5rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--line-subtle);
+    }
+
+    .mobile-nav-quick-row {
+      display: flex;
+      gap: 0.5rem;
+      width: 100%;
+    }
+
+    .btn-quick-nav {
+      flex: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: var(--radius-ctrl);
+      border: 1px solid var(--line);
+      background-color: var(--soft-surface);
+      color: var(--muted-ink);
+      font-size: 0.8125rem;
+      font-family: var(--font-mono);
+      transition: all var(--tr-fast);
+      min-height: 44px;
+    }
+
+    .btn-quick-nav:hover {
+      color: var(--signal-teal);
+      border-color: var(--signal-teal);
+      background-color: var(--signal-teal-dim);
+    }
+
+    /* -------------------------------------------------------------
+       RESPONSIVE BREAKPOINTS (360px, 480px, 540px, 768px, 1024px, 1200px)
+       ------------------------------------------------------------- */
+    .mobile-only-auth {
+      display: none;
+    }
+
+    /* Base touch-friendly & overflow hardening */
+    button, 
+    .btn-auth-link, 
+    .btn-studio-cta, 
+    .btn-hero-primary, 
+    .btn-hero-secondary, 
+    .btn-plan-action, 
+    .ctrl-pill, 
+    .mobile-menu-toggle {
+      min-height: 44px;
+      touch-action: manipulation;
+    }
+
+    .form-input, .form-textarea, .form-select {
+      min-height: 44px;
+    }
+
+    /* Tablet & Laptop (768px - 1024px) */
+    @media (max-width: 1024px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+        gap: 2.75rem;
+        max-width: 780px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .station-spine {
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: auto auto;
+        gap: 6px;
+      }
+
+      .workflow-grid,
+      .verticals-grid,
+      .pricing-grid {
+        grid-template-columns: 1fr;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .pricing-card.featured-plan {
+        transform: none;
+      }
+
+      .footer-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 2.5rem;
+      }
+    }
+
+    /* Mobile & Tablet Portrait (<= 768px) */
+    @media (max-width: 768px) {
+      .header-inner {
+        height: 60px;
+        gap: 0.5rem;
+      }
+
+      .brand-mark {
+        gap: 0.5rem;
+        min-width: 0;
+        flex-shrink: 1;
+      }
+
+      .brand-text {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      /* Hide auth links from top header bar on <= 768px */
+      .header-actions #btnSignIn,
+      .header-actions #btnCreateAccount,
+      .header-actions .btn-auth-link,
+      .header-actions .btn-studio-cta {
+        display: none !important;
+      }
+
+      .mobile-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Mobile Drawer with dark backdrop blur */
+      .nav-menu {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 60px;
+        left: 0;
+        right: 0;
+        max-height: calc(100vh - 60px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        background-color: rgba(32, 37, 35, 0.96);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-bottom: 1px solid var(--line);
+        padding: 1.25rem 1.5rem 1.75rem;
+        gap: 1rem;
+        box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55);
+        z-index: 99;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-10px);
+        transition: opacity var(--tr-smooth), transform var(--tr-smooth), visibility var(--tr-smooth);
+        pointer-events: none;
+      }
+
+      :root[data-theme="light"] .nav-menu {
+        background-color: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 20px 48px rgba(0, 0, 0, 0.15);
+      }
+
+      .nav-menu.mobile-open {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .nav-menu .nav-link {
+        font-size: 1rem;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid var(--line-subtle);
+        padding: 0.5rem 0;
+      }
+
+      /* Move auth actions and quick nav into drawer as full-width touch targets */
+      .mobile-only-auth,
+      .mobile-only-quick-nav {
+        display: block;
+        margin-top: 0.5rem;
+        width: 100%;
+      }
+
+      .mobile-auth-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+        background-color: var(--soft-surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-ctrl);
+        color: var(--primary-ink);
+        font-weight: 600;
+        font-size: 0.9375rem;
+        text-align: center;
+        text-decoration: none;
+        transition: all var(--tr-fast);
+      }
+
+      .mobile-auth-link:hover {
+        border-color: var(--signal-teal);
+        color: var(--signal-teal);
+      }
+
+      .mobile-cta-full {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+        font-size: 0.9375rem;
+      }
+
+      /* Hero title fluid scaling with clamp(1.75rem, 7.5vw, 2.25rem) */
+      .hero-section {
+        padding: 3rem 0 4rem;
+      }
+
+      .hero-heading {
+        font-size: clamp(1.75rem, 7.5vw, 2.25rem);
+        line-height: 1.22;
+      }
+
+      .hero-sub {
+        font-size: 0.96875rem;
+        margin-bottom: 1.75rem;
+      }
+
+      /* Split panel: Manuscript on top with internal scroll (max-height 220px) and Cue Sheet below */
+      .artifact-split-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .pane-manuscript {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        padding: 1rem;
+      }
+
+      .manuscript-body {
+        max-height: 220px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .pane-cuesheet {
+        padding: 1rem;
+      }
+
+      /* Pricing policy grid transitions from 2 columns to 1 column on <= 768px */
+      .pricing-policy-row {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      .section-wrap {
+        padding: 3.5rem 0;
+      }
+
+      .section-header-block {
+        margin-bottom: 2.5rem;
+      }
+
+      /* CTA banner responsive padding */
+      .cta-banner {
+        padding: 2.5rem 1.5rem;
+        margin-bottom: 3.5rem;
+      }
+
+      .modal-overlay {
+        padding: 0.75rem;
+      }
+
+      .modal-dialog {
+        max-width: 95vw;
+        max-height: 92vh;
+      }
+    }
+
+    /* Tablet / Mobile Transition (<= 640px): Abbreviate brand title */
+    @media (max-width: 640px) {
+      .brand-title .brand-title-full {
+        display: none !important;
+      }
+      .brand-title .brand-title-short {
+        display: inline !important;
+      }
+      .brand-title .brand-title-abbr {
+        display: none !important;
+      }
+    }
+
+    /* Small screens & Mobile (<= 540px) */
+    @media (max-width: 540px) {
+      /* Footer grid transitions from 4 cols -> 2 cols -> 1 col on <= 540px */
+      .footer-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+    }
+
+    /* Phone Screen Optimization (<= 480px) */
+    @media (max-width: 480px) {
+      .container {
+        padding: 0 0.85rem;
+      }
+
+      .header-actions {
+        gap: 0.35rem;
+        flex-shrink: 0;
+      }
+
+      .ctrl-pill {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.6875rem;
+        gap: 0.25rem;
+      }
+
+      .mobile-menu-toggle {
+        width: 38px;
+        height: 38px;
+      }
+
+      .brand-title {
+        font-size: 0.9375rem;
+      }
+
+      .brand-sub {
+        font-size: 0.625rem;
+        max-width: 135px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .hero-heading {
+        font-size: clamp(1.625rem, 6.8vw, 2.15rem);
+        line-height: 1.22;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+
+      .section-title {
+        font-size: clamp(1.35rem, 5.8vw, 1.75rem);
+        line-height: 1.25;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+
+      .modal-title {
+        font-size: 1.15rem;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+
+      .hero-section {
+        padding: 2rem 0 3rem;
+      }
+
+      /* Hero CTA buttons stack vertically with 100% width on <= 480px */
+      .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        gap: 0.75rem;
+      }
+
+      .btn-hero-primary, 
+      .btn-hero-secondary {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+        padding: 0.75rem 1.25rem;
+      }
+
+      .hero-trust-row {
+        gap: 0.65rem;
+      }
+
+      .trust-badges {
+        flex-direction: column;
+        gap: 0.65rem;
+      }
+
+      /* Telemetry timecode and LED console indicators wrap cleanly on small mobile */
+      .spine-title-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        width: 100%;
+      }
+
+      .spine-left-group {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+      }
+
+      .spine-status {
+        font-size: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+
+      .spine-status .spine-status-full {
+        display: none !important;
+      }
+      .spine-status .spine-status-short {
+        display: inline !important;
+      }
+      .spine-status .spine-status-abbr {
+        display: none !important;
+      }
+
+      .spine-meta-info {
+        width: 100%;
+        justify-content: space-between;
+        gap: 0.45rem;
+      }
+
+      /* 6-Station Stepper: 3 cols x 2 rows with zero truncation */
+      .station-spine {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+        padding: 4px;
+      }
+
+      .station-node {
+        min-height: 48px;
+        padding: 0.35rem 0.15rem;
+      }
+
+      .node-badge {
+        font-size: 0.5625rem;
+        padding: 1px 4px;
+      }
+
+      .node-name {
+        font-size: 0.6875rem;
+        line-height: 1.2;
+        white-space: normal;
+        word-break: normal;
+        overflow: visible;
+        text-overflow: clip;
+      }
+
+      .artifact-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+      }
+
+      .artifact-playback-controls {
+        justify-content: center;
+      }
+
+      .btn-play-sim {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+      }
+
+      /* Cards use comfortable padding (1.5rem 1.15rem) on mobile */
+      .workflow-card, 
+      .vertical-card, 
+      .pricing-card {
+        padding: 1.5rem 1.15rem;
+      }
+
+      .cta-heading {
+        font-size: 1.5rem;
+      }
+
+      .cta-btn-wrap {
+        flex-direction: column;
+        width: 100%;
+        gap: 0.75rem;
+      }
+
+      .cta-btn-wrap .btn-hero-primary,
+      .cta-btn-wrap .btn-hero-secondary {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+      }
+
+      .footer-bottom-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+      }
+
+      /* Modals: max-width 95vw, max-height 92vh, internal scroll, 44px touch targets */
+      .modal-dialog {
+        max-width: 95vw;
+        max-height: 92vh;
+        margin: 0;
+      }
+
+      .modal-header, .modal-body, .modal-footer {
+        padding: 1rem 1.15rem;
+      }
+
+      .modal-footer {
+        flex-direction: column-reverse;
+        width: 100%;
+        gap: 0.65rem;
+      }
+
+      .modal-footer button,
+      .modal-footer a {
+        width: 100%;
+        min-height: 44px;
+        text-align: center;
+        justify-content: center;
+      }
+
+      /* Waitlist form input and submit button stack neatly on mobile */
+      .coming-soon-input-row {
+        flex-direction: column !important;
+        gap: 0.65rem;
+      }
+
+      #btnWaitlistSubmit {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+      }
+
+      #waitlistEmail {
+        width: 100%;
+        min-height: 44px;
+      }
+
+      .studio-elevator {
+        right: 1rem;
+        bottom: 1.5rem;
+        padding: 3px;
+      }
+
+      .elevator-btn {
+        width: 38px;
+        height: 38px;
+      }
+    }
+
+    /* Smallest Mobile (<= 360px) Zero-Overflow Protection & Extreme Abbreviation */
+    @media (max-width: 360px) {
+      .container {
+        padding: 0 0.65rem;
+      }
+
+      .header-actions {
+        gap: 0.25rem;
+      }
+
+      .ctrl-pill {
+        padding: 0.25rem 0.4rem;
+        font-size: 0.625rem;
+        gap: 0.2rem;
+      }
+
+      .ctrl-pill svg {
+        width: 11px;
+        height: 11px;
+      }
+
+      .mobile-menu-toggle {
+        width: 36px;
+        height: 36px;
+      }
+
+      .brand-icon-box {
+        width: 30px;
+        height: 30px;
+      }
+
+      .brand-icon-box svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      .brand-title {
+        font-size: 0.875rem;
+      }
+
+      .brand-title .brand-title-full {
+        display: none !important;
+      }
+      .brand-title .brand-title-short {
+        display: none !important;
+      }
+      .brand-title .brand-title-abbr {
+        display: inline !important;
+      }
+
+      .brand-sub {
+        display: none !important;
+      }
+
+      .spine-status {
+        font-size: 0.6875rem;
+      }
+
+      .spine-status .spine-status-full {
+        display: none !important;
+      }
+      .spine-status .spine-status-short {
+        display: none !important;
+      }
+      .spine-status .spine-status-abbr {
+        display: inline !important;
+      }
+
+      .spine-gate-pill {
+        font-size: 0.5625rem;
+        padding: 1px 5px;
+      }
+
+      .hero-heading {
+        font-size: 1.45rem;
+        line-height: 1.25;
+      }
+
+      .telemetry-spec {
+        display: none;
+      }
+
+      .node-name {
+        font-size: 0.65rem;
+      }
+
+      .studio-elevator {
+        right: 0.75rem;
+        bottom: 1.25rem;
+        padding: 2px;
+      }
+
+      .elevator-btn {
+        width: 34px;
+        height: 34px;
+      }
+    }
+  </style>
+</head>
+<body data-od-id="studio-body">
+
+  <!-- -------------------------------------------------------------
+       HEADER & NAVIGATION
+       ------------------------------------------------------------- -->
+  <header class="studio-header" data-od-id="studio-header">
+    <div class="container header-inner">
+      <a href="#" class="brand-mark" data-od-id="brand-home" aria-label="Night Tales Studio">
+        <div class="brand-icon-box" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="8" y1="22" x2="16" y2="22"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">
+            <span class="brand-title-full">Night Tales Studio</span>
+            <span class="brand-title-short">Night Tales</span>
+            <span class="brand-title-abbr">NTS</span>
+          </span>
+          <span class="brand-sub" data-i18n="header.subtag">Phòng thu Kể chuyện Đêm</span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav -->
+      <nav aria-label="Điều hướng chính">
+        <ul class="nav-menu" id="navMenu">
+          <li><a href="#workflow" class="nav-link" data-i18n="nav.workflow">Quy trình</a></li>
+          <li><a href="#topics" class="nav-link" data-i18n="nav.topics">Chủ đề</a></li>
+          <li><a href="#pricing" class="nav-link" data-i18n="nav.pricing">Bảng giá</a></li>
+          <li><a href="#faq" class="nav-link" data-i18n="nav.faq">Hỏi đáp</a></li>
+          <li class="mobile-only-auth">
+            <a href="#login" class="btn-auth-link mobile-auth-link" id="btnSignInMobile" data-i18n="nav.signin">Đăng nhập</a>
+          </li>
+          <li class="mobile-only-auth">
+            <button type="button" class="btn-studio-cta mobile-cta-full" id="btnCreateAccountMobile">
+              <span data-i18n="nav.create">Tạo tài khoản</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </li>
+          <li class="mobile-only-quick-nav">
+            <div class="mobile-nav-quick-row">
+              <button type="button" class="btn-quick-nav" id="btnNavScrollTop" aria-label="Lên đầu trang">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg>
+                <span data-i18n="elevator.top">Đầu trang</span>
+              </button>
+              <button type="button" class="btn-quick-nav" id="btnNavScrollBottom" aria-label="Xuống cuối trang">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                <span data-i18n="elevator.bottom">Cuối trang</span>
+              </button>
+            </div>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Utility Controls -->
+      <div class="header-actions">
+        <!-- Language Switcher -->
+        <button type="button" class="ctrl-pill" id="langToggle" data-od-id="lang-toggle" aria-label="Chuyển đổi ngôn ngữ / Switch language">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          <span id="langCurrentText">VI</span>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button type="button" class="ctrl-pill" id="themeToggle" data-od-id="theme-toggle" aria-label="Chuyển chế độ sáng tối">
+          <svg id="themeIconDark" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg id="themeIconLight" style="display:none;" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+
+        <a href="#login" class="btn-auth-link" id="btnSignIn" data-od-id="btn-signin" data-i18n="nav.signin">Đăng nhập</a>
+        <button type="button" class="btn-studio-cta" id="btnCreateAccount" data-od-id="btn-create-account">
+          <span data-i18n="nav.create">Tạo tài khoản</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <!-- Mobile Toggle Button -->
+        <button type="button" class="mobile-menu-toggle" id="mobileToggle" aria-label="Mở menu" aria-expanded="false" aria-controls="navMenu">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- -------------------------------------------------------------
+         HERO SECTION: THE NARRATION CONTROL ROOM
+         ------------------------------------------------------------- -->
+    <section class="hero-section studio-grid-bg" data-od-id="hero-section">
+      <div class="container hero-grid">
+        <!-- Left Hero Content -->
+        <div class="hero-left">
+          <div class="kicker-tag" data-od-id="hero-kicker">
+            <span class="pulse-dot"></span>
+            <span data-i18n="hero.kicker">Hệ thống phòng thu bán tự động cho YouTube</span>
+          </div>
+
+          <h1 class="hero-heading" data-i18n="hero.headline">
+            Ý tưởng ngắn. <br>
+            <span class="highlight">Một phòng thu</span> làm phần còn lại.
+          </h1>
+
+          <p class="hero-sub" data-i18n="hero.subtitle">
+            Viết vài dòng gợi ý. Night Tales Studio định hình nhịp kể, dựng phân cảnh, thu âm giọng đọc đêm, căn khớp phụ đề và hoàn thiện video để bạn duyệt trước khi xuất bản.
+          </p>
+
+          <div class="hero-actions">
+            <a href="#workflow" class="btn-hero-primary" data-od-id="hero-primary-cta">
+              <span data-i18n="hero.ctaPrimary">Khám phá phòng thu</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </a>
+            <a href="#pricing" class="btn-hero-secondary" data-od-id="hero-secondary-cta">
+              <span data-i18n="hero.ctaSecondary">Xem bảng giá</span>
+            </a>
+          </div>
+
+          <!-- Trust Badges -->
+          <div class="hero-trust-row">
+            <span class="trust-label" data-i18n="hero.trustLabel">Cam kết an toàn & Bản quyền</span>
+            <div class="trust-badges">
+              <div class="trust-badge-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span data-i18n="hero.trust1">100% duyệt trước khi đăng</span>
+              </div>
+              <div class="trust-badge-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 8v4M12 16h.01"/>
+                </svg>
+                <span data-i18n="hero.trust2">Độ tuổi 18+</span>
+              </div>
+              <div class="trust-badge-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/>
+                  <polygon points="10 15 15 12 10 9 10 15"/>
+                </svg>
+                <span data-i18n="hero.trust3">YouTube Data API chính thức</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Hero Artifact (Interactive Control Room) -->
+        <div class="hero-artifact-wrap" data-od-id="hero-control-room">
+          <!-- 6-Station Production Spine Header -->
+          <div class="artifact-spine-header">
+            <!-- Studio Console Chrome & Telemetry Bar -->
+            <div class="spine-title-row">
+              <div class="spine-left-group">
+                <div class="console-leds" aria-hidden="true">
+                  <span class="led-dot led-red"></span>
+                  <span class="led-dot led-amber"></span>
+                  <span class="led-dot led-teal"></span>
+                </div>
+                <div class="spine-status">
+                  <span class="spine-rec-light"></span>
+                  <span class="spine-status-full" data-i18n="spine.status">Trạm 03: Đang duyệt kịch bản</span>
+                  <span class="spine-status-short" data-i18n="spine.statusShort">Trạm 03: Duyệt kịch bản</span>
+                  <span class="spine-status-abbr" data-i18n="spine.statusAbbr">T03: Duyệt kịch bản</span>
+                </div>
+                <span class="spine-gate-pill" data-i18n="spine.gateTag">KIỂM DUYỆT 03</span>
+              </div>
+
+              <div class="spine-meta-info">
+                <div class="vu-meter-mini" aria-hidden="true" title="Real-time Audio Monitor">
+                  <div class="vu-ch"><span class="vu-bar v1"></span><span class="vu-bar v2"></span><span class="vu-bar v3"></span><span class="vu-bar v4"></span></div>
+                  <div class="vu-ch"><span class="vu-bar v1"></span><span class="vu-bar v2"></span><span class="vu-bar v3"></span><span class="vu-bar v4"></span></div>
+                </div>
+                <span class="telemetry-tc" id="telemetryTimecode">00:12.00</span>
+                <span class="telemetry-spec" data-i18n="spine.telemetry">48kHz / 24-bit PCM</span>
+              </div>
+            </div>
+
+            <!-- The 6 Stations Pipeline -->
+            <div class="station-spine" role="tablist" aria-label="Trục quy trình sản xuất 6 trạm">
+              <div class="station-node completed" role="tab" aria-selected="false" title="Trạm 1: Ý tưởng" data-i18n="spine.s1">
+                <span class="node-badge">✓ 01</span>
+                <span class="node-name">Ý tưởng</span>
+              </div>
+              <div class="station-node completed" role="tab" aria-selected="false" title="Trạm 2: Cốt truyện" data-i18n="spine.s2">
+                <span class="node-badge">✓ 02</span>
+                <span class="node-name">Cốt truyện</span>
+              </div>
+              <div class="station-node active-station" role="tab" aria-selected="true" title="Trạm 3: Duyệt kịch bản [Hiện tại]" data-i18n="spine.s3">
+                <span class="node-badge active">● 03</span>
+                <span class="node-name">Duyệt kịch bản</span>
+              </div>
+              <div class="station-node" role="tab" aria-selected="false" title="Trạm 4: Dựng video" data-i18n="spine.s4">
+                <span class="node-badge">04</span>
+                <span class="node-name">Dựng video</span>
+              </div>
+              <div class="station-node" role="tab" aria-selected="false" title="Trạm 5: Duyệt video" data-i18n="spine.s5">
+                <span class="node-badge">05</span>
+                <span class="node-name">Duyệt video</span>
+              </div>
+              <div class="station-node" role="tab" aria-selected="false" title="Trạm 6: Xuất bản" data-i18n="spine.s6">
+                <span class="node-badge">06</span>
+                <span class="node-name">Xuất bản</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Split Surface: Raw Manuscript vs Timecoded Cue Sheet -->
+          <div class="artifact-split-panel">
+            <!-- Left Pane: Living Manuscript -->
+            <div class="pane-manuscript" data-od-id="manuscript-pane">
+              <div class="pane-header">
+                <span class="pane-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span data-i18n="manuscript.title">Bản thảo thô (#NTS-0492)</span>
+                </span>
+                <span class="pane-label" style="color: var(--signal-teal);">
+                  <span data-i18n="manuscript.cadence">Nhịp: 112 WPM</span>
+                </span>
+              </div>
+
+              <div class="manuscript-body" id="manuscriptText">
+                <div class="manuscript-line" id="scriptLine1">
+                  <span class="line-num">01</span>
+                  <span>Trời vừa quá nửa đêm. Cơn mưa rào trút xuống mái ngói cũ ở ngoại ô thị xã, tạo nên những tiếng gõ dồn dập...</span>
+                </div>
+                <div class="manuscript-line">
+                  <span class="line-num">02</span>
+                  <span class="manuscript-cue-tag">[ÂM THANH: Tiếng mưa rào + Drone tần số thấp 55Hz]</span>
+                </div>
+                <div class="manuscript-line active-script-line" id="scriptLine3">
+                  <span class="line-num">03</span>
+                  <span>Ông lão gác cổng kéo chốt cửa sắt. Tiếng kim loại rít lên khô khốc xé tan không gian tĩnh mịch.</span>
+                  <span class="line-status-indicator" id="scriptLineIndicator">• SYNC 00:12</span>
+                </div>
+                <div class="manuscript-line">
+                  <span class="line-num">04</span>
+                  <span class="manuscript-pause-tag">[KHOẢNG LẶNG KỊCH TÍNH: 1.8s]</span>
+                </div>
+                <div class="manuscript-line">
+                  <span class="line-num">05</span>
+                  <span>Dưới ánh đèn vàng vọt, một bóng người ướt sũng đang đứng im lìm ở góc cua con hẻm số 7...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Pane: Cue Sheet with Audio Ruler & ONE Coral Playhead -->
+            <div class="pane-cuesheet" id="cuesheet" data-od-id="cuesheet-pane">
+              <div class="pane-header">
+                <span class="pane-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                    <line x1="7" y1="2" x2="7" y2="22"/>
+                    <line x1="17" y1="2" x2="17" y2="22"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                  </svg>
+                  <span data-i18n="cuesheet.title">Bảng phân cảnh khớp giờ</span>
+                </span>
+                <span class="pane-label" style="color: var(--coral-playhead); font-weight: 600;">
+                  LIVE SYNC
+                </span>
+              </div>
+
+              <!-- Audio Lane Ruler -->
+              <div class="audio-ruler" aria-hidden="true">
+                <span class="ruler-tick">00:00</span>
+                <span class="ruler-tick">00:06</span>
+                <span class="ruler-tick" style="color: var(--coral-playhead); font-weight:700;">00:12</span>
+                <span class="ruler-tick">00:18</span>
+                <span class="ruler-tick">00:24</span>
+              </div>
+
+              <!-- Cue Cards Container -->
+              <div class="cue-rows-container">
+                <!-- Cue 1 -->
+                <div class="cue-card" data-cue="0">
+                  <div class="cue-card-top">
+                    <span class="cue-stamp">[00:00 - 00:06]</span>
+                    <span class="cue-type-badge" data-i18n="cuesheet.broll">B-ROLL: Ngoại cảnh mưa đêm</span>
+                  </div>
+                  <p class="cue-text">"Trời vừa quá nửa đêm. Cơn mưa rào trút xuống mái ngói cũ..."</p>
+                  <div class="cue-audio-meta">
+                    <span>SFX: Rain_Heavy_Loop.wav</span>
+                    <span>• -18dB</span>
+                  </div>
+                </div>
+
+                <!-- Cue 2: ACTIVE CORAL PLAYHEAD TARGET -->
+                <div class="cue-card active-playhead-target" data-cue="1" data-od-id="active-cue-playhead">
+                  <!-- EXACT ONE CORAL PLAYHEAD -->
+                  <div class="coral-playhead-marker">
+                    <span>00:12</span>
+                    <span data-i18n="cuesheet.playheadTag">• Đang duyệt tại đây</span>
+                  </div>
+
+                  <div class="cue-card-top">
+                    <span class="cue-stamp" style="color: var(--coral-playhead);">[00:06 - 00:14]</span>
+                    <span class="cue-type-badge" style="border-color: var(--coral-playhead); color: var(--coral-playhead);" data-i18n="cuesheet.focusCut">ZOOM CẬN CẢNH</span>
+                  </div>
+                  <p class="cue-text" style="font-weight: 500;">"Ông lão gác cổng kéo chốt cửa sắt. Tiếng kim loại rít lên khô khốc..."</p>
+                  <div class="cue-audio-meta">
+                    <span>SFX: Iron_Gate_Creak.wav</span>
+                    <span>• PAUSE 1.8s</span>
+                  </div>
+                </div>
+
+                <!-- Cue 3 -->
+                <div class="cue-card" data-cue="2">
+                  <div class="cue-card-top">
+                    <span class="cue-stamp">[00:14 - 00:22]</span>
+                    <span class="cue-type-badge" data-i18n="cuesheet.tension">TENSION DRONE</span>
+                  </div>
+                  <p class="cue-text">"Dưới ánh đèn vàng vọt, một bóng người ướt sũng đang đứng im lìm..."</p>
+                  <div class="cue-audio-meta">
+                    <span>MUSIC: Dark_Cello_Pad_Bmin</span>
+                    <span>• EQ Dip 300Hz</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Artifact Footer Controls -->
+          <div class="artifact-footer">
+            <div class="audio-waveform-sim" aria-hidden="true" id="audioWaveform">
+              <!-- Wave bars rendered by script -->
+              <span class="wave-bar" style="height: 6px;"></span>
+              <span class="wave-bar" style="height: 12px;"></span>
+              <span class="wave-bar active" style="height: 18px;"></span>
+              <span class="wave-bar active" style="height: 14px;"></span>
+              <span class="wave-bar active" style="height: 10px;"></span>
+              <span class="wave-bar active" style="height: 16px;"></span>
+              <span class="wave-bar" style="height: 8px;"></span>
+              <span class="wave-bar" style="height: 4px;"></span>
+              <span class="wave-bar active" style="height: 15px;"></span>
+              <span class="wave-bar active" style="height: 11px;"></span>
+              <span class="wave-bar" style="height: 7px;"></span>
+            </div>
+
+            <div class="artifact-playback-controls">
+              <button type="button" class="btn-play-sim" id="btnToggleSim" data-od-id="btn-play-sim" aria-label="Mô phỏng phát kịch bản">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                <span id="playSimLabel" data-i18n="cuesheet.previewVoice">Nghe thử nhịp đọc</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------------
+         SECTION: 3-STEP HUMAN-IN-THE-LOOP WORKFLOW
+         ------------------------------------------------------------- -->
+    <section class="section-wrap" id="workflow" data-od-id="workflow-section">
+      <div class="container">
+        <div class="section-header-block">
+          <div class="section-kicker">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span data-i18n="workflow.kicker">Quy trình kiểm soát Human-in-the-Loop</span>
+          </div>
+          <h2 class="section-title" data-i18n="workflow.title">
+            Bạn nắm quyền đạo diễn. <br>Hệ thống lo kỹ thuật hậu kỳ.
+          </h2>
+          <p class="section-desc" data-i18n="workflow.desc">
+            Không bao giờ tự ý tạo video rác đẩy lên kênh của bạn. Mỗi giây âm thanh, từng khoảng lặng dừng nhịp thở và câu chữ đều phải qua mắt bạn phê duyệt.
+          </p>
+        </div>
+
+        <div class="workflow-grid">
+          <!-- Step 1 -->
+          <article class="workflow-card" data-od-id="workflow-step-1">
+            <div class="step-badge">
+              <span data-i18n="workflow.s1Num">BƯỚC 01</span>
+              <span class="step-time-est" data-i18n="workflow.s1Time">~3 phút nhập liệu</span>
+            </div>
+            <h3 class="step-card-title" data-i18n="workflow.s1Title">Kể ý tưởng ban đầu</h3>
+            <p class="step-card-desc" data-i18n="workflow.s1Desc">
+              Nhập một mẩu tin tức, ghi chép dân gian hoặc 5 gạch đầu dòng câu chuyện. Chọn phong cách dẫn truyện (Thì thầm đêm, Trầm lạnh điều tra hoặc Uy nghiêm cổ kính).
+            </p>
+            <div class="step-artifact-snippet">
+              <div class="snippet-line">
+                <span class="snippet-dot"></span>
+                <span data-i18n="workflow.s1Snippet1">Khởi tạo tuyến truyện 3 hồi</span>
+              </div>
+              <div class="snippet-line">
+                <span class="snippet-dot"></span>
+                <span data-i18n="workflow.s1Snippet2">Thiết lập nhịp thở chuẩn 110 WPM</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Step 2 -->
+          <article class="workflow-card" data-od-id="workflow-step-2" style="border-color: var(--line);">
+            <div class="step-badge">
+              <span data-i18n="workflow.s2Num" style="color: var(--signal-teal);">BƯỚC 02 • TRỌNG TÂM</span>
+              <span class="step-time-est" data-i18n="workflow.s2Time">Duyệt kịch bản 1:1</span>
+            </div>
+            <h3 class="step-card-title" data-i18n="workflow.s2Title">Duyệt kịch bản & Khoảng lặng</h3>
+            <p class="step-card-desc" data-i18n="workflow.s2Desc">
+              Chỉnh sửa trực tiếp từng câu thoại. Kéo thả các điểm dừng thở (Dramatic Pause), chỉ định tiếng gõ cửa, tiếng rít gió hoặc tiếng thở dài để tạo cao trào rùng rợn.
+            </p>
+            <div class="step-artifact-snippet">
+              <div class="snippet-line">
+                <span class="snippet-dot" style="background-color: var(--coral-playhead);"></span>
+                <span data-i18n="workflow.s2Snippet1">Chèn khoảng lặng kịch tính [1.5s - 2.5s]</span>
+              </div>
+              <div class="snippet-line">
+                <span class="snippet-dot" style="background-color: var(--signal-teal);"></span>
+                <span data-i18n="workflow.s2Snippet2">Kiểm chứng nguồn sự kiện thực tế</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Step 3 -->
+          <article class="workflow-card" data-od-id="workflow-step-3">
+            <div class="step-badge">
+              <span data-i18n="workflow.s3Num">BƯỚC 03</span>
+              <span class="step-time-est" data-i18n="workflow.s3Time">Xuất bản 1-click</span>
+            </div>
+            <h3 class="step-card-title" data-i18n="workflow.s3Title">Duyệt video & Xuất bản tự động</h3>
+            <p class="step-card-desc" data-i18n="workflow.s3Desc">
+              Xem trước video hoàn thiện với B-roll mờ ảo, phụ đề karaoke ban đêm và cân bằng âm thanh stereo. Nhấn nút duyệt để hệ thống đẩy thẳng lên kênh qua YouTube API.
+            </p>
+            <div class="step-artifact-snippet">
+              <div class="snippet-line">
+                <span class="snippet-dot"></span>
+                <span data-i18n="workflow.s3Snippet1">Render chuẩn 1080p 60fps / 4K UHD</span>
+              </div>
+              <div class="snippet-line">
+                <span class="snippet-dot"></span>
+                <span data-i18n="workflow.s3Snippet2">Tự động gắn thẻ, mô tả & Chapter</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------------
+         SECTION: 3 STORY LINE VERTICALS
+         ------------------------------------------------------------- -->
+    <section class="section-wrap" id="topics" data-od-id="topics-section">
+      <div class="container">
+        <div class="section-header-block">
+          <div class="section-kicker">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+            <span data-i18n="topics.kicker">3 Tuyến nội dung chuyên biệt</span>
+          </div>
+          <h2 class="section-title" data-i18n="topics.title">
+            Được hiệu chỉnh riêng cho thị hiếu nghe đêm
+          </h2>
+          <p class="section-desc" data-i18n="topics.desc">
+            Mỗi thể loại sở hữu bộ quy chuẩn âm thanh, tốc độ nhả chữ và phong cách cắt dựng thị giác độc bản nhằm giữ chân người nghe suốt 20 đến 45 phút.
+          </p>
+        </div>
+
+        <div class="verticals-grid">
+          <!-- Vertical 1: Ghost Stories -->
+          <article class="vertical-card ghost" data-od-id="topic-ghost">
+            <div class="vertical-tag-row">
+              <span class="vertical-genre-pill" data-i18n="topics.ghostTag">Truyện Ma Đêm</span>
+              <span class="vertical-cadence-badge">108 - 114 WPM</span>
+            </div>
+            <h3 class="vertical-title" data-i18n="topics.ghostTitle">Truyện Ma & Đô thị dị đàm</h3>
+            <p class="vertical-desc" data-i18n="topics.ghostDesc">
+              Tập trung vào không gian tĩnh mịch ngoại ô, tiếng gió lùa qua khe cửa và những câu chuyện kỳ dị có thật tại các địa phương. Giọng trầm ấm hơi khàn mang cảm giác rùng mình chân thực.
+            </p>
+            <div class="vertical-sound-specs">
+              <div class="spec-row">
+                <span data-i18n="topics.soundBg">Nhạc nền:</span>
+                <span class="spec-val">Low-Drone 40Hz + Cello ảo</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.sfx">Tiếng động:</span>
+                <span class="spec-val">Gõ cửa, lá khô, mưa rào</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.broll">Phong cách hình:</span>
+                <span class="spec-val">Hẻm tối, phim grain 35mm</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Vertical 2: Spiritual Tales -->
+          <article class="vertical-card spiritual" data-od-id="topic-spiritual">
+            <div class="vertical-tag-row">
+              <span class="vertical-genre-pill" data-i18n="topics.spiritualTag">Tâm Linh Chiêm Nghiệm</span>
+              <span class="vertical-cadence-badge">115 - 120 WPM</span>
+            </div>
+            <h3 class="vertical-title" data-i18n="topics.spiritualTitle">Chuyện Tâm Linh & Nhân Quả</h3>
+            <p class="vertical-desc" data-i18n="topics.spiritualDesc">
+              Những tích truyện dân gian, duyên nợ tiền kiếp và bài học thức tỉnh lương tri. Nhịp dẫn thư thả, trang nghiêm, khơi gợi lòng trắc ẩn và sự hướng thiện nơi người nghe.
+            </p>
+            <div class="vertical-sound-specs">
+              <div class="spec-row">
+                <span data-i18n="topics.soundBg">Nhạc nền:</span>
+                <span class="spec-val">Chuông đồng Tây Tạng, sáo trúc</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.sfx">Tiếng động:</span>
+                <span class="spec-val">Suối róc rách, hương trầm cháy</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.broll">Phong cách hình:</span>
+                <span class="spec-val">Khói sương mờ, mái đình cổ</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Vertical 3: True Crime -->
+          <article class="vertical-card true-crime" data-od-id="topic-crime">
+            <div class="vertical-tag-row">
+              <span class="vertical-genre-pill" data-i18n="topics.crimeTag">Hồ Sơ Vụ Án</span>
+              <span class="vertical-cadence-badge">120 - 126 WPM</span>
+            </div>
+            <h3 class="vertical-title" data-i18n="topics.crimeTitle">Vụ Án Có Thật & Điều Tra</h3>
+            <p class="vertical-desc" data-i18n="topics.crimeDesc">
+              Phân tích tâm lý tội phạm và hồ sơ tư liệu lịch sử. Lối dẫn khách quan, dồn dập, sắc sảo từng tình tiết phá án mà không gây cảm giác giật gân rẻ tiền.
+            </p>
+            <div class="vertical-sound-specs">
+              <div class="spec-row">
+                <span data-i18n="topics.soundBg">Nhạc nền:</span>
+                <span class="spec-val">Minimal Synth nhịp tim</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.sfx">Tiếng động:</span>
+                <span class="spec-val">Máy đánh chữ, băng ghi âm</span>
+              </div>
+              <div class="spec-row">
+                <span data-i18n="topics.broll">Phong cách hình:</span>
+                <span class="spec-val">Tài liệu lưu trữ, bản đồ vụ án</span>
+              </div>
+            </div>
+            <div class="compliance-callout">
+              <strong data-i18n="topics.crimeVerify">Xác thực nguồn tin:</strong>
+              <span data-i18n="topics.crimeVerifyDesc">Chỉ sử dụng hồ sơ tòa án và tư liệu báo chí đã kiểm chứng. Tuyệt đối không suy diễn sai lệch sự thật.</span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------------
+         SECTION: PRODUCTION-UNIT PRICING
+         ------------------------------------------------------------- -->
+    <section class="section-wrap" id="pricing" data-od-id="pricing-section">
+      <div class="container">
+        <div class="section-header-block">
+          <div class="section-kicker">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            <span data-i18n="pricing.kicker">Bảng giá minh bạch theo đơn vị sản xuất</span>
+          </div>
+          <h2 class="section-title" data-i18n="pricing.title">
+            Trả theo số phút kể chuyện. <br>Không phí duy trì ẩn.
+          </h2>
+          <p class="section-desc" data-i18n="pricing.desc">
+            Không ép buộc gói thuê bao hàng tháng. Bạn chỉ trả tiền cho số phút video thực sự được sản xuất ra, nạp thêm credit bất cứ khi nào có ý tưởng mới.
+          </p>
+        </div>
+
+        <div class="pricing-grid">
+          <!-- Tier 1: Starter -->
+          <article class="pricing-card" data-od-id="pricing-card-starter">
+            <div class="plan-header">
+              <div class="plan-name-row">
+                <h3 class="plan-name" data-i18n="pricing.t1Name">Starter</h3>
+                <span class="plan-badge" data-i18n="pricing.t1Badge">Thử nghiệm kênh</span>
+              </div>
+              <div class="plan-price-wrap">
+                <span class="plan-price-num" data-price-vnd="199000" data-price-usd="8">199.000</span>
+                <span class="plan-currency">₫</span>
+              </div>
+              <span class="plan-unit-desc" data-i18n="pricing.t1Unit">Thanh toán 1 lần • Dùng trọn đời</span>
+            </div>
+
+            <div class="plan-core-metric">
+              <span class="core-metric-val" data-i18n="pricing.t1Minutes">40 phút kể chuyện</span>
+              <span class="core-metric-sub" data-i18n="pricing.t1Episodes">~5 tập video dài 8 phút</span>
+            </div>
+
+            <ul class="plan-features-list">
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t1F1">Giọng đọc đêm Studio tiêu chuẩn (Nam/Nữ)</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t1F2">Dựng phân cảnh tự động chuẩn Full HD 1080p</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t1F3">Phụ đề chạy chữ tự động khớp từng từ</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t1F4">Xuất file MP4 tải về trực tiếp</span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-plan-action" data-plan="starter" data-i18n="pricing.t1Cta">
+              Bắt đầu với Starter
+            </button>
+          </article>
+
+          <!-- Tier 2: Creator Focus -->
+          <article class="pricing-card featured-plan" data-od-id="pricing-card-creator">
+            <div class="featured-ribbon" data-i18n="pricing.t2Ribbon">80% Creator chọn gói này</div>
+
+            <div class="plan-header">
+              <div class="plan-name-row">
+                <h3 class="plan-name" data-i18n="pricing.t2Name">Creator</h3>
+                <span class="plan-badge" style="border-color: var(--signal-teal); color: var(--signal-teal);" data-i18n="pricing.t2Badge">Tối ưu phát triển</span>
+              </div>
+              <div class="plan-price-wrap">
+                <span class="plan-price-num" data-price-vnd="549000" data-price-usd="22">549.000</span>
+                <span class="plan-currency">₫</span>
+              </div>
+              <span class="plan-unit-desc" data-i18n="pricing.t2Unit">Thanh toán 1 lần • Không giới hạn hạn dùng</span>
+            </div>
+
+            <div class="plan-core-metric">
+              <span class="core-metric-val" data-i18n="pricing.t2Minutes">136 phút kể chuyện</span>
+              <span class="core-metric-sub" data-i18n="pricing.t2Episodes">~17 tập video dài 8 phút</span>
+            </div>
+
+            <ul class="plan-features-list">
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t2F1">Đầy đủ tính năng gói Starter</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="feature-bonus" data-i18n="pricing.t2F2">+300 credits hiệu chỉnh câu từ & nhịp thở</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t2F3">Thư viện SFX độc quyền (Mưa đêm, chuông chùa, bước chân)</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t2F4">Đẩy thẳng lên kênh YouTube qua Data API</span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-plan-action" data-plan="creator" data-i18n="pricing.t2Cta">
+              Chọn gói Creator
+            </button>
+          </article>
+
+          <!-- Tier 3: Studio -->
+          <article class="pricing-card" data-od-id="pricing-card-studio">
+            <div class="plan-header">
+              <div class="plan-name-row">
+                <h3 class="plan-name" data-i18n="pricing.t3Name">Studio</h3>
+                <span class="plan-badge" data-i18n="pricing.t3Badge">Quy mô lớn</span>
+              </div>
+              <div class="plan-price-wrap">
+                <span class="plan-price-num" data-price-vnd="1690000" data-price-usd="68">1.690.000</span>
+                <span class="plan-currency">₫</span>
+              </div>
+              <span class="plan-unit-desc" data-i18n="pricing.t3Unit">Sản xuất quy mô công nghiệp</span>
+            </div>
+
+            <div class="plan-core-metric">
+              <span class="core-metric-val" data-i18n="pricing.t3Minutes">504 phút kể chuyện</span>
+              <span class="core-metric-sub" data-i18n="pricing.t3Episodes">~63 tập video dài 8 phút</span>
+            </div>
+
+            <ul class="plan-features-list">
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t3F1">Đầy đủ quyền lợi gói Creator</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="feature-bonus" data-i18n="pricing.t3F2">+2.000 credits bảo lưu vô hạn</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t3F3">Nhân bản giọng đọc độc quyền (Custom Voice Clone)</span>
+              </li>
+              <li class="feature-item">
+                <svg class="feature-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span data-i18n="pricing.t3F4">Hỗ trợ kết nối đồng thời 3 kênh YouTube</span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-plan-action" data-plan="studio" data-i18n="pricing.t3Cta">
+              Nâng cấp lên Studio
+            </button>
+          </article>
+        </div>
+
+        <!-- Trust Terms & Compliance Under Pricing -->
+        <div class="pricing-policy-row">
+          <div class="policy-box">
+            <div class="policy-icon-box" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+            </div>
+            <div class="policy-content">
+              <h4 data-i18n="pricing.refundTitle">Hoàn tiền 100% trong 14 ngày</h4>
+              <p data-i18n="pricing.refundDesc">
+                Nếu bạn chưa hài lòng với chất lượng âm thanh hoặc chưa sử dụng hết credit, Night Tales Studio cam kết hoàn trả đầy đủ số tiền tương ứng mà không cần giải thích lý do rườm rà.
+              </p>
+            </div>
+          </div>
+
+          <div class="policy-box">
+            <div class="policy-icon-box" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </div>
+            <div class="policy-content">
+              <h4 data-i18n="pricing.yppTitle">Minh bạch điều khoản YouTube YPP</h4>
+              <p data-i18n="pricing.yppDesc">
+                Chúng tôi không hứa hẹn vô căn cứ về việc "bật kiếm tiền sau 24h". Toàn bộ nội dung đều tuân thủ nguyên tắc cộng đồng YouTube: cốt truyện độc bản, không lạm dụng nội dung trùng lặp.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------------
+         SECTION: INTERACTIVE FAQ
+         ------------------------------------------------------------- -->
+    <section class="section-wrap" id="faq" data-od-id="faq-section">
+      <div class="container">
+        <div class="section-header-block" style="text-align: center; margin-left: auto; margin-right: auto;">
+          <div class="section-kicker" style="justify-content: center;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span data-i18n="faq.kicker">Giải đáp thắc mắc</span>
+          </div>
+          <h2 class="section-title" data-i18n="faq.title">Câu hỏi thường gặp</h2>
+          <p class="section-desc" data-i18n="faq.desc">
+            Mọi điều bạn cần biết về quy trình kiểm duyệt kịch bản, bản quyền âm thanh và độ an toàn cho kênh YouTube của bạn.
+          </p>
+        </div>
+
+        <div class="faq-container">
+          <details class="faq-item" open>
+            <summary class="faq-summary" data-i18n="faq.q1">
+              Video tạo từ Night Tales Studio có đủ điều kiện bật kiếm tiền YouTube (YPP) không?
+            </summary>
+            <div class="faq-content" data-i18n="faq.a1">
+              Hoàn toàn đủ điều kiện. Khác với các công cụ tạo video tự động spam hình ảnh vô nghĩa, Night Tales Studio xây dựng kịch bản có chiều sâu, kết hợp nhịp đọc thở tự nhiên, âm thanh dựng lớp nhiều tầng và phụ đề chính xác. Quan trọng nhất, bạn luôn là người trực tiếp hiệu đính và duyệt bản thảo trước khi render, giúp video vượt qua thuật toán kiểm duyệt nội dung lặp lại (repetitious content) của YouTube.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-summary" data-i18n="faq.q2">
+              Tôi có thể chỉnh sửa lại kịch bản nếu chưa vừa ý không? Có bị trừ phút không?
+            </summary>
+            <div class="faq-content" data-i18n="faq.a2">
+              Bạn có toàn quyền chỉnh sửa văn bản, thay đổi vị trí khoảng lặng, đổi từ ngữ hoặc yêu cầu phòng thu sinh lại bản thảo nhiều lần ở Bước 02. Hệ thống chỉ chính thức khấu trừ số phút kể chuyện khi bạn nhấn nút "Phê duyệt & Render Video hoàn chỉnh" ở Bước 03.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-summary" data-i18n="faq.q3">
+              Bản quyền âm thanh (SFX) và nhạc nền được quản lý như thế nào?
+            </summary>
+            <div class="faq-content" data-i18n="faq.a3">
+              100% âm thanh hiệu ứng (tiếng mưa rào, tiếng mở cửa sắt, bước chân, chuông chùa) và nhạc nền drone trong phòng thu đều là tài nguyên có bản quyền thương mại vĩnh viễn (Royalty-Free) thuộc sở hữu của Night Tales Studio. Bạn không bao giờ phải lo lắng về việc nhận cảnh báo bản quyền (Content ID claim) trên YouTube.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-summary" data-i18n="faq.q4">
+              Thời hạn sử dụng của số phút và credit đã mua là bao lâu?
+            </summary>
+            <div class="faq-content" data-i18n="faq.a4">
+              Số phút và credit trong tài khoản của bạn được bảo lưu trọn đời và không có hạn sử dụng. Dù bạn sản xuất 5 tập mỗi tuần hay 1 tập mỗi tháng, số dư vẫn được giữ nguyên vẹn cho đến khi bạn sử dụng hết.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-summary" data-i18n="faq.q5">
+              Hệ thống kết nối với kênh YouTube của tôi như thế nào để đảm bảo an toàn?
+            </summary>
+            <div class="faq-content" data-i18n="faq.a5">
+              Night Tales Studio kết nối trực tiếp thông qua giao thức bảo mật OAuth 2.0 chính thức của Google YouTube Data API. Chúng tôi không bao giờ lưu trữ mật khẩu của bạn. Bạn có thể phân quyền tải lên dưới dạng bản nháp (Unlisted/Private) để tự kiểm tra lần cuối trên YouTube Studio trước khi công khai.
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------------------------------------------
+         BOTTOM CTA BANNER
+         ------------------------------------------------------------- -->
+    <div class="container">
+      <div class="cta-banner" data-od-id="bottom-cta-banner">
+        <h2 class="cta-heading" data-i18n="cta.title">
+          Bắt đầu tập podcast đêm đầu tiên của bạn
+        </h2>
+        <p class="cta-sub" data-i18n="cta.desc">
+          Nhập ý tưởng ngay hôm nay. Trải nghiệm cảm giác làm chủ một phòng thu kể chuyện chuyên nghiệp mà không cần micro đắt tiền hay phần mềm dựng phức tạp.
+        </p>
+        <div class="cta-btn-wrap">
+          <button type="button" class="btn-hero-primary" id="btnOpenDemoBottom" data-od-id="cta-bottom-primary">
+            <span data-i18n="cta.primaryBtn">Khám phá phòng thu ngay</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+          <a href="#pricing" class="btn-hero-secondary" data-od-id="cta-bottom-secondary">
+            <span data-i18n="cta.secondaryBtn">Xem các gói sản xuất</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- -------------------------------------------------------------
+       STUDIO FOOTER
+       ------------------------------------------------------------- -->
+  <footer class="studio-footer" data-od-id="studio-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <!-- Brand Info -->
+        <div class="footer-brand-col">
+          <a href="#" class="brand-mark" aria-label="Night Tales Studio">
+            <div class="brand-icon-box" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              </svg>
+            </div>
+            <div class="brand-text">
+              <span class="brand-title">Night Tales Studio</span>
+              <span class="brand-sub" data-i18n="header.subtag">Phòng thu Kể chuyện Đêm</span>
+            </div>
+          </a>
+          <p class="footer-brand-desc" data-i18n="footer.desc">
+            Phòng thu bán tự động dành cho nhà sáng tạo nội dung YouTube. Tối ưu nhịp kể đêm, hoàn thiện âm thanh và hình ảnh theo quy chuẩn studio chuyên nghiệp.
+          </p>
+        </div>
+
+        <!-- Links: Product -->
+        <div>
+          <h4 class="footer-col-title" data-i18n="footer.colProduct">Phòng thu</h4>
+          <ul class="footer-links-list">
+            <li><a href="#workflow" class="footer-link" data-i18n="nav.workflow">Quy trình sản xuất</a></li>
+            <li><a href="#topics" class="footer-link" data-i18n="nav.topics">Tuyến chủ đề</a></li>
+            <li><a href="#pricing" class="footer-link" data-i18n="nav.pricing">Bảng giá phút đọc</a></li>
+            <li><a href="#cuesheet" class="footer-link" data-i18n="footer.cueSheetDoc">Bảng phân cảnh Cue Sheet</a></li>
+          </ul>
+        </div>
+
+        <!-- Links: Verticals -->
+        <div>
+          <h4 class="footer-col-title" data-i18n="footer.colTopics">Chủ đề</h4>
+          <ul class="footer-links-list">
+            <li><a href="#topics" class="footer-link" data-i18n="topics.ghostTitle">Truyện Ma Đêm</a></li>
+            <li><a href="#topics" class="footer-link" data-i18n="topics.spiritualTitle">Chuyện Tâm Linh</a></li>
+            <li><a href="#topics" class="footer-link" data-i18n="topics.crimeTitle">Vụ Án Có Thật</a></li>
+            <li><a href="#faq" class="footer-link" data-i18n="footer.audioSpecs">Tiêu chuẩn âm thanh</a></li>
+          </ul>
+        </div>
+
+        <!-- Links: Legal -->
+        <div>
+          <h4 class="footer-col-title" data-i18n="footer.colLegal">Pháp lý & Điều khoản</h4>
+          <ul class="footer-links-list">
+            <li><a href="#privacy" class="footer-link" data-i18n="footer.privacy">Chính sách bảo mật</a></li>
+            <li><a href="#terms" class="footer-link" data-i18n="footer.terms">Điều khoản dịch vụ</a></li>
+            <li><a href="#compliance" class="footer-link" data-i18n="footer.contentPolicy">Quy chuẩn nội dung</a></li>
+            <li><a href="#refund" class="footer-link" data-i18n="footer.refundPolicy">Chính sách hoàn tiền</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Bottom Disclaimer Row -->
+      <div class="footer-bottom-row">
+        <p class="api-disclosure" data-i18n="footer.apiNote">
+          Sản phẩm sử dụng YouTube Data API tuân thủ đầy đủ Điều khoản dịch vụ của YouTube và Chính sách quyền riêng tư của Google. Night Tales Studio không lưu trữ mật khẩu tài khoản của người dùng.
+        </p>
+        <div class="copyright-text">
+          &copy; 2026 Night Tales Studio. All rights reserved.
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- -------------------------------------------------------------
+       MODAL: QUICK START DRAWER
+       ------------------------------------------------------------- -->
+  <div class="modal-overlay" id="demoModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalTitle">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--signal-teal);">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span data-i18n="modal.title">Khởi tạo Dự án Kể Chuyện Đêm</span>
+        </h3>
+        <button type="button" class="modal-close-btn" id="modalCloseBtn" aria-label="Đóng cửa sổ">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="storyTopic" data-i18n="modal.labelTopic">Tuyến chủ đề</label>
+          <select class="form-select" id="storyTopic">
+            <option value="ghost" data-i18n="modal.optGhost">Truyện Ma & Đô thị dị đàm</option>
+            <option value="spiritual" data-i18n="modal.optSpiritual">Chuyện Tâm Linh & Nhân Quả</option>
+            <option value="crime" data-i18n="modal.optCrime">Vụ Án Có Thật & Điều Tra</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="storyTitle" data-i18n="modal.labelTitle">Tiêu đề dự kiến</label>
+          <input type="text" class="form-input" id="storyTitle" placeholder="Ví dụ: Tiếng gõ cửa lúc 2 giờ sáng ở xóm trọ cũ..." value="Tiếng gõ cửa lúc 2 giờ sáng ở xóm trọ cũ">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="storyNotes" data-i18n="modal.labelNotes">Gợi ý ý tưởng ban đầu (hoặc dán bản thảo)</label>
+          <textarea class="form-textarea" id="storyNotes" rows="4" placeholder="Nhập tóm tắt 3-5 gạch đầu dòng về cốt truyện...">Một chàng sinh viên thuê căn phòng trọ giá rẻ cuối hẻm. Đêm nào anh cũng nghe tiếng bước chân dừng lại trước cửa sổ phòng mình đúng 2:15 sáng, kèm theo tiếng thở dốc kỳ lạ.</textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-hero-secondary" id="modalCancelBtn" data-i18n="modal.cancel">Hủy</button>
+        <button type="button" class="btn-hero-primary" id="modalSubmitBtn" data-i18n="modal.submit">
+          <span>Vào phòng thu kịch bản</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------------------
+       MODAL: COMING SOON / SẮP RA MẮT
+       ------------------------------------------------------------- -->
+  <div class="modal-overlay" id="comingSoonModal" role="dialog" aria-modal="true" aria-labelledby="comingSoonTitle">
+    <div class="modal-dialog" style="max-width: 520px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="background: rgba(110, 202, 192, 0.15); color: var(--signal-teal); border: 1px solid rgba(110, 202, 192, 0.3); font-size: 0.6875rem; padding: 2px 8px; border-radius: 999px; font-family: var(--font-mono); font-weight: 600;" data-i18n="comingSoon.badge">BẢN THỬ NGHIỆM NỘI BỘ</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="comingSoonCloseBtn" aria-label="Đóng cửa sổ">&times;</button>
+      </div>
+
+      <div class="modal-body" style="text-align: center; padding: 2rem 1.75rem 1.5rem;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--soft-surface); border: 1px solid var(--line); display: grid; place-items: center; margin: 0 auto 1.25rem; color: var(--coral-playhead);">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+
+        <h3 class="modal-title" id="comingSoonTitle" style="font-size: 1.35rem; justify-content: center; margin-bottom: 0.65rem;" data-i18n="comingSoon.title">
+          Tính năng Đăng ký Sắp Ra Mắt
+        </h3>
+        
+        <p style="color: var(--muted-ink); font-size: 0.9375rem; line-height: 1.6; margin-bottom: 1.5rem;" data-i18n="comingSoon.desc">
+          Cổng đăng ký tài khoản và phòng thu công khai hiện đang trong giai đoạn phát triển nội bộ và thử nghiệm kín (Phase P) để đảm bảo chất lượng kiểm duyệt. Tính năng đăng nhập và đăng ký sẽ chính thức mở sớm cho các nhà sáng tạo nội dung YouTube.
+        </p>
+
+        <!-- Status Card -->
+        <div style="background: var(--canvas-room); border: 1px solid var(--line); border-radius: var(--radius-ctrl); padding: 0.9rem 1rem; text-align: left; margin-bottom: 1.5rem; font-size: 0.8125rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--line-subtle);">
+            <span style="color: var(--muted-ink); font-family: var(--font-mono);" data-i18n="comingSoon.pipelineLabel">Giai đoạn:</span>
+            <span style="color: var(--signal-teal); font-weight: 600;" data-i18n="comingSoon.pipelineVal">Đang hoàn thiện (Phase P)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: var(--muted-ink); font-family: var(--font-mono);" data-i18n="comingSoon.complianceLabel">Tiêu chuẩn:</span>
+            <span style="color: var(--primary-ink);" data-i18n="comingSoon.complianceVal">Tuân thủ YouTube Data API v3</span>
+          </div>
+        </div>
+
+        <!-- Waitlist Email Form -->
+        <form id="comingSoonForm" onsubmit="return false;" style="display: flex; flex-direction: column; gap: 0.6rem; text-align: left;">
+          <label style="font-size: 0.75rem; font-family: var(--font-mono); color: var(--muted-ink); text-transform: uppercase;" data-i18n="comingSoon.waitlistLabel">
+            Nhận thông báo sớm khi mở cổng đăng ký:
+          </label>
+          <div class="coming-soon-input-row" style="display: flex; gap: 0.5rem;">
+            <input type="email" id="waitlistEmail" class="form-input" style="flex: 1;" placeholder="creator@example.com" required>
+            <button type="submit" id="btnWaitlistSubmit" class="btn-hero-primary" style="padding: 0.65rem 1rem; font-size: 0.875rem; white-space: nowrap;">
+              <span data-i18n="comingSoon.btnNotify">Nhận tin</span>
+            </button>
+          </div>
+          <div id="waitlistNotice" style="font-size: 0.8125rem; display: none; padding-top: 0.25rem;"></div>
+        </form>
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between;">
+        <a href="#cuesheet" class="btn-hero-secondary" id="comingSoonDemoBtn" style="font-size: 0.8125rem; padding: 0.5rem 0.85rem;" data-i18n="comingSoon.btnDemo">
+          Xem kịch bản mẫu
+        </a>
+        <button type="button" class="btn-hero-secondary" id="comingSoonCloseBtn2" data-i18n="comingSoon.btnClose">
+          Đóng
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Studio Elevator (Scroll to Top / Scroll to Bottom) -->
+  <aside class="studio-elevator" id="studioElevator" aria-label="Điều hướng nhanh trang">
+    <button type="button" class="elevator-btn" id="btnScrollTop" aria-label="Lên đầu trang" data-i18n-title="elevator.topTitle" title="Lên đầu trang (Top)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 15l-6-6-6 6"/>
+      </svg>
+      <span class="sr-only" data-i18n="elevator.top">Lên đầu trang</span>
+    </button>
+    <div class="elevator-divider" aria-hidden="true"></div>
+    <button type="button" class="elevator-btn" id="btnScrollBottom" aria-label="Xuống cuối trang" data-i18n-title="elevator.bottomTitle" title="Xuống cuối trang (Bottom)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+      <span class="sr-only" data-i18n="elevator.bottom">Xuống cuối trang</span>
+    </button>
+  </aside>
+
+  <!-- -------------------------------------------------------------
+       VANILLA JAVASCRIPT: EMBEDDED I18N, THEME & SIMULATION
+       ------------------------------------------------------------- -->
+  <script>
+    (function () {
+      'use strict';
+
+      /* -----------------------------------------------------------
+         I18N DICTIONARY (VIETNAMESE & ENGLISH)
+         ----------------------------------------------------------- */
+      const I18N = {
+        vi: {
+          pageTitle: "Night Tales Studio — Phòng thu Kể chuyện Đêm Bán tự động cho Creator",
+          header: {
+            subtag: "Phòng thu Kể chuyện Đêm"
+          },
+          nav: {
+            workflow: "Quy trình",
+            topics: "Chủ đề",
+            pricing: "Bảng giá",
+            faq: "Hỏi đáp",
+            signin: "Đăng nhập",
+            create: "Tạo tài khoản"
+          },
+          elevator: {
+            top: "Đầu trang",
+            bottom: "Cuối trang",
+            topTitle: "Lên đầu trang",
+            bottomTitle: "Xuống cuối trang"
+          },
+          hero: {
+            kicker: "Hệ thống phòng thu bán tự động cho YouTube",
+            headline: "Ý tưởng ngắn. <br><span class='highlight'>Một phòng thu</span> làm phần còn lại.",
+            subtitle: "Viết vài dòng gợi ý. Night Tales Studio định hình nhịp kể, dựng phân cảnh, thu âm giọng đọc đêm, căn khớp phụ đề và hoàn thiện video để bạn duyệt trước khi xuất bản.",
+            ctaPrimary: "Khám phá phòng thu",
+            ctaSecondary: "Xem bảng giá",
+            trustLabel: "Cam kết an toàn & Bản quyền",
+            trust1: "100% duyệt trước khi đăng",
+            trust2: "Độ tuổi 18+",
+            trust3: "YouTube Data API chính thức"
+          },
+          spine: {
+            status: "Trạm 03: Đang duyệt kịch bản",
+            statusShort: "Trạm 03: Duyệt kịch bản",
+            statusAbbr: "T03: Duyệt kịch bản",
+            gateTag: "KIỂM DUYỆT 03",
+            telemetry: "48kHz / 24-bit PCM",
+            s1: "<span class='node-badge'>✓ 01</span><span class='node-name'>Ý tưởng</span>",
+            s2: "<span class='node-badge'>✓ 02</span><span class='node-name'>Cốt truyện</span>",
+            s3: "<span class='node-badge active'>● 03</span><span class='node-name'>Duyệt kịch bản</span>",
+            s4: "<span class='node-badge'>04</span><span class='node-name'>Dựng video</span>",
+            s5: "<span class='node-badge'>05</span><span class='node-name'>Duyệt video</span>",
+            s6: "<span class='node-badge'>06</span><span class='node-name'>Xuất bản</span>"
+          },
+          manuscript: {
+            title: "Bản thảo thô (#NTS-0492)",
+            cadence: "Nhịp: 112 WPM"
+          },
+          cuesheet: {
+            title: "Bảng phân cảnh khớp giờ",
+            playheadTag: "• Đang duyệt tại đây",
+            broll: "B-ROLL: Ngoại cảnh mưa đêm",
+            focusCut: "ZOOM CẬN CẢNH",
+            tension: "TENSION DRONE",
+            previewVoice: "Nghe thử nhịp đọc"
+          },
+          workflow: {
+            kicker: "Quy trình kiểm soát Human-in-the-Loop",
+            title: "Bạn nắm quyền đạo diễn. <br>Hệ thống lo kỹ thuật hậu kỳ.",
+            desc: "Không bao giờ tự ý tạo video rác đẩy lên kênh của bạn. Mỗi giây âm thanh, từng khoảng lặng dừng nhịp thở và câu chữ đều phải qua mắt bạn phê duyệt.",
+            s1Num: "BƯỚC 01",
+            s1Time: "~3 phút nhập liệu",
+            s1Title: "Kể ý tưởng ban đầu",
+            s1Desc: "Nhập một mẩu tin tức, ghi chép dân gian hoặc 5 gạch đầu dòng câu chuyện. Chọn phong cách dẫn truyện (Thì thầm đêm, Trầm lạnh điều tra hoặc Uy nghiêm cổ kính).",
+            s1Snippet1: "Khởi tạo tuyến truyện 3 hồi",
+            s1Snippet2: "Thiết lập nhịp thở chuẩn 110 WPM",
+            s2Num: "BƯỚC 02 • TRỌNG TÂM",
+            s2Time: "Duyệt kịch bản 1:1",
+            s2Title: "Duyệt kịch bản & Khoảng lặng",
+            s2Desc: "Chỉnh sửa trực tiếp từng câu thoại. Kéo thả các điểm dừng thở (Dramatic Pause), chỉ định tiếng gõ cửa, tiếng rít gió hoặc tiếng thở dài để tạo cao trào rùng rợn.",
+            s2Snippet1: "Chèn khoảng lặng kịch tính [1.5s - 2.5s]",
+            s2Snippet2: "Kiểm chứng nguồn sự kiện thực tế",
+            s3Num: "BƯỚC 03",
+            s3Time: "Xuất bản 1-click",
+            s3Title: "Duyệt video & Xuất bản tự động",
+            s3Desc: "Xem trước video hoàn thiện với B-roll mờ ảo, phụ đề karaoke ban đêm và cân bằng âm thanh stereo. Nhấn nút duyệt để hệ thống đẩy thẳng lên kênh qua YouTube API.",
+            s3Snippet1: "Render chuẩn 1080p 60fps / 4K UHD",
+            s3Snippet2: "Tự động gắn thẻ, mô tả & Chapter"
+          },
+          topics: {
+            kicker: "3 Tuyến nội dung chuyên biệt",
+            title: "Được hiệu chỉnh riêng cho thị hiếu nghe đêm",
+            desc: "Mỗi thể loại sở hữu bộ quy chuẩn âm thanh, tốc độ nhả chữ và phong cách cắt dựng thị giác độc bản nhằm giữ chân người nghe suốt 20 đến 45 phút.",
+            ghostTag: "Truyện Ma Đêm",
+            ghostTitle: "Truyện Ma & Đô thị dị đàm",
+            ghostDesc: "Tập trung vào không gian tĩnh mịch ngoại ô, tiếng gió lùa qua khe cửa và những câu chuyện kỳ dị có thật tại các địa phương. Giọng trầm ấm hơi khàn mang cảm giác rùng mình chân thực.",
+            spiritualTag: "Tâm Linh Chiêm Nghiệm",
+            spiritualTitle: "Chuyện Tâm Linh & Nhân Quả",
+            spiritualDesc: "Những tích truyện dân gian, duyên nợ tiền kiếp và bài học thức tỉnh lương tri. Nhịp dẫn thư thả, trang nghiêm, khơi gợi lòng trắc ẩn và sự hướng thiện nơi người nghe.",
+            crimeTag: "Hồ Sơ Vụ Án",
+            crimeTitle: "Vụ Án Có Thật & Điều Tra",
+            crimeDesc: "Phân tích tâm lý tội phạm và hồ sơ tư liệu lịch sử. Lối dẫn khách quan, dồn dập, sắc sảo từng tình tiết phá án mà không gây cảm giác giật gân rẻ tiền.",
+            soundBg: "Nhạc nền:",
+            sfx: "Tiếng động:",
+            broll: "Phong cách hình:",
+            crimeVerify: "Xác thực nguồn tin:",
+            crimeVerifyDesc: "Chỉ sử dụng hồ sơ tòa án và tư liệu báo chí đã kiểm chứng. Tuyệt đối không suy diễn sai lệch sự thật."
+          },
+          pricing: {
+            kicker: "Bảng giá minh bạch theo đơn vị sản xuất",
+            title: "Trả theo số phút kể chuyện. <br>Không phí duy trì ẩn.",
+            desc: "Không ép buộc gói thuê bao hàng tháng. Bạn chỉ trả tiền cho số phút video thực sự được sản xuất ra, nạp thêm credit bất cứ khi nào có ý tưởng mới.",
+            t1Name: "Starter",
+            t1Badge: "Thử nghiệm kênh",
+            t1Unit: "Thanh toán 1 lần • Dùng trọn đời",
+            t1Minutes: "40 phút kể chuyện",
+            t1Episodes: "~5 tập video dài 8 phút",
+            t1F1: "Giọng đọc đêm Studio tiêu chuẩn (Nam/Nữ)",
+            t1F2: "Dựng phân cảnh tự động chuẩn Full HD 1080p",
+            t1F3: "Phụ đề chạy chữ tự động khớp từng từ",
+            t1F4: "Xuất file MP4 tải về trực tiếp",
+            t1Cta: "Bắt đầu với Starter",
+
+            t2Ribbon: "80% Creator chọn gói này",
+            t2Name: "Creator",
+            t2Badge: "Tối ưu phát triển",
+            t2Unit: "Thanh toán 1 lần • Không giới hạn hạn dùng",
+            t2Minutes: "136 phút kể chuyện",
+            t2Episodes: "~17 tập video dài 8 phút",
+            t2F1: "Đầy đủ tính năng gói Starter",
+            t2F2: "+300 credits hiệu chỉnh câu từ & nhịp thở",
+            t2F3: "Thư viện SFX độc quyền (Mưa đêm, chuông chùa, bước chân)",
+            t2F4: "Đẩy thẳng lên kênh YouTube qua Data API",
+            t2Cta: "Chọn gói Creator",
+
+            t3Name: "Studio",
+            t3Badge: "Quy mô lớn",
+            t3Unit: "Sản xuất quy mô công nghiệp",
+            t3Minutes: "504 phút kể chuyện",
+            t3Episodes: "~63 tập video dài 8 phút",
+            t3F1: "Đầy đủ quyền lợi gói Creator",
+            t3F2: "+2.000 credits bảo lưu vô hạn",
+            t3F3: "Nhân bản giọng đọc độc quyền (Custom Voice Clone)",
+            t3F4: "Hỗ trợ kết nối đồng thời 3 kênh YouTube",
+            t3Cta: "Nâng cấp lên Studio",
+
+            refundTitle: "Hoàn tiền 100% trong 14 ngày",
+            refundDesc: "Nếu bạn chưa hài lòng với chất lượng âm thanh hoặc chưa sử dụng hết credit, Night Tales Studio cam kết hoàn trả đầy đủ số tiền tương ứng mà không cần giải thích lý do rườm rà.",
+            yppTitle: "Minh bạch điều khoản YouTube YPP",
+            yppDesc: "Chúng tôi không hứa hẹn vô căn cứ về việc 'bật kiếm tiền sau 24h'. Toàn bộ nội dung đều tuân thủ nguyên tắc cộng đồng YouTube: cốt truyện độc bản, không lạm dụng nội dung trùng lặp."
+          },
+          faq: {
+            kicker: "Giải đáp thắc mắc",
+            title: "Câu hỏi thường gặp",
+            desc: "Mọi điều bạn cần biết về quy trình kiểm duyệt kịch bản, bản quyền âm thanh và độ an toàn cho kênh YouTube của bạn.",
+            q1: "Video tạo từ Night Tales Studio có đủ điều kiện bật kiếm tiền YouTube (YPP) không?",
+            a1: "Hoàn toàn đủ điều kiện. Khác với các công cụ tạo video tự động spam hình ảnh vô nghĩa, Night Tales Studio xây dựng kịch bản có chiều sâu, kết hợp nhịp đọc thở tự nhiên, âm thanh dựng lớp nhiều tầng và phụ đề chính xác. Quan trọng nhất, bạn luôn là người trực tiếp hiệu đính và duyệt bản thảo trước khi render, giúp video vượt qua thuật toán kiểm duyệt nội dung lặp lại (repetitious content) của YouTube.",
+            q2: "Tôi có thể chỉnh sửa lại kịch bản nếu chưa vừa ý không? Có bị trừ phút không?",
+            a2: "Bạn có toàn quyền chỉnh sửa văn bản, thay đổi vị trí khoảng lặng, đổi từ ngữ hoặc yêu cầu phòng thu sinh lại bản thảo nhiều lần ở Bước 02. Hệ thống chỉ chính thức khấu trừ số phút kể chuyện khi bạn nhấn nút 'Phê duyệt & Render Video hoàn chỉnh' ở Bước 03.",
+            q3: "Bản quyền âm thanh (SFX) và nhạc nền được quản lý như thế nào?",
+            a3: "100% âm thanh hiệu ứng (tiếng mưa rào, tiếng mở cửa sắt, bước chân, chuông chùa) và nhạc nền drone trong phòng thu đều là tài nguyên có bản quyền thương mại vĩnh viễn (Royalty-Free) thuộc sở hữu của Night Tales Studio. Bạn không bao giờ phải lo lắng về việc nhận cảnh báo bản quyền (Content ID claim) trên YouTube.",
+            q4: "Thời hạn sử dụng của số phút và credit đã mua là bao lâu?",
+            a4: "Số phút và credit trong tài khoản của bạn được bảo lưu trọn đời và không có hạn sử dụng. Dù bạn sản xuất 5 tập mỗi tuần hay 1 tập mỗi tháng, số dư vẫn được giữ nguyên vẹn cho đến khi bạn sử dụng hết.",
+            q5: "Hệ thống kết nối với kênh YouTube của tôi như thế nào để đảm bảo an toàn?",
+            a5: "Night Tales Studio kết nối trực tiếp thông qua giao thức bảo mật OAuth 2.0 chính thức của Google YouTube Data API. Chúng tôi không bao giờ lưu trữ mật khẩu của bạn. Bạn có thể phân quyền tải lên dưới dạng bản nháp (Unlisted/Private) để tự kiểm tra lần cuối trên YouTube Studio trước khi công khai."
+          },
+          cta: {
+            title: "Bắt đầu tập podcast đêm đầu tiên của bạn",
+            desc: "Nhập ý tưởng ngay hôm nay. Trải nghiệm cảm giác làm chủ một phòng thu kể chuyện chuyên nghiệp mà không cần micro đắt tiền hay phần mềm dựng phức tạp.",
+            primaryBtn: "Khám phá phòng thu ngay",
+            secondaryBtn: "Xem các gói sản xuất"
+          },
+          footer: {
+            desc: "Phòng thu bán tự động dành cho nhà sáng tạo nội dung YouTube. Tối ưu nhịp kể đêm, hoàn thiện âm thanh và hình ảnh theo quy chuẩn studio chuyên nghiệp.",
+            colProduct: "Phòng thu",
+            colTopics: "Chủ đề",
+            colLegal: "Pháp lý & Điều khoản",
+            cueSheetDoc: "Bảng phân cảnh Cue Sheet",
+            audioSpecs: "Tiêu chuẩn âm thanh",
+            privacy: "Chính sách bảo mật",
+            terms: "Điều khoản dịch vụ",
+            contentPolicy: "Quy chuẩn nội dung",
+            refundPolicy: "Chính sách hoàn tiền",
+            apiNote: "Sản phẩm sử dụng YouTube Data API tuân thủ đầy đủ Điều khoản dịch vụ của YouTube và Chính sách quyền riêng tư của Google. Night Tales Studio không lưu trữ mật khẩu tài khoản của người dùng."
+          },
+          modal: {
+            title: "Khởi tạo Dự án Kể Chuyện Đêm",
+            labelTopic: "Tuyến chủ đề",
+            optGhost: "Truyện Ma & Đô thị dị đàm",
+            optSpiritual: "Chuyện Tâm Linh & Nhân Quả",
+            optCrime: "Vụ Án Có Thật & Điều Tra",
+            labelTitle: "Tiêu đề dự kiến",
+            labelNotes: "Gợi ý ý tưởng ban đầu (hoặc dán bản thảo)",
+            cancel: "Hủy",
+            submit: "Vào phòng thu kịch bản"
+          },
+          comingSoon: {
+            badge: "BẢN THỬ NGHIỆM NỘI BỘ",
+            title: "Tính năng Đăng ký & Đăng nhập Sắp Ra Mắt",
+            desc: "Cổng đăng ký tài khoản và phòng thu công khai hiện đang trong giai đoạn phát triển nội bộ và thử nghiệm kín (Phase P) để đảm bảo chất lượng kiểm duyệt. Tính năng đăng nhập và đăng ký sẽ chính thức mở sớm cho các nhà sáng tạo nội dung YouTube.",
+            pipelineLabel: "Giai đoạn:",
+            pipelineVal: "Đang hoàn thiện (Phase P)",
+            complianceLabel: "Tiêu chuẩn:",
+            complianceVal: "Tuân thủ YouTube Data API v3",
+            waitlistLabel: "Nhận thông báo sớm khi mở cổng đăng ký:",
+            btnNotify: "Nhận tin",
+            successMsg: "Cảm ơn bạn! Chúng tôi đã ghi nhận email và sẽ gửi thông báo ngay khi mở cổng đăng ký.",
+            emptyEmailMsg: "Vui lòng nhập địa chỉ email hợp lệ.",
+            btnDemo: "Xem kịch bản mẫu",
+            btnClose: "Đóng"
+          }
+        },
+
+        en: {
+          pageTitle: "Night Tales Studio — Automated Faceless Narration Studio for YouTube Creators",
+          header: {
+            subtag: "Narration Control Room"
+          },
+          nav: {
+            workflow: "Workflow",
+            topics: "Topics",
+            pricing: "Pricing",
+            faq: "FAQ",
+            signin: "Sign In",
+            create: "Create Account"
+          },
+          elevator: {
+            top: "Top",
+            bottom: "Bottom",
+            topTitle: "Scroll to top",
+            bottomTitle: "Scroll to bottom"
+          },
+          hero: {
+            kicker: "Automated Control Room for YouTube Creators",
+            headline: "A short idea. <br><span class='highlight'>One studio</span> does the rest.",
+            subtitle: "Write a few lines. Night Tales Studio shapes the cadence, cuts scenes, creates narration, times subtitles and assembles a video for your approval before publishing.",
+            ctaPrimary: "Explore Studio",
+            ctaSecondary: "View Pricing",
+            trustLabel: "Trust & Verified Standards",
+            trust1: "100% Creator approval before publishing",
+            trust2: "Aged 18+ only",
+            trust3: "Official YouTube Data API"
+          },
+          spine: {
+            status: "Station 03: Script Approval",
+            statusShort: "Station 03: Script Review",
+            statusAbbr: "St. 03: Review",
+            gateTag: "QC GATE 03",
+            telemetry: "48kHz / 24-bit PCM",
+            s1: "<span class='node-badge'>✓ 01</span><span class='node-name'>Story Idea</span>",
+            s2: "<span class='node-badge'>✓ 02</span><span class='node-name'>Outline</span>",
+            s3: "<span class='node-badge active'>● 03</span><span class='node-name'>Script Review</span>",
+            s4: "<span class='node-badge'>04</span><span class='node-name'>Video Cut</span>",
+            s5: "<span class='node-badge'>05</span><span class='node-name'>Video QC</span>",
+            s6: "<span class='node-badge'>06</span><span class='node-name'>Publish</span>"
+          },
+          manuscript: {
+            title: "Raw Manuscript (#NTS-0492)",
+            cadence: "Cadence: 112 WPM"
+          },
+          cuesheet: {
+            title: "Timecoded Cue Sheet",
+            playheadTag: "• You are here",
+            broll: "B-ROLL: Night Rain Exterior",
+            focusCut: "CLOSE-UP ZOOM",
+            tension: "TENSION DRONE",
+            previewVoice: "Preview Voice Cadence"
+          },
+          workflow: {
+            kicker: "Human-in-the-Loop Workflow",
+            title: "You hold creative control. <br>The studio engineers the rest.",
+            desc: "Zero generic AI spam pushed blindly to your channel. Every spoken syllable, dramatic silence, and visual cut waits for your explicit sign-off.",
+            s1Num: "STEP 01",
+            s1Time: "~3 min outline",
+            s1Title: "Tell the Initial Idea",
+            s1Desc: "Drop a local folk legend, police report, or a 5-bullet summary. Select your vocal persona (Late Night Whisper, Cold Forensic, or Sacred Classical).",
+            s1Snippet1: "Initial 3-act story arc structured",
+            s1Snippet2: "Optimal 110 WPM bedtime cadence set",
+            s2Num: "STEP 02 • THE FOCUS",
+            s2Time: "1:1 Script Sign-off",
+            s2Title: "Approve Script & Pauses",
+            s2Desc: "Edit exact words on the fly. Drag and insert dramatic breath pauses (1.5s - 2.5s), cue rain cascades, gate creaks, and spine-chilling suspense points.",
+            s2Snippet1: "Insert dramatic pause [1.5s - 2.5s]",
+            s2Snippet2: "Verify factual archive sources",
+            s3Num: "STEP 03",
+            s3Time: "1-Click Publish",
+            s3Title: "Review Video & Publish",
+            s3Desc: "Preview the rendered cut with atmospheric B-roll, timed karaoke captions, and balanced stereo drones. 1-click publish directly to YouTube via official API.",
+            s3Snippet1: "Full HD 1080p 60fps / 4K UHD rendering",
+            s3Snippet2: "Auto SEO tags, chapters & description"
+          },
+          topics: {
+            kicker: "3 Dedicated Production Lines",
+            title: "Engineered specifically for night-time listeners",
+            desc: "Each vertical possesses its own acoustic rules, syllable pacing, and atmospheric visual grammar to sustain watch times past 25-40 minutes.",
+            ghostTag: "Ghost Stories",
+            ghostTitle: "Ghost Stories & Urban Legends",
+            ghostDesc: "Focused on quiet suburban darkness, howling doorframes, and real local folklore. A gravelly, hushed voice delivering spine-tingling immersion.",
+            spiritualTag: "Spiritual Tales",
+            spiritualTitle: "Spiritual Tales & Karmic Lore",
+            spiritualDesc: "Ancient folklore, past-life ties, and moral awakenings. A steady, ceremonial, and reflective cadence that evokes introspection and peace.",
+            crimeTag: "True Crime",
+            crimeTitle: "True Crime & Investigations",
+            crimeDesc: "Forensic psychological breakdowns and historical case dockets. Objective, urgent, and precise pacing without sensationalist fabrications.",
+            soundBg: "Atmosphere:",
+            sfx: "Sound Effects:",
+            broll: "Visual Style:",
+            crimeVerify: "Verified sources requirement:",
+            crimeVerifyDesc: "Official trial records and verified news archives only. Zero fabricated allegations or unproven gossip."
+          },
+          pricing: {
+            kicker: "Production-Unit Pricing",
+            title: "Pay per narrated minute. <br>No sneaky subscriptions.",
+            desc: "No forced recurring lock-ins. You only purchase real narration minutes used to produce finished episodes. Top up credits whenever inspiration strikes.",
+            t1Name: "Starter",
+            t1Badge: "Pilot Channel",
+            t1Unit: "One-time purchase • Never expires",
+            t1Minutes: "40 Narrated Minutes",
+            t1Episodes: "~5 episodes of 8 mins",
+            t1F1: "Standard Studio Night Voice (Male/Female)",
+            t1F2: "Automated scene cutting in Full HD 1080p",
+            t1F3: "Word-timed sync subtitles",
+            t1F4: "Direct MP4 video download",
+            t1Cta: "Start with Starter",
+
+            t2Ribbon: "Chosen by 80% Creators",
+            t2Name: "Creator",
+            t2Badge: "Growth Engine",
+            t2Unit: "One-time purchase • Unlimited validity",
+            t2Minutes: "136 Narrated Minutes",
+            t2Episodes: "~17 episodes of 8 mins",
+            t2F1: "All features in Starter package",
+            t2F2: "+300 bonus revision credits for script pauses",
+            t2F3: "Exclusive SFX suite (Midnight rain, temple bells, footsteps)",
+            t2F4: "Direct publishing via official YouTube Data API",
+            t2Cta: "Select Creator Plan",
+
+            t3Name: "Studio",
+            t3Badge: "Production Scale",
+            t3Unit: "Industrial scale production",
+            t3Minutes: "504 Narrated Minutes",
+            t3Episodes: "~63 episodes of 8 mins",
+            t3F1: "All benefits in Creator package",
+            t3F2: "+2,000 bonus revision credits",
+            t3F3: "Custom Voice Clone (Your exclusive brand voice)",
+            t3F4: "Multi-channel broadcast (Up to 3 YouTube channels)",
+            t3Cta: "Upgrade to Studio",
+
+            refundTitle: "14-Day Full Refund Guarantee",
+            refundDesc: "If you are not satisfied with acoustic clarity or hold unused credits, Night Tales Studio guarantees a full refund with zero tedious interrogation.",
+            yppTitle: "Transparent YouTube YPP Compliance",
+            yppDesc: "We make no baseless 'monetize overnight' promises. All generated material complies with YouTube Creator Guidelines: original narratives avoiding repetitive content."
+          },
+          faq: {
+            kicker: "Frequently Asked Questions",
+            title: "Frequently Asked Questions",
+            desc: "Everything you need to know about our script approval gates, audio copyright, and channel safety.",
+            q1: "Do videos created with Night Tales Studio qualify for YouTube monetization (YPP)?",
+            a1: "Yes, fully compliant. Unlike spammy video tools that churn generic AI stock, Night Tales Studio creates structured narrative arcs, multi-layered acoustic drones, and precise word-timed captions. You review every cue before final render, easily clearing YouTube's Repetitious Content policies.",
+            q2: "Can I adjust the script without being charged minutes?",
+            a2: "You have complete freedom to modify lines, insert pauses, adjust phrases, or regenerate script drafts repeatedly in Step 02. Narration minutes are only deducted when you press 'Approve & Render Final Video' at Step 03.",
+            q3: "How are background music and sound effect licenses handled?",
+            a3: "100% of sound effects (rain loops, gate creaks, gravel steps) and background drones are fully licensed, royalty-free assets owned by Night Tales Studio. You will never face copyright strikes or Content ID claims on YouTube.",
+            q4: "How long do purchased minutes and credits remain valid?",
+            a4: "All purchased minutes and credits remain valid for life without expiration dates. Whether you publish five videos a week or one a month, your balance stays completely intact.",
+            q5: "How does the system securely connect to my YouTube channel?",
+            a5: "Night Tales Studio connects using Google's official YouTube Data API through secure OAuth 2.0 authentication. We never store your password. You can export videos as Unlisted/Private drafts for final inspection."
+          },
+          cta: {
+            title: "Launch your premiere midnight narrative",
+            desc: "Input your outline today. Experience the control of a sound-engineered control room without expensive microphones or tedious video timelines.",
+            primaryBtn: "Explore Studio Now",
+            secondaryBtn: "View Production Plans"
+          },
+          footer: {
+            desc: "Automated faceless narration studio for YouTube creators. Calibrated nocturnal cadence, audio engineering, and verified video assembly.",
+            colProduct: "Studio",
+            colTopics: "Topics",
+            colLegal: "Legal & Compliance",
+            cueSheetDoc: "Cue Sheet Documentation",
+            audioSpecs: "Acoustic Standards",
+            privacy: "Privacy Policy",
+            terms: "Terms of Service",
+            contentPolicy: "Content Guidelines",
+            refundPolicy: "Refund Policy",
+            apiNote: "This product utilizes YouTube Data API services and adheres strictly to the YouTube Terms of Service and Google Privacy Policy. Night Tales Studio never stores user passwords."
+          },
+          modal: {
+            title: "Start a Midnight Narrative Project",
+            labelTopic: "Production Vertical",
+            optGhost: "Ghost Stories & Urban Legends",
+            optSpiritual: "Spiritual Tales & Karmic Lore",
+            optCrime: "True Crime & Investigations",
+            labelTitle: "Working Title",
+            labelNotes: "Initial Story Outline (or paste notes)",
+            cancel: "Cancel",
+            submit: "Enter Script Control Room"
+          },
+          comingSoon: {
+            badge: "INTERNAL PREVIEW (PHASE P)",
+            title: "Account Registration Coming Soon",
+            desc: "Public registration and creator authentication are currently in internal development and closed trial (Phase P) to safeguard pacing calibration and content compliance. Account creation and sign-in will open soon for YouTube creators.",
+            pipelineLabel: "Stage:",
+            pipelineVal: "In Development (Phase P)",
+            complianceLabel: "Standard:",
+            complianceVal: "YouTube Data API v3 Compliant",
+            waitlistLabel: "Get notified when registration opens:",
+            btnNotify: "Notify Me",
+            successMsg: "Thank you! Your email is registered for early creator access invitations.",
+            emptyEmailMsg: "Please enter a valid email address.",
+            btnDemo: "View Sample Cue Sheet",
+            btnClose: "Close"
+          }
+        }
+      };
+
+      /* -----------------------------------------------------------
+         STATE MANAGEMENT
+         ----------------------------------------------------------- */
+      let currentLang = localStorage.getItem('nts_lang') || 'vi';
+      let currentTheme = localStorage.getItem('nts_theme') || 'dark';
+
+      const htmlEl = document.documentElement;
+      const langToggleBtn = document.getElementById('langToggle');
+      const langCurrentText = document.getElementById('langCurrentText');
+      const themeToggleBtn = document.getElementById('themeToggle');
+      const themeIconDark = document.getElementById('themeIconDark');
+      const themeIconLight = document.getElementById('themeIconLight');
+
+      /* -----------------------------------------------------------
+         APPLY THEME
+         ----------------------------------------------------------- */
+      function applyTheme(theme) {
+        currentTheme = theme;
+        htmlEl.setAttribute('data-theme', theme);
+        localStorage.setItem('nts_theme', theme);
+
+        if (theme === 'light') {
+          themeIconDark.style.display = 'none';
+          themeIconLight.style.display = 'inline-block';
+        } else {
+          themeIconDark.style.display = 'inline-block';
+          themeIconLight.style.display = 'none';
+        }
+      }
+
+      themeToggleBtn.addEventListener('click', function () {
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        applyTheme(nextTheme);
+      });
+
+      /* -----------------------------------------------------------
+         APPLY LANGUAGE & CURRENCY
+         ----------------------------------------------------------- */
+      function applyLanguage(lang) {
+        currentLang = lang;
+        htmlEl.setAttribute('lang', lang);
+        localStorage.setItem('nts_lang', lang);
+        langCurrentText.textContent = lang.toUpperCase();
+
+        const dict = I18N[lang] || I18N.vi;
+
+        // Update document title
+        if (dict.pageTitle) {
+          document.title = dict.pageTitle;
+        }
+
+        // Update all data-i18n elements
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+          const keyPath = el.getAttribute('data-i18n');
+          const value = getNestedValue(dict, keyPath);
+          if (value !== undefined) {
+            // If text contains HTML tags (like <br> or <span>), use innerHTML
+            if (value.includes('<') && value.includes('>')) {
+              el.innerHTML = value;
+            } else {
+              el.textContent = value;
+            }
+          }
+        });
+
+        // Update all data-i18n-title elements
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+          const keyPath = el.getAttribute('data-i18n-title');
+          const value = getNestedValue(dict, keyPath);
+          if (value !== undefined) {
+            el.setAttribute('title', value);
+          }
+        });
+
+        // Update Currency presentation
+        document.querySelectorAll('.plan-price-num').forEach(el => {
+          const vnd = el.getAttribute('data-price-vnd');
+          const usd = el.getAttribute('data-price-usd');
+          const currencySpan = el.nextElementSibling;
+
+          if (lang === 'vi') {
+            el.textContent = Number(vnd).toLocaleString('vi-VN');
+            if (currencySpan) currencySpan.textContent = '₫';
+          } else {
+            el.textContent = '$' + usd;
+            if (currencySpan) currencySpan.textContent = 'USD';
+          }
+        });
+      }
+
+      function getNestedValue(obj, path) {
+        return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+      }
+
+      langToggleBtn.addEventListener('click', function () {
+        const nextLang = currentLang === 'vi' ? 'en' : 'vi';
+        applyLanguage(nextLang);
+      });
+
+      /* -----------------------------------------------------------
+         PLAYBACK SIMULATION FOR HERO CUE SHEET
+         ----------------------------------------------------------- */
+      const btnToggleSim = document.getElementById('btnToggleSim');
+      const cueCards = document.querySelectorAll('.cue-rows-container .cue-card');
+      const waveBars = document.querySelectorAll('#audioWaveform .wave-bar');
+      let isSimPlaying = false;
+      let simInterval = null;
+      let activeIndex = 1; // Default at 00:12
+
+      function updatePlayhead(targetIndex) {
+        cueCards.forEach((card, idx) => {
+          const oldPlayhead = card.querySelector('.coral-playhead-marker');
+          if (oldPlayhead) {
+            oldPlayhead.remove();
+          }
+          card.classList.remove('active-playhead-target');
+
+          if (idx === targetIndex) {
+            card.classList.add('active-playhead-target');
+            const playheadMarker = document.createElement('div');
+            playheadMarker.className = 'coral-playhead-marker';
+            const dict = I18N[currentLang] || I18N.vi;
+            const timeTag = idx === 0 ? '00:04' : (idx === 1 ? '00:12' : '00:20');
+            playheadMarker.innerHTML = `<span>${timeTag}</span><span>${dict.cuesheet.playheadTag}</span>`;
+            card.appendChild(playheadMarker);
+          }
+        });
+
+        // Update telemetry timecode & manuscript sync
+        const telemetryEl = document.getElementById('telemetryTimecode');
+        const timecodeStr = targetIndex === 0 ? '00:04.00' : (targetIndex === 1 ? '00:12.00' : '00:20.00');
+        if (telemetryEl) telemetryEl.textContent = timecodeStr;
+
+        const scriptLine1 = document.getElementById('scriptLine1');
+        const scriptLine3 = document.getElementById('scriptLine3');
+        const allManuscriptLines = document.querySelectorAll('#manuscriptText .manuscript-line');
+        const scriptLine5 = allManuscriptLines.length >= 5 ? allManuscriptLines[4] : null;
+        const scriptLineIndicator = document.getElementById('scriptLineIndicator');
+
+        [scriptLine1, scriptLine3, scriptLine5].forEach((line, idx) => {
+          if (!line) return;
+          if (idx === targetIndex) {
+            line.classList.add('active-script-line');
+            if (scriptLineIndicator && !line.contains(scriptLineIndicator)) {
+              line.appendChild(scriptLineIndicator);
+            }
+            if (scriptLineIndicator) scriptLineIndicator.textContent = `• SYNC ${timecodeStr.slice(0, 5)}`;
+          } else {
+            line.classList.remove('active-script-line');
+          }
+        });
+
+        // Animate wave bars
+        waveBars.forEach(bar => {
+          const randomH = Math.floor(Math.random() * 16) + 4;
+          bar.style.height = randomH + 'px';
+          if (randomH > 10) {
+            bar.classList.add('active');
+          } else {
+            bar.classList.remove('active');
+          }
+        });
+      }
+
+      btnToggleSim.addEventListener('click', function () {
+        isSimPlaying = !isSimPlaying;
+        if (isSimPlaying) {
+          btnToggleSim.style.borderColor = 'var(--coral-playhead)';
+          btnToggleSim.style.color = 'var(--coral-playhead)';
+          btnToggleSim.querySelector('span').textContent = currentLang === 'vi' ? 'Đang phát khớp giờ...' : 'Syncing playback...';
+          simInterval = setInterval(() => {
+            activeIndex = (activeIndex + 1) % cueCards.length;
+            updatePlayhead(activeIndex);
+          }, 2400);
+        } else {
+          clearInterval(simInterval);
+          btnToggleSim.style.borderColor = 'var(--line)';
+          btnToggleSim.style.color = 'var(--primary-ink)';
+          const dict = I18N[currentLang] || I18N.vi;
+          btnToggleSim.querySelector('span').textContent = dict.cuesheet.previewVoice;
+        }
+      });
+
+      // Interactive click on cue cards
+      cueCards.forEach((card, idx) => {
+        card.addEventListener('click', () => {
+          activeIndex = idx;
+          updatePlayhead(idx);
+        });
+      });
+
+      /* -----------------------------------------------------------
+         MODAL / DRAWER CONTROLS: DEMO STUDIO DRAWER
+         ----------------------------------------------------------- */
+      const demoModal = document.getElementById('demoModal');
+      const btnOpenDemoBottom = document.getElementById('btnOpenDemoBottom');
+      const modalCloseBtn = document.getElementById('modalCloseBtn');
+      const modalCancelBtn = document.getElementById('modalCancelBtn');
+      const modalSubmitBtn = document.getElementById('modalSubmitBtn');
+
+      function openModal() {
+        if (demoModal) {
+          demoModal.classList.add('open');
+          document.body.style.overflow = 'hidden';
+        }
+      }
+
+      function closeModal() {
+        if (demoModal) {
+          demoModal.classList.remove('open');
+          document.body.style.overflow = '';
+        }
+      }
+
+      if (btnOpenDemoBottom) btnOpenDemoBottom.addEventListener('click', openModal);
+      if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
+      if (modalCancelBtn) modalCancelBtn.addEventListener('click', closeModal);
+
+      if (demoModal) {
+        demoModal.addEventListener('click', function (e) {
+          if (e.target === demoModal) {
+            closeModal();
+          }
+        });
+      }
+
+      if (modalSubmitBtn) {
+        modalSubmitBtn.addEventListener('click', function () {
+          const titleVal = document.getElementById('storyTitle').value.trim();
+          const alertMsg = currentLang === 'vi' 
+            ? `Dự án "${titleVal || 'Chưa đặt tên'}" đã được chuyển vào phòng thu kịch bản! Hệ thống đang định hình nhịp đọc 112 WPM.`
+            : `Project "${titleVal || 'Untitled'}" dispatched to Script Control Room! Calibrating 112 WPM speech cadence.`;
+          alert(alertMsg);
+          closeModal();
+        });
+      }
+
+      /* -----------------------------------------------------------
+         MODAL CONTROLS: COMING SOON (AUTH & ACCOUNT CREATION)
+         ----------------------------------------------------------- */
+      const comingSoonModal = document.getElementById('comingSoonModal');
+      const btnCreateAccount = document.getElementById('btnCreateAccount');
+      const btnSignIn = document.getElementById('btnSignIn');
+      const comingSoonCloseBtn = document.getElementById('comingSoonCloseBtn');
+      const comingSoonCloseBtn2 = document.getElementById('comingSoonCloseBtn2');
+      const comingSoonDemoBtn = document.getElementById('comingSoonDemoBtn');
+      const comingSoonForm = document.getElementById('comingSoonForm');
+      const waitlistEmail = document.getElementById('waitlistEmail');
+      const waitlistNotice = document.getElementById('waitlistNotice');
+
+      function openComingSoon() {
+        if (comingSoonModal) {
+          comingSoonModal.classList.add('open');
+          document.body.style.overflow = 'hidden';
+          if (waitlistNotice) {
+            waitlistNotice.style.display = 'none';
+            waitlistNotice.textContent = '';
+          }
+        }
+      }
+
+      function closeComingSoon() {
+        if (comingSoonModal) {
+          comingSoonModal.classList.remove('open');
+          document.body.style.overflow = '';
+        }
+      }
+
+      if (btnCreateAccount) {
+        btnCreateAccount.addEventListener('click', function (e) {
+          e.preventDefault();
+          openComingSoon();
+        });
+      }
+
+      if (btnSignIn) {
+        btnSignIn.addEventListener('click', function (e) {
+          e.preventDefault();
+          openComingSoon();
+        });
+      }
+
+      if (comingSoonCloseBtn) comingSoonCloseBtn.addEventListener('click', closeComingSoon);
+      if (comingSoonCloseBtn2) comingSoonCloseBtn2.addEventListener('click', closeComingSoon);
+
+      if (comingSoonDemoBtn) {
+        comingSoonDemoBtn.addEventListener('click', function () {
+          closeComingSoon();
+        });
+      }
+
+      if (comingSoonModal) {
+        comingSoonModal.addEventListener('click', function (e) {
+          if (e.target === comingSoonModal) {
+            closeComingSoon();
+          }
+        });
+      }
+
+      if (comingSoonForm) {
+        comingSoonForm.addEventListener('submit', function (e) {
+          e.preventDefault();
+          const emailVal = waitlistEmail ? waitlistEmail.value.trim() : '';
+          const dict = I18N[currentLang] || I18N.vi;
+          if (!emailVal || !emailVal.includes('@')) {
+            if (waitlistNotice) {
+              waitlistNotice.style.display = 'block';
+              waitlistNotice.style.color = 'var(--coral-playhead)';
+              waitlistNotice.textContent = dict.comingSoon.emptyEmailMsg;
+            }
+            return;
+          }
+
+          if (waitlistNotice) {
+            waitlistNotice.style.display = 'block';
+            waitlistNotice.style.color = 'var(--signal-teal)';
+            waitlistNotice.textContent = dict.comingSoon.successMsg;
+          }
+          if (waitlistEmail) waitlistEmail.value = '';
+        });
+      }
+
+      // Pricing Card buttons also trigger Coming Soon modal since auth is in private development
+      document.querySelectorAll('.btn-plan-action').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          openComingSoon();
+        });
+      });
+
+      /* -----------------------------------------------------------
+         MOBILE NAVIGATION TOGGLE & MOBILE AUTH
+         ----------------------------------------------------------- */
+      const mobileToggle = document.getElementById('mobileToggle');
+      const navMenu = document.getElementById('navMenu');
+      const btnSignInMobile = document.getElementById('btnSignInMobile');
+      const btnCreateAccountMobile = document.getElementById('btnCreateAccountMobile');
+
+      if (mobileToggle && navMenu) {
+        mobileToggle.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const isOpen = navMenu.classList.toggle('mobile-open');
+          mobileToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+
+        document.addEventListener('click', function (e) {
+          if (!navMenu.contains(e.target) && e.target !== mobileToggle) {
+            navMenu.classList.remove('mobile-open');
+            mobileToggle.setAttribute('aria-expanded', 'false');
+          }
+        });
+      }
+
+      if (navMenu) {
+        navMenu.querySelectorAll('.nav-link, button, a').forEach(el => {
+          el.addEventListener('click', () => {
+            navMenu.classList.remove('mobile-open');
+            if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+      }
+
+      // Close open modals and drawers on Escape key
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          closeModal();
+          closeComingSoon();
+          if (navMenu) {
+            navMenu.classList.remove('mobile-open');
+            if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+          }
+        }
+      });
+
+      if (btnSignInMobile) {
+        btnSignInMobile.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (navMenu) navMenu.classList.remove('mobile-open');
+          if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+          openComingSoon();
+        });
+      }
+
+      if (btnCreateAccountMobile) {
+        btnCreateAccountMobile.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (navMenu) navMenu.classList.remove('mobile-open');
+          if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+          openComingSoon();
+        });
+      }
+
+      /* -----------------------------------------------------------
+         STICKY HEADER ELEVATION & FLOATING ELEVATOR SCROLL
+         ----------------------------------------------------------- */
+      const studioHeader = document.querySelector('.studio-header');
+      const studioElevator = document.getElementById('studioElevator');
+      const btnScrollTop = document.getElementById('btnScrollTop');
+      const btnScrollBottom = document.getElementById('btnScrollBottom');
+      const btnNavScrollTop = document.getElementById('btnNavScrollTop');
+      const btnNavScrollBottom = document.getElementById('btnNavScrollBottom');
+
+      function handleScroll() {
+        const scrollY = window.scrollY || document.documentElement.scrollTop;
+        const maxScroll = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.offsetHeight,
+          document.body.clientHeight,
+          document.documentElement.clientHeight
+        ) - window.innerHeight;
+
+        // Sticky Header shadow elevation
+        if (studioHeader) {
+          if (scrollY > 20) {
+            studioHeader.classList.add('header-scrolled');
+          } else {
+            studioHeader.classList.remove('header-scrolled');
+          }
+        }
+
+        // Elevator Visibility: Show when scrolled down > 120px
+        if (studioElevator) {
+          if (scrollY > 120) {
+            studioElevator.classList.add('visible');
+          } else {
+            studioElevator.classList.remove('visible');
+          }
+        }
+
+        // Dim buttons when at extreme ends
+        if (btnScrollTop) {
+          if (scrollY <= 20) {
+            btnScrollTop.classList.add('disabled');
+          } else {
+            btnScrollTop.classList.remove('disabled');
+          }
+        }
+
+        if (btnScrollBottom) {
+          if (scrollY >= maxScroll - 40) {
+            btnScrollBottom.classList.add('disabled');
+          } else {
+            btnScrollBottom.classList.remove('disabled');
+          }
+        }
+      }
+
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      handleScroll();
+
+      function scrollToPageTop() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (navMenu) {
+          navMenu.classList.remove('mobile-open');
+          if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+        }
+      }
+
+      function scrollToPageBottom() {
+        window.scrollTo({
+          top: document.documentElement.scrollHeight || document.body.scrollHeight,
+          behavior: 'smooth'
+        });
+        if (navMenu) {
+          navMenu.classList.remove('mobile-open');
+          if (mobileToggle) mobileToggle.setAttribute('aria-expanded', 'false');
+        }
+      }
+
+      if (btnScrollTop) {
+        btnScrollTop.addEventListener('click', scrollToPageTop);
+      }
+
+      if (btnScrollBottom) {
+        btnScrollBottom.addEventListener('click', scrollToPageBottom);
+      }
+
+      if (btnNavScrollTop) {
+        btnNavScrollTop.addEventListener('click', scrollToPageTop);
+      }
+
+      if (btnNavScrollBottom) {
+        btnNavScrollBottom.addEventListener('click', scrollToPageBottom);
+      }
+
+      /* -----------------------------------------------------------
+         INITIAL LOAD SETUP
+         ----------------------------------------------------------- */
+      applyTheme(currentTheme);
+      applyLanguage(currentLang);
+
+    })();
+  </script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.1, story **09.1.4**, L71–73), §5.1 (endpoint example), §5.4 (catalogue); `../../../00-overview.md` §8.
 > Contract: `../README.md` — **D7**, **D14**, **D15**, **D17**; 02 CR-20 (`Retry-After`), 02 README D8/D9.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: **implemented 2026-09-29** (`09.1.4-T1`, branch `feature/09.1.4-error-mapping`, PR #40) — independent QA, code/performance/security reviews, the fix round and the fix-delta re-review are closed; 78 test cases green (44 without a database). The catalogue is 162 codes (`Status` 119 / `AcceptedBodyCodes` 3 / `NonHttpCodes` 40) and includes `unauthorized` (09 CR-38).
 
 ## 1. Scope
 
@@ -28,7 +28,7 @@
 | E1 | ProblemDetails (RFC 9457) with a stable `code` is the 00 §8 error format | 00 §8 ✅ |
 | E2 | Status comes from the code, not from `ErrorType` (02 already writes `Error.NotFound("fact_sheet_required", 409)`-style mixes, fixed by 09 CR-9) | README D7, F17 ✅ |
 | E3 | 202 bodies (`setting_change_pending`, `owner_action_pending`, `grant_requires_approval`, `objection_recorded`) are success values, not errors | 09 §4 09.1.4 L72 ✅ |
-| E4 | ASP.NET Core `IProblemDetailsService` / `AddProblemDetails()` writes `application/problem+json` | ASP.NET Core docs ⚠️ (not re-read) |
+| E4 | ASP.NET Core `IProblemDetailsService` / `AddProblemDetails()` writes `application/problem+json` ✅ verified 2026-09-29 against `dotnet/aspnetcore` `release/10.0` (see the 09.1.4-T1 Notes for the exact hooks) | ASP.NET Core docs + source ✅ |
 
 ## 3. Domain and data
 
@@ -37,9 +37,10 @@ No tables. Types (`src/NightTales.Application/Common/Errors/` and `src/NightTale
 | File | Content |
 |---|---|
 | `Application/Common/Errors/ErrorCodes.cs` | `public static class ErrorCodes { public const string ValidationFailed = "validation_failed"; … }`, one constant per catalogue code |
-| `Api/Http/ErrorCatalogue.cs` | `static readonly FrozenDictionary<string, int> Status` built from 09 §5.4 + D17 + 02 D8 |
+| `Api/Http/ErrorCatalogue.cs` | `static readonly FrozenDictionary<string, int> Status` built from 09 §5.4 + D17 + 02 D8 + `unauthorized` (09 CR-38) |
 | `Api/Http/ProblemDetailsWriter.cs` | `IResult ToProblem(List<Error> errors, HttpContext http)` |
-| `Api/Http/ResultExtensions.cs` | `ToHttpResult`, `ToCreatedResult(Func<T,string> location, Func<T,CancellationToken,Task<string?>> etag)` (post-commit ETag read), `ToAcceptedResult(Func<T,string?>? location = null)`, `ToNoContentResult` |
+| `Api/Http/ResultExtensions.cs` | `ToHttpResult`, `ToHttpResult(Func<T,CancellationToken,Task<string?>> etag)` (post-commit ETag read, D15), `ToCreatedResult(Func<T,string> location, Func<T,CancellationToken,Task<string?>> etag)` (post-commit ETag read), `ToAcceptedResult(Func<T,string?>? location = null)`, `ToNoContentResult`, `ToNoContentResult(Func<T,CancellationToken,Task<string?>> etag)` |
+| `Application/Common/Errors/ErrorMetadata.cs` | the shared error-metadata keys `Field`, `RetryAfterSeconds`, `Limit` — written by the behaviors and read by the writer's allow-list |
 | `Api/Http/Filters/{RequireIdempotencyKeyFilter,RequireIfMatchFilter}.cs` | endpoint filters + `RouteHandlerBuilder` extensions `RequireIdempotencyKey()`, `RequireIfMatch()` |
 | `Application/Common/ETags.cs` (handlers compare, D7) | `Episode(uint xmin)` → `"ep-{xmin}"`, `Series(uint xmin)` → `"se-{xmin}"`, `Matches(string? ifMatch, string current)` (strong, exact) |
 
@@ -63,7 +64,7 @@ ProblemDetails body:
   "status": 409, "code": "episode_invalid_state", "traceId": "00-…", "errors": null }
 ```
 
-The type URI host is ⚠️ a placeholder until 11 fixes the public domain. Extra metadata keys from `Error.Metadata` are copied as top-level members only when they are on the allow-list `retryAfterSeconds`, `field`, `limit` [DECISION], so that no internal data leaks.
+The type URI host is ⚠️ a placeholder until 11 fixes the public domain. Extra metadata keys from `Error.Metadata` are copied as top-level members only when they are on the allow-list `retryAfterSeconds`, `field`, `limit` [DECISION], so that no internal data leaks; a value under an allow-listed key is copied only when it is a bounded scalar (a string ≤ 128 characters, a finite number or a bool) — a nested object, an array, a `DateTime`/`Guid` or an oversized string is dropped and logged at Debug. In a validation body the metadata comes from the first **validation** error, never from a non-validation error the 400 suppresses (those are logged at Warning).
 
 ## 6. UI
 
@@ -79,7 +80,7 @@ None.
 |---|---|
 | Stack traces or SQL in responses | the 500 path writes a fixed title; details are logged with the `traceId` only |
 | Id probing via 403 vs 404 | the catalogue maps other-tenant misses to `not_found` 404 (D10) |
-| Metadata leakage | metadata allow-list (§5) |
+| Metadata leakage | metadata allow-list (§5) + values restricted to bounded scalars, so an allow-listed key is not a channel for structured data |
 
 ## 9. Test plan
 

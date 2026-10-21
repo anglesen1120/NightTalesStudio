@@ -1,0 +1,232 @@
+{
+  "version": "1.1",
+  "schedule": "2026-09-29",
+  "checklist": "plans/11-worker-deployment.md §5.6 (amended by 11 CR-15 / README T74: the block-volume + media-egress items replace the managed object-storage item; no object-storage product is scored anywhere in this file)",
+  "semantics": {
+    "hard_gates": "a provider that fails any gate is NOT eligible; a gate whose capture value is null or missing is UNKNOWN, which also blocks eligibility and is printed as ⚠️.",
+    "null_policy": "declared per criterion: 'neutral' = a null value scores 1.0 for that provider even when other providers have numbers (the ⚠️-deferred latency items); 'fail' = a null scores 0.0 when at least one provider has a number, and is neutral for every provider when all of them are null.",
+    "noise_tolerance": "providers whose totals are within params.noise_tolerance of the best total form one tie band; inside a band the ranking is decided by the declared tie-break in README §4, never by prose."
+  },
+  "params": {
+    "duty_cycle_hours_per_day": 6,
+    "days_per_month": 30.4375,
+    "gpu_vram_min_gb": 16,
+    "gpu_vram_preferred_gb": 24,
+    "gpu_per_node": 1,
+    "latency_threshold_ms": 350,
+    "noise_tolerance": 0.01
+  },
+  "hard_gates": [
+    {
+      "id": "gpu_vram_gb",
+      "kind": "min_number",
+      "threshold": 16,
+      "unit": "GB",
+      "heading": "11 §5.6 GPU types available and their VRAM (VieNeu + whisper on one card)"
+    },
+    {
+      "id": "pg17_pitr",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 managed PostgreSQL with PITR (E10: base backup + continuous WAL archive)"
+    },
+    {
+      "id": "block_volume_gates",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 block volumes attachable to a VM with encryption at rest, snapshots and a published GB-month price (T74)"
+    },
+    {
+      "id": "block_volume_two_zones",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 block volumes offered in two availability zones (or two locations) for storage-backup-<env> (T74)"
+    },
+    {
+      "id": "media_egress_price",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 a published internet egress price for media.<domain> downloads (T74)"
+    },
+    {
+      "id": "private_networking",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 private networking between services"
+    },
+    {
+      "id": "secret_manager",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 / README D15 a provider-native secret manager"
+    },
+    {
+      "id": "container_registry",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 / README D15 a container registry"
+    },
+    {
+      "id": "telemetry_non_agpl",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "11 §5.6 / README D17 (O6, E12) a telemetry backend option that is not self-hosted AGPL"
+    },
+    {
+      "id": "owner_locked_eligible",
+      "kind": "bool",
+      "unit": "bool",
+      "heading": "DECISIONS §3 / 11 README D21 (owner O7, 2026-09-27): the owner locked the storage engine (D21) and excluded the AWS account; the verbatim sentence is quoted in the capture. A provider excluded by a locked owner decision is ineligible (this gate is true when the provider is NOT excluded)"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "gpu_price_per_hour",
+      "weight": 0.2,
+      "direction": "lower",
+      "unit": "USD/GPU-hour",
+      "null_policy": "fail",
+      "heading": "11 §5.6 hourly and monthly price (official page, dated)"
+    },
+    {
+      "id": "gpu_billing_granularity",
+      "weight": 0.04,
+      "direction": "higher",
+      "unit": "enum",
+      "null_policy": "fail",
+      "scale": {
+        "per_second": 1.0,
+        "per_minute": 0.5,
+        "per_hour": 0.0
+      },
+      "heading": "11 §5.6 billing granularity (per second/hour)"
+    },
+    {
+      "id": "gpu_stop_start",
+      "weight": 0.04,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 ability to stop/start GPU nodes"
+    },
+    {
+      "id": "monthly_at_duty_cycle",
+      "weight": 0.09,
+      "direction": "lower",
+      "unit": "USD/month",
+      "null_policy": "fail",
+      "derived": "gpu_price_per_hour * params.duty_cycle_hours_per_day * params.days_per_month",
+      "heading": "11 §5.6 hourly and monthly price at the expected duty cycle"
+    },
+    {
+      "id": "latency_to_vn_ms",
+      "weight": 0.08,
+      "direction": "lower",
+      "unit": "ms",
+      "null_policy": "neutral",
+      "heading": "11 §5.6 region and latency to Vietnam"
+    },
+    {
+      "id": "latency_to_apis_ms",
+      "weight": 0.06,
+      "direction": "lower",
+      "unit": "ms",
+      "null_policy": "neutral",
+      "heading": "11 §5.6 region and latency to OpenAI/YouTube"
+    },
+    {
+      "id": "block_volume_gb_month",
+      "weight": 0.07,
+      "direction": "lower",
+      "unit": "USD/GiB-month",
+      "null_policy": "fail",
+      "heading": "11 §5.6 published block-volume GB-month price (T74)"
+    },
+    {
+      "id": "volume_snapshot_gb_month",
+      "weight": 0.04,
+      "direction": "lower",
+      "unit": "USD/GiB-month",
+      "null_policy": "fail",
+      "heading": "11 §5.6 block-volume snapshot price (T74)"
+    },
+    {
+      "id": "internet_egress_gb",
+      "weight": 0.11,
+      "direction": "lower",
+      "unit": "USD/GB",
+      "null_policy": "fail",
+      "heading": "11 §5.6 published internet egress price for media.<domain> downloads (T74)"
+    },
+    {
+      "id": "managed_postgres_month",
+      "weight": 0.08,
+      "direction": "lower",
+      "unit": "USD/month",
+      "null_policy": "fail",
+      "heading": "11 §5.6 managed PostgreSQL price (PITR included?)"
+    },
+    {
+      "id": "container_registry_price",
+      "weight": 0.03,
+      "direction": "lower",
+      "unit": "USD/GiB-month",
+      "null_policy": "fail",
+      "heading": "11 §5.6 / README D15 container-registry price"
+    },
+    {
+      "id": "vpn_bastion",
+      "weight": 0.02,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 / README D11, O5 VPN/bastion support"
+    },
+    {
+      "id": "fqdn_egress",
+      "weight": 0.05,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 / README F14 FQDN egress-rule support (⚠️ until proven)"
+    },
+    {
+      "id": "telemetry_option",
+      "weight": 0.02,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 / README D17 (O6) telemetry option (provider-native or hosted)"
+    },
+    {
+      "id": "private_ca_option",
+      "weight": 0.03,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 / README T81 an internal/private CA option for storage-<env>.internal"
+    },
+    {
+      "id": "data_terms_region",
+      "weight": 0.02,
+      "direction": "higher",
+      "unit": "enum",
+      "null_policy": "fail",
+      "scale": {
+        "ok": 1.0,
+        "partial": 0.5,
+        "unknown": 0.25,
+        "fail": 0.0
+      },
+      "heading": "11 §5.6 data-processing terms/GDPR/VN data rules ⚠️"
+    },
+    {
+      "id": "vn_payment_options",
+      "weight": 0.02,
+      "direction": "higher",
+      "unit": "bool",
+      "null_policy": "fail",
+      "heading": "11 §5.6 account/payment options for a Vietnam-based business"
+    }
+  ]
+}

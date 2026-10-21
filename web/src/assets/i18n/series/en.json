@@ -1,0 +1,130 @@
+{
+  "field": {
+    "voice": "Voice",
+    "title": "Series title",
+    "topic": "Topic",
+    "language": "Language",
+    "aspect": "Aspect",
+    "style": "Visual style"
+  },
+  "voice": {
+    "preview": "Play preview",
+    "stop": "Stop preview",
+    "previewUnavailable": "No preview is available for this voice",
+    "previewFailed": "The preview could not be played",
+    "rateFixed": "The speaking rate is fixed",
+    "clearedByLanguage": "The voice was cleared because it does not match the language",
+    "empty": "No voices are available for this language",
+    "inactive": "This voice is no longer available",
+    "gender": {
+      "male": "Male",
+      "female": "Female",
+      "neutral": "Neutral"
+    }
+  },
+  "style": {
+    "dark-folklore-ink": {
+      "label": "Dark folklore ink",
+      "hint": "Ink-wash folklore scenes, moonlit and shadowy"
+    },
+    "foggy-cinematic": {
+      "label": "Foggy cinematic",
+      "hint": "Misty film stills with cold light"
+    },
+    "vintage-photo-grain": {
+      "label": "Vintage photo grain",
+      "hint": "Old faded photos with film grain"
+    },
+    "watercolor-night": {
+      "label": "Watercolor night",
+      "hint": "Soft night watercolours with lantern glow"
+    },
+    "temple-candlelight": {
+      "label": "Temple candlelight",
+      "hint": "Warm candlelit temple scenes"
+    },
+    "noir-sketch": {
+      "label": "Noir sketch",
+      "hint": "Black-and-white charcoal, places and objects only"
+    },
+    "case-file-illustration": {
+      "label": "Case-file illustration",
+      "hint": "Muted case-file drawings, no faces"
+    },
+    "trueCrimeNotice": "Only illustration styles without real faces are available for true crime.",
+    "clearedByTopic": "The visual style was cleared because it does not match the topic",
+    "inactive": "This style is no longer available",
+    "selected": "Selected",
+    "empty": "No suitable visual styles are available yet"
+  },
+  "list": {
+    "title": "Your series",
+    "subtitle": "Narration, aspect and publishing schedule share one row.",
+    "empty": "No series yet",
+    "emptyBody": "Create your first series to keep narration and visual style consistent across episodes.",
+    "new": "Create series",
+    "archived": "Archived",
+    "includeArchived": "Include archived",
+    "loadMore": "Load more"
+  },
+  "step": { "topic": "Topic and language", "aspect": "Aspect", "voice": "Voice", "style": "Visual style" },
+  "topic": { "ghost": "Ghost stories", "spiritual": "Spiritual", "trueCrime": "True crime" },
+  "topicHint": { "ghost": "Fiction with a cold, mysterious atmosphere", "spiritual": "Beliefs and folk tales", "true_crime": "Source-based, without conclusions beyond the evidence" },
+  "aspect": { "landscape": "Landscape (long-form)", "portrait": "Portrait (Shorts)" },
+  "language": { "vi": "Tiếng Việt", "en": "English", "locked": "The language cannot change after creation; create a new series" },
+  "editor": {
+    "subtitle": "Four decisions make one consistent production line.",
+    "editTitle": "Edit series",
+    "editSubtitle": "This configuration applies to future episodes.",
+    "next": "Continue"
+  },
+  "validation": { "required": "Fill in or select this field.", "titleMax": "The series title must be no longer than 120 characters." },
+  "save": { "saved": "Saved", "conflict": "The series changed elsewhere", "changes": "Save changes", "saving": "Saving…", "reloaded": "The latest server version was reloaded." },
+  "archive": { "title": "Archive series?", "confirm": "Archive this series? Its data stays readable, but you cannot edit it or create new episodes.", "failed": "The series could not be archived. It has been restored to the list.", "done": "Series archived" },
+  "row": { "open": "Open", "archive": "Archive", "openNamed": "Open series", "archiveNamed": "Archive series", "autopilotOn": "Autopilot on", "autopilotOff": "Autopilot off" },
+  "detail": {
+    "title": "Series", "subtitle": "One consistent narration and visual style for the whole series.",
+    "edit": "Edit series", "tabs": "Series tabs", "overview": "Overview", "autopilot": "Autopilot", "summary": "Series configuration",
+    "storyPreset": "Story preset", "defaultPreset": "Default",
+    "archivedBody": "This series cannot be edited, receive new episodes or enable autopilot in this phase. All data stays readable.",
+    "notFound": "Series not found", "notFoundBody": "The series does not exist or does not belong to this account.", "backToList": "Back to series list"
+  }
+  ,
+  "bible": {
+    "title": "Series bible",
+    "subtitle": "Keep narration, names and rules consistent across episodes.",
+    "empty": "Your series remembers nothing yet. It fills up as episodes are approved.",
+    "narrator": "Narrator", "characters": "Recurring characters", "places": "Places", "rules": "Rules", "summaries": "Past episode summaries",
+    "saved": "Saved", "save": "Save story bible", "saving": "Saving…", "reload": "Reload",
+    "addCharacter": "Add character", "addPlace": "Add place", "addRule": "Add rule", "addSummary": "Add summary",
+    "remove": "Remove", "sectionEmpty": "No entries yet.", "limitReached": "The limit of 30 entries has been reached.",
+    "narrator.name": "Name", "narrator.persona": "Persona", "narrator.voiceNotes": "Voice notes",
+    "entry": { "name": "Name", "description": "Description" },
+    "rule": { "text": "Rule" }, "character": { "firstEpisode": "First episode" },
+    "summary": { "title": "Episode title", "body": "Summary" },
+    "version": "Version {{version}}",
+    "error": {
+      "conflict": "Someone changed this bible. Reload and save again.",
+      "ifMatch": "The bible could not be saved. Reload and try again.",
+      "limits": "Over the limit: {{field}}"
+    },
+    "field": {
+      "too_many": "Too many entries.", "too_long": "This field is too long.", "duplicate": "This entry is duplicated.",
+      "unknown_episode": "This episode is not an approved episode of this series.",
+      "invalidName": "Names cannot contain < or >.", "invalid": "Check this field.", "required": "Enter the narrator persona before saving."
+    },
+    "conflict": { "reload": "Reload latest (discard local edits)" },
+    "proposal": {
+      "banner": "{{n}} suggested changes from “{{title}}”", "bannerNoTitle": "{{n}} suggested changes",
+      "accept": "Accept", "dismiss": "Dismiss", "none": "No proposal is pending",
+      "autoAccepted": "Updated automatically (autopilot)", "more": "Reason",
+      "intro": "Review each change before adding it to the story bible.",
+      "baseVersion": "Based on version {{base}}; current version {{current}}.",
+      "dismissTitle": "Dismiss this proposal?", "dismissBody": "The suggested changes will not be added to the bible.",
+      "loading": "Loading suggested changes…", "diffError": "The suggested changes could not be displayed.",
+      "diffLabel": "Suggested bible changes", "added": "Added", "removed": "Removed"
+    },
+    "op": { "summary": "Summary", "character": "Character", "place": "Place", "rule": "Rule", "other": "Change" },
+    "dirty": { "title": "Leave without saving?", "body": "Your bible edits have not been saved.", "leave": "Discard edits", "stay": "Keep editing", "acceptTitle": "Discard edits and accept the proposal?" }
+  }
+}

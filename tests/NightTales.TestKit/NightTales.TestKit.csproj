@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Api\NightTales.Api.csproj" />
+    <!--
+      Both hosts compile a top-level `Program` in the global namespace, so referencing both makes
+      `Program` ambiguous (CS0433) for `WebApplicationFactory<Program>`. The Worker assembly is
+      therefore aliased: `WorkerHost` (09.2.6-T1) reaches it through `extern alias NightTalesWorkerHost`.
+    -->
+    <ProjectReference Include="..\..\src\NightTales.Worker\NightTales.Worker.csproj" Aliases="NightTalesWorkerHost" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- 09.2.6-T3: `FakeSmtpEmailSender` captures the composed `MimeMessage`s of the e-mail pipeline. -->
+    <PackageReference Include="MimeKit" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3.extensibility.core" />
+  </ItemGroup>
+</Project>

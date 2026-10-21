@@ -1,0 +1,9 @@
+Subject: Cảnh báo bảo mật NightTales
+
+Sự kiện: {{event}} (mức độ {{severity}}), lúc {{at}}.
+
+Người thực hiện: {{actorEmail}}.
+
+Chi tiết: {{dataSummary}}
+
+Nếu bạn không thực hiện thao tác này, hãy liên hệ hỗ trợ ngay.

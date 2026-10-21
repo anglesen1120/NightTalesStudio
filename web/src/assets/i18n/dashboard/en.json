@@ -1,0 +1,41 @@
+{
+  "title": "Overview",
+  "refresh": "Refresh",
+  "retry": "Retry",
+  "loading": "Loading your overview",
+  "counts": "{{needsReview}} need your review, {{inProgress}} in progress, {{ready}} ready to publish",
+  "partialRefreshFailed": "Could not refresh. Showing the last loaded data.",
+  "updatedJustNow": "Updated just now",
+  "needsReview": {
+    "title": "Needs your review",
+    "empty": "Nothing needs your review"
+  },
+  "inProgress": {
+    "title": "In progress",
+    "empty": "Nothing is in progress"
+  },
+  "ready": {
+    "title": "Ready to publish",
+    "empty": "Nothing is ready yet"
+  },
+  "allEmpty": {
+    "title": "No episodes yet",
+    "body": "Create a series to begin your first episode.",
+    "action": "Create series"
+  },
+  "card": {
+    "updated": "Updated {{time}}",
+    "action": {
+      "reviewStory": "Review story",
+      "reviewVideo": "Review video",
+      "open": "Open",
+      "publish": "Publish"
+    },
+    "actionLabel": {
+      "reviewStory": "Review story {{title}}",
+      "reviewVideo": "Review video {{title}}",
+      "open": "Open {{title}}",
+      "publish": "Publish {{title}}"
+    }
+  }
+}

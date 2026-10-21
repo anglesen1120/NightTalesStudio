@@ -1,0 +1,19 @@
+:host { display: block; min-width: 0; }
+.fact-row { padding: var(--nts-space-5) 0; border-top: 1px solid var(--nts-color-line); display: grid; gap: var(--nts-space-4); }
+.statement { min-width: 0; max-width: var(--nts-measure); }
+.statement p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+label { display: block; margin-bottom: var(--nts-space-2); font-weight: var(--nts-type-label-weight); }
+textarea { box-sizing: border-box; width: 100%; padding: var(--nts-space-3); color: var(--nts-color-ink); background: var(--nts-color-sheet); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); font: inherit; resize: vertical; }
+.fact-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .6fr) auto; gap: var(--nts-space-4); align-items: start; }
+.source-chips, .confidence { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nts-space-2); min-width: 0; }
+.source-chips label, .confidence label { width: 100%; margin-top: var(--nts-space-2); }
+.source-chip, .badge { display: inline-flex; align-items: center; gap: var(--nts-space-2); padding: var(--nts-space-1) var(--nts-space-2); border: 1px solid var(--nts-color-line); border-radius: var(--nts-radius-control); max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+a { min-width: 0; color: var(--nts-color-primary); }
+.advisory, .error, .source-chip--missing { color: var(--nts-color-error); }
+.fact-row--invalid { background: var(--nts-color-error-soft); }
+mat-form-field { width: 100%; min-width: 0; }
+button { min-width: var(--nts-target-min); min-height: var(--nts-target-min); padding: var(--nts-space-2); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); font: inherit; background: var(--nts-color-sheet); color: var(--nts-color-ink); cursor: pointer; }
+button:disabled { opacity: .65; cursor: default; }
+button:hover:not(:disabled) { background: var(--nts-color-soft); }
+:focus-visible { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+@media (max-width: 767px) { .fact-meta { grid-template-columns: minmax(0, 1fr); } .delete { justify-self: start; } }

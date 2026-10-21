@@ -20,7 +20,7 @@ Out of scope (owned elsewhere, listed so no reader guesses):
 - Quota ledger implementation and the ETA endpoint — `06.3.1-T1`; this folder only calls `IQuotaLedger.ReleaseAsync`.
 - Pre-audit privacy mapping, `publishAt` omission, go-live, `PollYouTubeProcessingJob`, `PublicationGoLiveJob`, `published_at` — `06.2.4-T1` / `06.2.5-T1` (D12).
 - Disconnect, token health, deletion handlers — `06.4-*`.
-- Multi-client settings/removal guard (`06.1.2-T3`, S), fairness (S), evidence pack (`06.5.1-T1`, BA).
+- Fairness queue and multi-client settings/removal guard (dropped with phase S, DEC 10.14); the audit evidence pack (`06.5.1-T1`, BA).
 
 High-level sections refined: `../../06-youtube-posting.md` L61-70 (06.2.1, 06.2.2), L86-88 (06.2.6); re-estimate per `../README.md` §9.
 
@@ -45,14 +45,14 @@ High-level sections refined: `../../06-youtube-posting.md` L61-70 (06.2.1, 06.2.
 | D13 | Outbox `publication_updated.v1 { publicationId, episodeId, userId, status, errorCode? }` → `IRealtimeNotifier` `PublicationUpdated` with `{ publicationId, episodeId }`, no `RealtimeData` (WT54) | `../README.md:130` ✅ |
 | D17 | Feature flag on every route, owner-only (tenant 404 for others), no Google password, cancelled-with-token single-use+hashed, audit actions `publishing.publication_created`/`publishing.consented`/`publishing.cancelled`, logs never carry titles/descriptions/tokens/channel names | `../README.md:138` ✅ |
 | D18 | Indexes `publications (status, next_attempt_at) WHERE status IN ('awaiting_consent','scheduled','uploading','processing')`, `publications (channel_connection_id)`, the D6 partial unique; episode detail +1 indexed query only | `../README.md:140` ✅ |
-| D19 | TestKit: `FakeGoogleServer`, tests on real PostgreSQL (Testcontainers), `FakeClock`; no mocking library | `../README.md:142` ✅ |
+| D19 | TestKit: `FakeGoogleServer`, tests on real PostgreSQL 17 via `PostgresFixture`, `FakeClock`; no mocking library | `../README.md:142` ✅ |
 | D20 | Migration `_06_Publications` (incl. `veto_ends_at`) owned by 06.2.1-T1; expand-only | `../README.md:144` ✅ |
 | ETags | `ETags.Episode(uint) → "ep-{xmin}"`, `ETags.Series(uint) → "se-{xmin}"`, `ETags.Matches(ifMatch, current)` (strong, exact, `*` rejected); `RequireIfMatch()` → 428 `if_match_required`; `DbUpdateConcurrencyException` → 409 `concurrency_conflict` | `09-backend-api/09.1.4-error-mapping/plan.md:44`; `09.1.4-T1-problem-details-etag-helpers.md:53-60,200` ✅ |
 | Email | `EmailMessage(Guid UserId, string Template, Language Locale, IReadOnlyDictionary<string,string> Params)`; `IEmailSender.QueueAsync` queue-only; `IEmailDeliveryStatus.GetAsync`; `IEmailTokenMinter.MintAsync(userId, template, parameters, ct)` mints inside `SendEmailJob` (WT17); `EmailMessage : IUserOwned` so foreign reads are 404; templates `Templates/Email/<name>.<locale>.{txt,html}` | `09.2.6-worker-hangfire/09.2.6-T3-email-pipeline.md:21-34,42-58,107,168` ✅ |
 | Tokens | `user_action_tokens(id, user_id, kind text CHECK, token_hash text unique, created_at, expires_at, used_at)`; owner 09.3.3-T1; `PasswordResetTokenMinter` is the WT17 precedent | `09.3-auth/09.3.3-T1-forgot-and-reset-password.md:55-67,124` ✅ |
 | Codes | 09 catalogue style: 409 `concurrency_conflict`, 412 `episode_conflict` (CR-7 additions) prove entity-specific 412 codes are the pattern | `09-backend-api/README.md:341,360` ✅ |
 
-Open questions carried into the task files as `[OPEN]`: the `publication_*` error-code rows (§4), `publications.published_at` (06 CR-1 extension, §3), `platform_payload.quotaReservedDay` ownership (§7), and the 10-wave-2 owner of the `/publications/cancel` page (§6).
+Open questions carried into the task files as `[OPEN]`: the `publication_*` error-code rows (§4), `publications.published_at` (06 CR-1 extension, §3), `platform_payload.quotaReservedDay` ownership (§7 — resolved by 06.2.6-T1, S72: the payload option, platform from the row), and the 10-wave-2 owner of the `/publications/cancel` page (§6).
 
 ## 3. Domain and data
 
@@ -251,7 +251,7 @@ Client rules handed over: 412 `publication_conflict` → refetch the row and re-
 | `AutopilotConsentJob` (recurring 1 min) | 06.2.2-T3 | calls `Publication.ConsentFromAuthorization` (implemented here) and the same `publication_updated.v1`/audit path, so there is exactly one consent implementation |
 | `SendEmailJob` (queue `email`) | 09.2.6-T3 | renders `publication_consented.<locale>` / `publication_veto_notice.<locale>` and runs `PublicationCancelTokenMinter` (06.2.2-T2) at send time (WT17); 06 CR-6 adds `AuthLinks.PublicationCancel(origin, publicationId, token)` (token after `#` — the invariant `09.3.3-T1:173` already pins) and the two catalog rows; the origin is the 09-owned `App:PublicOrigin`, supplied to minters at send time (`09.2.6-T3:109`) ✅ — never a 06-local key |
 | `TokenHealthJob`, disconnect, deletion | 06.4-* | reads/cancels publications; `DELETE /channels/{id}` cancels `awaiting_consent|scheduled` rows (D15) — the same `Cancel` domain method |
-| `IQuotaLedger` (`TryReserveAsync`/`ReleaseAsync`) | 06.3.1-T1 | 06.2.6-T1 calls `ReleaseAsync` for a reservation recorded in `platform_payload.quotaReservedDay`; the upload job clears/owns that key (D10) — `[OPEN]`: confirm `quotaReservedDay` as a second `platform_payload` key owned by 06.2.3-T2, or drop the release call from 06.2.6-T1 at DoR |
+| `IQuotaLedger` (`TryReserveAsync`/`ReleaseAsync`) | 06.3.1-T1 | 06.2.6-T1 calls `ReleaseAsync` for a reservation recorded in `platform_payload.quotaReservedDay`; the upload job clears/owns that key (D10) — resolved by 06.2.6-T1 (S72): `quotaReservedDay` **is** the second `platform_payload` key (one ISO `yyyy-MM-dd` Pacific quota day; the platform comes from `Publication.Platform`), so `IQuotaLedger` keeps D10's API and no ledger signature changes; the writer is 06.2.3-T2 (STATUS S72-1) |
 
 - Pre-audit visibility (D12/C4) needs no consent-time planner: 06.2.1-T1 decides and stamps `platform_payload.preAudit`/`requestedPrivacy` and the effective `privacy` **at create**, once, permanently (advisor-fixed 2026-09-25 — an earlier draft deferred the flip to a consent-time "upload planner", which both contradicted D12's actual rule and left the veto notice, queued at create, previewing the wrong privacy; a later proposal for a queue-time correction was also retracted 2026-09-25 — confirmed with `Y06Status`: per `02.8.3-T3:156` a pre-audit slot stays private for that publication forever, only the *next* autopilot run goes public). 06.2.2-T1 and 06.2.4-T1 only ever read `platform_payload.preAudit`/`requestedPrivacy`; neither writes them. `PublicationDto` exposes both (06 CR-11, §4.2) so a `PATCH` attempt is explained, not silently accepted — YR20 closes the earlier write-path question: nothing ever writes `requestedPrivacy` after create; a `PATCH` to a non-private value on a pre-audit row is refused outright, 409 `publication_privacy_locked` (06.2.2-T3's `ApplyOwnerEdit`). The `IJobScheduler` question is **resolved, not open**: YR3 (below).
 
@@ -287,7 +287,7 @@ Timeouts and bounds: both commands are single-transaction, 2–4 indexed stateme
 
 ## 9. Test plan
 
-Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/HTTP tests, in-process Worker), `tests/NightTales.TestKit` (fakes/fixtures). xunit.v3 + Shouldly; no mocking library; real PostgreSQL via Testcontainers; `FakeClock` for every time assertion; `FakeGoogleServer` is not needed by this folder (no Google call happens here) — it is listed only as the D19 asset used by the sibling upload folder.
+Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/HTTP tests, in-process Worker), `tests/NightTales.TestKit` (fakes/fixtures). xunit.v3 + Shouldly; no mocking library; real PostgreSQL 17 via `PostgresFixture`; `FakeClock` for every time assertion; `FakeGoogleServer` is not needed by this folder (no Google call happens here) — it is listed only as the D19 asset used by the sibling upload folder.
 
 Unit:
 
@@ -318,7 +318,7 @@ e2e: none here (Playwright owns the UI paths in 11.5.1-T1).
 | 06.2.1-T1 | Publication aggregate, create command, YouTube limits, attribution, ETag, episode summary | M (1.0) | 06.1.2-T2, 09.5.3-T1, 09.7.1-T1, 05.3.2-T3 (soft) | 06.2.2-T1, 02.8.3-T3, 10.7.2-T1 (10 CR-15), 07.2.2-T1 (07 CR-11), 10.7.2-T0 |
 | 06.2.2-T1 | Consent command + domain guard (`pc.v1` text, If-Match) | S (0.5) | 06.2.1-T1 | 06.2.2-T2, 06.2.6-T1, 06.2.3-T2, 10.7.2-T1 (10 CR-15), 07.2.2-T1 (07 CR-11) |
 | 06.2.2-T2 | Consent e-mail, veto notice e-mail with single-use cancel link, cancel-by-link route | S (0.5) | 06.2.2-T1, 09.2.6-T3, 09.3.3-T1 | 06.2.2-T3, 10.7.4-T2 (10 CR-15), 07.2.2-T2 (07 CR-11) |
-| 06.2.6-T1 | Cancel command (before upload) + quota release | S (0.5) | 06.2.2-T1, 06.3.1-T1 | 06.4.1-T1, 10.7.4-T1 (10 CR-15), 13.3.2-T1 (13 CR-17) |
+| 06.2.6-T1 | Cancel command (before upload) + quota release | S (0.5) | 06.2.2-T1, 06.3.1-T1 | 06.4.1-T1, 10.7.4-T1 (10 CR-15) |
 
 The table is identical to `../README.md` §8.1 (canonical). Folder total 2.0 d.
 

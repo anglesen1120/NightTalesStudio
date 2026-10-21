@@ -1,0 +1,37 @@
+<section class="conflict-dialog">
+  <h2 [id]="titleId">{{ 'errors.conflict.title' | transloco }}</h2>
+  <div class="conflict-dialog__body" [id]="bodyId">
+    <p>{{ data.messageKey | transloco }}</p>
+    @if (data.detailKeys; as detailKeys) {
+      @if (detailKeys.length > 0) {
+        <ul>
+          @for (detailKey of detailKeys; track detailKey) {
+            <li>{{ detailKey | transloco }}</li>
+          }
+        </ul>
+      }
+    }
+    @if (data.detailTexts; as detailTexts) {
+      @if (detailTexts.length > 0) {
+        @if (data.detailHeadingKey; as detailHeadingKey) {
+          <h3 class="conflict-dialog__detail-heading">{{ detailHeadingKey | transloco }}</h3>
+        }
+        <ul class="conflict-dialog__detail-texts">
+          @for (detailText of detailTexts; track $index) {
+            <li>{{ detailText }}</li>
+          }
+        </ul>
+      }
+    }
+    @if (data.traceId; as traceId) {
+      <p class="conflict-dialog__trace">{{ 'errors.unknown.trace' | transloco: { traceId } }}</p>
+    }
+  </div>
+  <div class="conflict-dialog__actions">
+    <button type="button" data-outcome="cancel" cdkFocusInitial (click)="chooseCancel()">{{ 'errors.conflict.cancel' | transloco }}</button>
+    @if (data.saveAsNewLabel; as label) {
+      <button type="button" data-outcome="saveAsNew" (click)="chooseSaveAsNew()">{{ label | transloco }}</button>
+    }
+    <button class="conflict-dialog__primary" type="button" data-outcome="reload" (click)="chooseReload()">{{ 'errors.conflict.reload' | transloco }}</button>
+  </div>
+</section>

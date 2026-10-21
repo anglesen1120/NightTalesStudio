@@ -1,0 +1,7 @@
+Subject: Nhiều lần nhập mã xác thực hai lớp sai
+
+Xin chào {{displayName}},
+
+Trong {{windowMinutes}} phút vừa qua, mã xác thực hai lớp của tài khoản đã bị nhập sai {{failedCount}} lần.
+
+Nếu không phải bạn, hãy đổi mật khẩu và xem lại bảo mật tài khoản tại {{securityUrl}}.

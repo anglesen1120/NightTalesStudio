@@ -1,0 +1,18 @@
+::host {
+  display: block;
+}
+
+.mfa-qr__img {
+  display: block;
+  width: 208px;
+  height: 208px;
+  max-width: 100%;
+  border: 1px solid var(--nts-color-line);
+  border-radius: var(--nts-radius-control);
+  background: #fff;
+}
+
+.mfa-qr__loading {
+  width: 208px;
+  max-width: 100%;
+}

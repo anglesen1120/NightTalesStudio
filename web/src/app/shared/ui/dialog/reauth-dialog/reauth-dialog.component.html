@@ -1,0 +1,93 @@
+<section
+  class="reauth-dialog"
+  tabindex="-1"
+  [cdkTrapFocus]="!insideMatDialog"
+  [cdkTrapFocusAutoCapture]="!insideMatDialog"
+  [attr.role]="insideMatDialog ? null : 'dialog'"
+  [attr.aria-modal]="insideMatDialog ? null : 'true'"
+  [attr.aria-labelledby]="insideMatDialog ? null : titleId"
+  [attr.aria-describedby]="insideMatDialog ? null : bodyId"
+  (keydown.escape)="onEscape($event)"
+>
+  <h2 mat-dialog-title class="reauth-dialog__title" [id]="titleId">{{ 'reauth.title' | transloco }}</h2>
+
+  <form class="reauth-dialog__body" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <p class="reauth-dialog__reason" [id]="bodyId">{{ 'reauth.reason' | transloco }}</p>
+    @if (state().errorField === null && state().errorKey !== null) {
+      <div id="reauth-alert" class="reauth-dialog__alert" role="alert" aria-atomic="true">
+        <strong>{{ state().errorKey | transloco }}</strong>
+        @if (state().traceId; as id) {
+          <span>{{ 'errors.unknown.trace' | transloco: { traceId: id } }}</span>
+        }
+      </div>
+    }
+
+    <mat-form-field appearance="outline">
+      <mat-label>{{ 'reauth.password' | transloco }}</mat-label>
+      <input
+        matInput
+        cdkFocusInitial
+        id="reauth-password"
+        type="password"
+        autocomplete="current-password"
+        [attr.aria-invalid]="fieldError('password') !== null ? 'true' : null"
+        [attr.aria-describedby]="fieldError('password') !== null ? 'reauth-password-error' : null"
+        formControlName="password"
+      />
+      @if (fieldError('password'); as errorKey) {
+        <mat-error id="reauth-password-error">{{ errorKey | transloco }}</mat-error>
+      }
+    </mat-form-field>
+
+    @if (requireCode) {
+      <mat-form-field appearance="outline">
+        <mat-label>{{ 'reauth.code' | transloco }}</mat-label>
+        <input
+          matInput
+          id="reauth-code"
+          type="text"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          [attr.aria-invalid]="fieldError('code') !== null ? 'true' : null"
+          [attr.aria-describedby]="
+            fieldError('code') !== null ? 'reauth-code-error' : 'reauth-code-hint'
+          "
+          formControlName="code"
+        />
+        <mat-hint id="reauth-code-hint">{{ 'reauth.codeHint' | transloco }}</mat-hint>
+        @if (fieldError('code'); as errorKey) {
+          <mat-error id="reauth-code-error">{{ errorKey | transloco }}</mat-error>
+        }
+      </mat-form-field>
+    }
+
+    @let retryIn = state().retryAfterSec;
+    @if (retryIn !== null) {
+      <div id="reauth-retry" class="reauth-dialog__status" role="status">
+        <strong>{{ 'errors.rate_limited' | transloco }}</strong>
+        <nts-retry-countdown [seconds]="retryIn" (elapsed)="retryAfterElapsed.emit()" />
+      </div>
+    }
+
+    <div class="reauth-dialog__actions">
+      <button mat-button type="button" mat-dialog-close [disabled]="state().submitting">
+        {{ 'reauth.cancel' | transloco }}
+      </button>
+      <button
+        class="reauth-dialog__confirm"
+        mat-flat-button
+        type="submit"
+        [disabled]="state().submitting || retryIn !== null || form.invalid"
+        [attr.aria-disabled]="state().submitting || retryIn !== null"
+        [attr.aria-describedby]="retryIn !== null ? 'reauth-retry' : null"
+      >
+        @if (state().submitting) {
+          <mat-spinner class="reauth-dialog__spinner" diameter="18" aria-hidden="true" />
+          <span>{{ 'reauth.submitting' | transloco }}</span>
+        } @else {
+          <span>{{ 'reauth.submit' | transloco }}</span>
+        }
+      </button>
+    </div>
+  </form>
+</section>

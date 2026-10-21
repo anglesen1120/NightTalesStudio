@@ -27,12 +27,12 @@ The story's original wording "stored only in local `config.toml`/env" is superse
 | O5 | "you **may** need to complete the API Organization Verification … before using GPT Image models". Status shown under Settings → Organization → General | ⚠️ https://developers.openai.com/api/docs/guides/image-generation, https://help.openai.com/en/articles/10910291-api-organization-verification. Plan as if required; external wait of unknown length |
 | O6 | Images: `quality` default `auto` when omitted; flare accepts `low/medium/high/xhigh/max`; the response echoes the resolved quality. `moderation` `auto` (default) / `low`. `usage` = `input_tokens`, `input_tokens_details{text_tokens,image_tokens}`, `output_tokens`, `total_tokens`, optional `output_tokens_details`; the reference still says "gpt-image-1 only" → may be absent, handle it. Set `model` explicitly (fallback `dall-e-2`) | ✅ https://developers.openai.com/api/reference/resources/images/methods/generate |
 | O7 | Usage/Costs APIs need an **Admin key**; Costs has only 1-day buckets | ✅ admin usage/costs references → [DECISION D6] no Admin key in M0; per-run usage comes from the tap |
-| O8 | `gpt-image-2.5-flare`: text in $5, image in $8, image out $30 per 1M tokens; **Tier 1 = 100k TPM / 5 images per minute**. `gpt-6-luna`: $0.10 in / $0.50 out per 1M | ✅ https://developers.openai.com/api/docs/pricing, https://developers.openai.com/api/docs/models/gpt-image-2.5-flare |
+| O8 | `gpt-image-2.5-flare` (superseded by `gpt-image-2`, 01 DEC-11 — official-API token prices kept as reference; relay price for `gpt-image-2` resolved ✅ **184 VND/image** flat, owner 2026-09-28, 02 CR-27; relay rate re-check [OPEN]): text in $5, image in $8, image out $30 per 1M tokens; **Tier 1 = 100k TPM / 5 images per minute**. `gpt-6-luna`: $0.10 in / $0.50 out per 1M | ✅ https://developers.openai.com/api/docs/pricing, https://developers.openai.com/api/docs/models/gpt-image-2.5-flare |
 | M1 | `openai_*` and `openai_image_*` keys live in `[app]` | ✅ MPT `config.example.toml` |
 | M4 | `openai_image` sends only `{model, prompt, n: 1, size}` (no `quality`); retries 429/5xx 3× (5/15/30 s); on any failure it logs `openai image generation failed` and **skips the keyword** (no error, no fallback) | ✅ `app/services/material.py` |
 | M5 | LLM `openai`: `chat.completions.create`, not streaming; empty `openai_base_url` → api.openai.com; empty model → `gpt-5.5`; retries 5× | ✅ `app/services/llm.py` |
 | DEC §2 | Keys only local, never committed or pasted into chat; spending limit set in the dashboard | ✅ `DECISIONS.md` §2 |
-| DEC §4 | 1024×1024 image: low ~$0.006 · medium ~$0.013 · high ~$0.053 (floor prices) | ✅ `DECISIONS.md` §4 |
+| DEC §4 | Relay price for `gpt-image-2`: **184 VND/image** flat (owner 2026-09-28, 02 CR-27; ≈ $0.0072 at SBV 25,641 VND/USD, `trial/prices.json` `unit: per_image`; CRV-0928-5). Official-API `gpt-image-2.5-flare` reference (superseded, 01 DEC-11): 1024×1024 low ~$0.006 · medium ~$0.013 · high ~$0.053 (floor prices) | ✅ `DECISIONS.md` §4 |
 | DEC §10.11 | Node image key lives in a **separate OpenAI project** (image models only, own hard budget) | ✅ `DECISIONS.md` §10.11 → the trial uses the same split |
 
 Questions closed: 01 §10 "budget hard vs alert" → a hard limit exists (O1), but it is not instant. Still open (⚠️, answered by T1/T3): whether verification is needed for this org (O5); the exact status/code of an allow-list denial; whether `usage` is present for flare (O6); exact dashboard labels (UI may differ from the docs).
@@ -46,14 +46,14 @@ No database. Resources and where they live:
 | Org billing | prepaid; credit purchase amount = owner decision (proposal ≥ D7 org limit $30, [INFERENCE] $30 covers the full trial with headroom); **auto-reload off** | OpenAI dashboard | OpenAI org Owner |
 | Org spend limit | $30/month, **Enforce a hard limit** on | dashboard | Owner |
 | Project | `nts-trial-story`: allow-list `gpt-6-luna` only (+ `gpt-6-sol` temporarily during 02.1.3-T1 only, 02 CR-17), hard limit $5/month | dashboard | Owner (O3) |
-| Project | `nts-trial-image`: allow-list `gpt-image-2.5-flare` only, hard limit $25/month | dashboard | Owner |
+| Project | `nts-trial-image`: allow-list `gpt-image-2` only (supersedes `gpt-image-2.5-flare`, 01 DEC-11), hard limit $25/month | dashboard | Owner |
 | Key | `nts-trial-story-mac-<YYYYMM>` (e.g. `nts-trial-story-mac-202609`), Restricted: Model capabilities = Request, List models = Read, everything else None | project `nts-trial-story`; value in Keychain service `nts.openai.story` | Owner creates; typed into the Mac prompt |
 | Key | `nts-trial-image-mac-<YYYYMM>`, same permissions | project `nts-trial-image`; Keychain `nts.openai.image` | same |
 | Rendered config | `[app] openai_api_key = "${NTS_OPENAI_STORY_KEY}"`, `openai_image_api_keys = ["${NTS_OPENAI_IMAGE_KEY}"]` (M1, M4, M5) | `worker-node/mpt/config.template.toml` → `$NTS_HOME/src/mpt/config.toml` 0600 | 01.2.2-T2 (D5); this story supplies the two Keychain entries |
 | Access record | `trial/baselines/openai-access-mac-<YYYYMMDD>.json` (tracked, secret-free) | repo | T3 |
 
 Invariants:
-- Story traffic (`chat.completions`, M5) is billed only to `nts-trial-story`, image traffic (`images/generations`, M4) only to `nts-trial-image`. A key can reach only its project's allow-listed model (O3). Key scope is identical for both, so the allow-list is the separating control (O4).
+- Story traffic (`chat.completions`, M5) is billed only to `nts-trial-story`, image traffic (`images/generations`, M4 — translated to `/responses` when `OPENAI_IMAGE_API=responses`, host `OPENAI_IMAGE_HOST_MODEL` on the image key; 01 DEC-11) only to `nts-trial-image`. A key can reach only its project's allow-listed model (O3). Key scope is identical for both, so the allow-list is the separating control (O4).
 - Project limits $5 + $25 ≤ org limit $30 (D7). The org limit is the outer bound if a project limit is misconfigured.
 - Auto-reload off → the prepaid balance is a second (delayed) ceiling (O2).
 - No key value ever appears in the repo, argv, shell history, logs, `run.json`, the access record, chat or screenshots (D3, DECISIONS §2).
@@ -69,7 +69,7 @@ Access-record schema (`openai-access-mac-<YYYYMMDD>.json`, written by `openai-ac
           "image_rate_limit_ipm": 5},
   "projects": {
     "nts-trial-story": {"allow_list": ["gpt-6-luna"], "hard_limit_usd": 5, "spend_alert_50pct_usd": 2.5, "key_name": "nts-trial-story-mac-202609", "key_permission": "restricted"},
-    "nts-trial-image": {"allow_list": ["gpt-image-2.5-flare"], "hard_limit_usd": 25, "spend_alert_50pct_usd": 12.5, "key_name": "nts-trial-image-mac-202609", "key_permission": "restricted"}
+    "nts-trial-image": {"allow_list": ["gpt-image-2"], "hard_limit_usd": 25, "spend_alert_50pct_usd": 12.5, "key_name": "nts-trial-image-mac-202609", "key_permission": "restricted"}
   },
   "checks": [
     {"id": "C1", "key": "story", "endpoint": "/v1/chat/completions", "model": "gpt-6-luna",
@@ -98,13 +98,13 @@ Rule: **the developer may not be an org Owner** (O3 needs Owner). U1–U6 and U8
 
 ## 5. API and events
 
-External calls only (no own API). All go direct to `https://api.openai.com/v1` in T3; after 01.3.1-T2, MPT goes through the tap (D6), which uses the same endpoints.
+External calls only (no own API). All go direct to the pinned `OPENAI_BASE_URL` in T3 (relay, 01 DEC-9/CR-15); after 01.3.1-T2, MPT goes through the tap (D6), which uses the same endpoints.
 
 | Call | Used by | Body (T3) | Expected |
 |---|---|---|---|
 | `GET /v1/models` | T3 C0s / C0i (story / image key) | — | 200 (List models = Read, O4) |
 | `POST /v1/chat/completions` | MPT story (M5); T3 C1/C4/C7 | `{"model":"gpt-6-luna","messages":[{"role":"user","content":"Reply with OK."}],"max_completion_tokens":16}` | story key: 200 + `usage` (C1); story key with a non-allowed model `gpt-6-astra`: denied (C7; 02 CR-17); image key: denied (C4) |
-| `POST /v1/images/generations` | MPT images (M4); T3 C2/C3 | `{"model":"gpt-image-2.5-flare","prompt":"A foggy empty village road at dusk, illustration","n":1,"size":"1024x1024","quality":"low"}` | image key: 200, `quality` echoed `low`, `usage` (may be absent, O6) (C3); story key: denied (C2) |
+| `POST /v1/images/generations` (translated to `/responses` + `image_generation` tool when `OPENAI_IMAGE_API=responses`, 01 DEC-11/CR-16) | MPT images (M4); T3 C2/C3 | `{"model":"gpt-image-2","prompt":"A foggy empty village road at dusk, illustration","n":1,"size":"1024x1024","quality":"low"}` | image key: 200, `quality` echoed `low`, `usage` (may be absent, O6) (C3); story key: denied (C2) |
 | `GET /v1/files` | T3 C6 | — | denied: proves the key is Restricted, not All (O4) |
 
 Error codes the trial must recognise (logged by the tap in `error_code`, D6):
@@ -169,8 +169,8 @@ Runnable by `worker-node/bin/openai-access-check.sh` (T3) except the dashboard o
 |---|---|---|---|
 | C0s / C0i | story / image key `GET /v1/models` | 200 | 0 |
 | C1 | story key → chat `gpt-6-luna`, `max_completion_tokens: 16` | 200, `usage.prompt_tokens`/`completion_tokens` present | < $0.0001 |
-| C2 | story key → images `gpt-image-2.5-flare` | non-2xx; record status + `error.code` ⚠️ | 0 |
-| C3 | image key → images 1024×1024 `quality: low` | 200; `quality` echoed `low`; `usage` recorded or `n/a:absent` (O6) | ≈ $0.006 floor (DEC §4) |
+| C2 | story key → images `gpt-image-2` (flare superseded, 01 DEC-11) | non-2xx; record status + `error.code` ⚠️ | 0 |
+| C3 | image key → images 1024×1024 `quality: low` | 200; `quality` echoed `low`; `usage` recorded or `n/a:absent` (O6) | 184 VND ≈ $0.0072 on the relay (02 CR-27, CRV-0928-5; $0.006 was the official-API flare floor, DEC §4) |
 | C4 | image key → chat `gpt-6-luna` | non-2xx; record | 0 |
 | C5 | image key → images with `quality` omitted | **not run** in T3 (default `auto` = unknown cost; measured in 01.2.2-T6 via the tap) | — |
 | C6 | story key → `GET /v1/files` | non-2xx (insufficient permission); record | 0 |

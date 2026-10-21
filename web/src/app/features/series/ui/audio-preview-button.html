@@ -1,0 +1,43 @@
+@if (previewUrl() === null) {
+  <button
+    type="button"
+    class="audio-preview"
+    disabled
+    [attr.title]="'series.voice.previewUnavailable' | transloco"
+    [attr.aria-label]="('series.voice.previewUnavailable' | transloco) + ' — ' + displayName()"
+  >
+    <nts-icon-play />
+  </button>
+} @else {
+  <button
+    #previewToggle
+    type="button"
+    class="audio-preview"
+    [class.audio-preview--playing]="pressed()"
+    [disabled]="disabled()"
+    [attr.aria-pressed]="pressed()"
+    [attr.title]="(pressed() ? stopLabel() : label()) | transloco"
+    [attr.aria-label]="((pressed() ? stopLabel() : label()) | transloco) + ' — ' + displayName()"
+    (click)="toggle()"
+  >
+    @if (pressed()) {
+      <nts-icon-pause />
+    } @else {
+      <nts-icon-play />
+    }
+  </button>
+  @defer (on interaction(previewToggle)) {
+    <audio
+      #player
+      class="audio-preview__player"
+      preload="none"
+      (ended)="onEnded()"
+      (error)="onError()"
+    ></audio>
+  }
+  <span class="audio-preview__status" aria-live="polite">
+    @if (failed()) {
+      <span class="audio-preview__failure" [id]="liveId">{{ 'series.voice.previewFailed' | transloco }}</span>
+    }
+  </span>
+}

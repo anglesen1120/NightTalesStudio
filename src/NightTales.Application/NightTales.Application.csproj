@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.Domain\NightTales.Domain.csproj" />
+    <ProjectReference Include="..\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ErrorOr" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <!-- 09.2.6-T3: `ISmtpEmailSender` composes a `MimeMessage`, so the port and the job that builds it
+         carry MimeKit; the transport (MailKit) stays an Infrastructure dependency. -->
+    <PackageReference Include="MimeKit" />
+  </ItemGroup>
+
+  <!--
+    06.2.2-T1 (06 README D7; 10 CR-17/WT-W3): the `pc.v1` publication-consent texts
+    `Templates/Consent/pc.v1.<locale>.md`, embedded (not copied) so a deployment cannot ship without the text the
+    consent dialogue must display, and `GetConsentTextHandler` addresses each one by the exact logical name below —
+    the mechanism of the Infrastructure prompts tree and the breached-password list. `WithCulture="false"` stops
+    MSBuild reading the `.vi`/`.en` before the extension as a culture and moving the file into a satellite
+    assembly (the trap 02.3.3-T1 documents for `prompts/`). No default glob embeds `.md` (the SDK's own
+    `EmbeddedResource` default is `**/*.resx`), so the files need these explicit items; their default `None` item
+    copies nothing and needs no `None Remove`.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Templates/Consent/pc.v1.vi.md" LogicalName="NightTales.Application.Templates.Consent.pc.v1.vi.md" WithCulture="false" />
+    <EmbeddedResource Include="Templates/Consent/pc.v1.en.md" LogicalName="NightTales.Application.Templates.Consent.pc.v1.en.md" WithCulture="false" />
+  </ItemGroup>
+</Project>

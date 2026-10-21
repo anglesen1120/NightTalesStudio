@@ -1,0 +1,9 @@
+cell_id,letter,rating_1_5,text_visible,face_realistic,gore,off_prompt,note,rater_id
+k05-portrait,A,4,0,0,0,0,"AI: Shrine and lantern are clear; smoke and night palette fit, though dawn is absent and figures are more prominent.",ai-1
+k05-portrait,B,5,0,0,0,0,"AI: Focused roadside shrine, curling incense smoke, blue washes, and warm lantern glow; strong match, though dawn is not apparent.",ai-1
+k05-portrait,C,4,0,0,0,0,"AI: Detailed shrine, smoke, and lantern with a dawn-colored horizon; composition and watercolor mood fit, but scene is brighter than night template.",ai-1
+k05-portrait,D,4,0,0,0,0,"AI: Shrine, smoke, and lantern are present in a calm blue landscape; wide framing makes shrine small and dawn colors diverge from night template.",ai-1
+k10-portrait,A,4,0,0,0,0,"AI: Strong noir hatching and fluorescent light; metal table and two chairs are clear, though the cropped chair weakens the composition.",ai-1
+k10-portrait,B,4,0,0,0,0,"AI: Monochrome charcoal room and hard overhead light fit well; table and two chairs are present, but both chairs are awkwardly cropped.",ai-1
+k10-portrait,C,5,0,0,0,0,"AI: Excellent documentary noir sketch with clear table, two chairs, and fluorescent light; coherent, detailed composition.",ai-1
+k10-portrait,D,4,0,0,0,0,AI: Good monochrome hatching and uncluttered interview-room layout; shadows are softer and less dramatic than the template suggests.,ai-1

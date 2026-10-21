@@ -1,0 +1,9 @@
+<div class="copyable-code">
+  @if (labelKey(); as label) { <span class="copyable-code__label">{{ label | transloco }}</span> }
+  <code tabindex="0">{{ value() }}</code>
+  <button type="button" (click)="copy()" [attr.aria-label]="'core.ui.copyableCode.copy' | transloco">
+    <nts-icon-copy />
+    <span>{{ 'core.ui.copyableCode.copy' | transloco }}</span>
+  </button>
+</div>
+<p class="copyable-code__result" aria-live="polite">{{ resultKey() ? (resultKey()! | transloco) : '' }}</p>

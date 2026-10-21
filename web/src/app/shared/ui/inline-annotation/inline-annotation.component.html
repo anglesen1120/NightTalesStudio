@@ -1,0 +1,23 @@
+<div class="inline-annotation" role="note" [id]="noteId() ?? annotation().id"
+  [class.inline-annotation--blocking]="annotation().severity === 'blocking'"
+  [class.inline-annotation--compact]="compact()">
+  <div class="inline-annotation__heading">
+    <span class="inline-annotation__severity"><nts-icon-alert /> {{ ('episodes.annotations.' + annotation().severity) | transloco }}</span>
+    @if (compact() && annotation().addressLabelKey; as labelKey) {
+      <span class="inline-annotation__address">{{ labelKey | transloco }}@if (annotation().addressLabelIndex !== null) { {{ annotation().addressLabelIndex }} }</span>
+    }
+  </div>
+  <p class="inline-annotation__message">{{ annotation().messageKey | transloco }}</p>
+  @if (annotation().evidence) {
+    <p class="inline-annotation__detail"><strong>{{ 'episodes.annotations.evidence' | transloco }}:</strong> {{ annotation().evidence }}</p>
+  }
+  @if (annotation().repairDirection; as repair) {
+    <p class="inline-annotation__detail"><strong>{{ 'episodes.annotations.repair' | transloco }}:</strong> {{ repair }}</p>
+  }
+  @if (annotation().canGoTo) {
+    <button type="button" [attr.aria-describedby]="noteId() ?? annotation().id" (click)="requestFocus()">
+      {{ 'episodes.annotations.goTo' | transloco }}
+      @if (annotation().addressLabelKey; as labelKey) { {{ labelKey | transloco }}@if (annotation().addressLabelIndex !== null) { {{ annotation().addressLabelIndex }} } }
+    </button>
+  }
+</div>

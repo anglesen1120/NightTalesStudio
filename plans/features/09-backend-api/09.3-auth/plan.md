@@ -1,20 +1,21 @@
-# 09.3.1, 09.3.2, 09.3.3, 09.10.4 — Auth: identity, sessions, MFA, password reset (P; 09.3.1-T3 S)
+# 09.3.1, 09.3.2, 09.3.3, 09.10.4 — Auth: identity, sessions, MFA, password reset (P)
 
 > Parent: ../README.md (Part B)
+> Status: task **09.3.1-T1 implemented 2026-10-01** (PR #59); task **09.3.2-T1 implemented 2026-10-01** (branch `feature/09.3.2-T1-login`; `ITokenIssuer`/`IRefreshTokenService` declared in `Infrastructure/Security` behind the Application port `IAuthSessionService`, same precedent as `ICredentialVerifier`). SEC-01 (placeholder breached list) open for the owner. Other tasks in this folder: not implemented.
 
 ## 1. Scope
 
-This folder details the wave-2 **P** part of epic 09.3 (auth) plus **09.10.4-T1** (BD4), and the S-phase
-**09.3.1-T3** register/verify:
+This folder details the wave-2 **P** part of epic 09.3 (auth) plus **09.10.4-T1** (BD4). The phase-S
+register/verify task (09.3.1-T3) is deleted with phase S (DEC 10.14):
 
 | Task | In scope | Out of scope (owner) |
 |---|---|---|
-| 09.3.1-T1 | `AddIdentityCore<AppUser>` wiring, `users`/role mapping (D8, D9), password policy + breached-password check, `Registration:Mode`, `POST /auth/register` mode gate (403 `registration_closed`), `user_consents` + `IConsentWriter` (W2 CR-5) | the register/verify flow itself (09.3.1-T3); invite tokens (S) |
-| 09.3.1-T3 (S) | register (invite/open), verify e-mail, resend, `email_not_verified` filter | brute force/CAPTCHA (09.3.3-T2/T3, S) |
-| 09.3.2-T1 | `ITokenIssuer` (ES256), `refresh_tokens` + `IRefreshTokenService`, `POST /auth/login` (password step), `POST /auth/refresh`, `POST /auth/logout`, `SessionLimits` | per-request security-stamp check (09.3.2-T2, S); CAPTCHA (09.3.3-T2) |
+| 09.3.1-T1 | `AddIdentityCore<AppUser>` wiring, `users`/role mapping (D8, D9), password policy + breached-password check, `Registration:Mode`, `POST /auth/register` mode gate (403 `registration_closed`), `user_consents` + `IConsentWriter` (W2 CR-5) | the register/verify flow itself and invite tokens (phase S, dropped by DEC 10.14) |
+| (deleted) | the phase-S register/verify/CAPTCHA tasks are deleted by DEC 10.14; no row here | — |
+| 09.3.2-T1 | `ITokenIssuer` (ES256), `refresh_tokens` + `IRefreshTokenService`, `POST /auth/login` (password step), `POST /auth/refresh`, `POST /auth/logout`, `SessionLimits` | per-request security-stamp check and CAPTCHA (phase S, dropped by DEC 10.14) |
 | 09.3.2-T3 | `auth_challenges`, pre-auth cookie, `POST /auth/login/mfa` | TOTP maths, enrolment endpoints (09.10.4-T1) |
-| 09.3.3-T1 | `user_action_tokens`, `POST /auth/forgot-password`, `POST /auth/reset-password`, revoke-all-families on reset | progressive delay, CAPTCHA, `captcha_required` (09.3.3-T2/T3) |
-| 09.10.4-T1 | `ITotpVerifier`, `ITotpSecretStore`, recovery codes, `/me/mfa/*`, `POST /auth/reauth`, `IReauthGuard`, `ISecurityAlerter` port, role/session limit values | user management (09.10.5), owner-action queue (09.10.4 S), trusted devices (S) |
+| 09.3.3-T1 | `user_action_tokens`, `POST /auth/forgot-password`, `POST /auth/reset-password`, revoke-all-families on reset | progressive delay, CAPTCHA, `captcha_required` (phase S, dropped by DEC 10.14) |
+| 09.10.4-T1 | `ITotpVerifier`, `ITotpSecretStore`, recovery codes, `/me/mfa/*`, `POST /auth/reauth`, `IReauthGuard`, `ISecurityAlerter` port, role/session limit values | user management (the admin surface was phase S, dropped by DEC 10.14), owner-action queue, trusted devices |
 
 Parent contract: `../README.md` Part B (W1–W17, WF01–WF16, BD1–BD16, §B8.1) and Part A D3–D17 (pipeline order,
 UnitOfWork, idempotency, errors, persistence, tenant filter, outbox, jobs, test harness, API conventions, ETags).
@@ -24,14 +25,14 @@ UnitOfWork, idempotency, errors, persistence, tenant filter, outbox, jobs, test 
 - ✅ W1: `Microsoft.AspNetCore.Authentication.JwtBearer` + `Microsoft.AspNetCore.DataProtection.EntityFrameworkCore` **10.0.12**, MIT, net10.0.
 - ✅ W6: Identity's `VerifyTwoFactorTokenAsync`/recovery codes are **replayable inside the window** and W7: the authenticator key and recovery codes are plain `user_tokens` values — hence BD4 (own `ITotpVerifier`, Data-Protection secret, SHA-256 recovery codes, `users.last_totp_step` CAS).
 - ✅ W12 (Part A N14): Hangfire polls every 15 s → no auth work is put on a scheduled job; all side effects are outbox-driven (D11).
-- ✅ W17 / W2-O1: P has **one seeded owner and no public sign-up**; register + verify are the S-phase 09.3.1-T3 (WF05).
+- ✅ W17 / W2-O1: P has **one seeded owner and no public sign-up**; register + verify were the phase-S 09.3.1-T3, deleted with phase S (WF05, DEC 10.14).
 - ✅ BD2: `AddIdentityCore<AppUser>()` + roles + EF stores; `PasswordOptions.RequiredLength = 12`, no composition rules; `LockoutOptions.AllowedForNewUsers = false`; `User.RequireUniqueEmail = true`; `Registration:Mode ∈ closed | invite | open` (P: `closed`).
-- ✅ BD3: access token ES256 (PEM secret `nts/<env>/api/JWT_SIGNING_KEY`, `kid` = first 16 hex of SHA-256 of the public key), `iss = "nts-<env>"`, `aud = "nts-api"`, claims `sub`, `role`, `sid`, `amr` (`pwd`/`otp`/`rc`), `iat`, `exp`; lifetime user 15 min, admin/owner 5 min, `ClockSkew = 30 s`; refresh token 32 random bytes base64url, cookie `__Secure-nts_rt`, rotation + reuse detection, owner/admin 12 h absolute / 30 min idle, user 14 days; `user_action_tokens` kinds `password_reset` (60 min) / `email_verify` (24 h, S); fragment links; `IReauthGuard.RequireRecentAsync`.
+- ✅ BD3: access token ES256 (PEM secret `nts/<env>/api/JWT_SIGNING_KEY`, `kid` = first 16 hex of SHA-256 of the public key), `iss = "nts-<env>"`, `aud = "nts-api"`, claims `sub`, `role`, `sid`, `amr` (`pwd`/`otp`/`rc`), `iat`, `exp`; lifetime user 15 min, admin/owner 5 min, `ClockSkew = 30 s`; refresh token 32 random bytes base64url, cookie `__Secure-nts_rt`, rotation + reuse detection, owner/admin 12 h absolute / 30 min idle, user 14 days; `user_action_tokens` kinds `password_reset` (60 min); the `email_verify` kind (24 h) went with the phase-S verify task (DEC 10.14); fragment links; `IReauthGuard.RequireRecentAsync`.
 - ✅ BD4: RFC 6238 SHA-1/6 digits/30 s/±1 step, `FixedTimeEquals`, `UPDATE users SET last_totp_step = @step WHERE … (last_totp_step IS NULL OR last_totp_step < @step)` → 0 rows = replay; secret Data-Protection purpose `identity.totp.v1` in `user_tokens` name `totp_secret`; 10 × 10-char Crockford base32 recovery codes as SHA-256 in `user_tokens` name `recovery_codes`, single use; `POST /auth/login` for owner/admin always `mfa_required` + `{ mfaToken }` + `__Secure-nts_mfa` (5 min); `auth_challenges`; 5 wrong codes revoke the challenge; IP change audited, not rejected; unknown e-mail runs the dummy hash; `POST /auth/reauth { password, code }` sets `reauthenticated_at`; 5 wrong re-auth attempts per family revoke it (401 `session_revoked`); enrolment-only token (`scope = mfa_enrol`) until an owner has MFA, every other route 404. [RULED — README §B10 WT29, WT31, WT34, WT36, WT37] Auth commands return **success-typed outcomes** (`LoginOutcome`, `RefreshOutcome.ReuseDetected`, `MfaOutcome.WrongCode`, `ReauthOutcome.Failed`) so counters, revocations, audit rows and alert e-mails commit before the endpoint maps them to 401 (WT29); `ITotpVerifier.VerifyAsync(userId, code, TotpSlot slot, ct)` with `Pending` used only by `VerifyMfaCommand` and `Active` by login and reauth (WT31); the fallback authorization policy rejects `scope = mfa_enrol` and the two enrolment routes use policy `MfaEnrolment` (WT34); reuse is detected only when the presented row is `revoked_reason = 'rotated'`, any other revoked row answers 401 `session_revoked` with no e-mail (WT36); every family revocation emits `NOTIFY security` (user id) and the hub aborts that user's connections, `Hubs:MaxConnectionMinutes` = the role's access-token lifetime (owner 5, user 15), no stamp cache in P (WT37).
 - ✅ D8: snake_case naming, Identity tables renamed `users`, `roles`, `user_roles`, `user_claims`, `user_logins`, `user_tokens`, `role_claims`; `timestamptz`; enum-as-text + `HasEnumCheck`; ids UUIDv7 from `Guid.CreateVersion7()`; aggregates map `Version` → `xmin`.
 - ✅ D9 + W2 CR-5: 09.2.2 `InitialCore` does **not** create `refresh_tokens`, `auth_challenges`, `user_action_tokens`, `user_consents`; each is created by its owner's migration (this folder).
 - ✅ D10: tenant filter `"tenant"`; other users' rows answer **404 `not_found`**.
-- ✅ D13 harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, Testcontainers `postgres:17-alpine` (migrated template DB); **no mocking library** — hand-written fakes.
+- ✅ D13 harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, real PostgreSQL 17 via `PostgresFixture` on `NTS_TEST_PG` (09 W3 CR-35; migrated template DB); **no mocking library** — hand-written fakes.
 - ✅ D14: base `/api/v1`, camelCase JSON, enums snake_case, cursor pagination; D7 error catalogue (`Api/Http/ErrorCatalogue.cs`), `ToHttpResult`/`ToNoContentResult` helpers.
 - ✅ 09 §5.4 codes used here: `validation_failed` 400, `breached_password` 400, `email_not_verified` 403, `invalid_credentials` 401, `mfa_required` 401, `invalid_mfa_code`/`mfa_token_invalid` 401, `session_revoked` 401, `refresh_token_reused` 401, `reauth_required` 401, `not_found` 404, `forbidden` 403, `registration_closed` 403, `rate_limited` 429.
 - ⚠️ [INFERENCE] names not present in Part A/BD text and therefore listed in §10 "Open items": `users` no; but `ICurrentUser.SessionId`, `IBreachedPasswordChecker`, `IUserActionTokenService`, `UserActionKind`, `TotpSlot`, `IRecoveryCodeService`, `ISecurityAlerter`, metric names, e-mail template names, `user_tokens` names `totp_secret_pending`; the interim `IMfaChallengeService`/`PendingMfaChallengeService` names no longer exist (WT39). [RULED — README §B10 WT31, WT39]
@@ -46,7 +47,7 @@ All four tables are **expand-only** migrations named `<yyyyMMddHHmm>_09_<What>` 
 | `user_consents` | 09.3.1-T1 | `id uuid pk`, `user_id uuid not null references users(id)`, `document text not null` (enum-as-text + CHECK `tos`/`privacy`), `version text not null`, `accepted_at timestamptz not null`, `ip inet null`; index `(user_id, document)`. W2 CR-5 owner. |
 | `refresh_tokens` | 09.3.2-T1 | per BD3 + W2 CR-1 columns, plus `reauth_attempts smallint NOT NULL DEFAULT 0` and `reauth_last_attempt_at timestamptz` for BD4's 5-wrong-attempts rule ([INFERENCE], see Open items); unique `(token_hash)`, index `(family_id)`, index `(user_id)` , partial index `(expires_at) where revoked_at is null`, CHECK `reauth_attempts between 0 and 5`. |
 | `auth_challenges` | 09.3.2-T3 | `id`, `user_id`, `token_hash` unique, `preauth_cookie_hash`, `user_agent text null`, `ip inet null` (logged, never enforced), `attempts smallint not null default 0`, `expires_at`, `used_at`; index `(user_id, expires_at)`. |
-| `user_action_tokens` | 09.3.3-T1 | `id`, `user_id`, `kind text` + CHECK `password_reset`/`email_verify`, `token_hash` unique, `created_at`, `expires_at`, `used_at`; index `(user_id, kind)`. |
+| `user_action_tokens` | 09.3.3-T1 | `id`, `user_id`, `kind text` + CHECK `password_reset` only (the `email_verify` kind is deleted with phase S, DEC 10.14), `token_hash` unique, `created_at`, `expires_at`, `used_at`; index `(user_id, kind)`. |
 
 No new columns on `users`: `two_factor_enabled`, `last_totp_step`, `security_stamp`, `status`, `role`, `ui_locale`,
 `last_login_at` all come from `InitialCore` (00 §6, D9). 09.10.4-T1 adds **no** migration — TOTP state lives in
@@ -55,7 +56,7 @@ references a trusted device (BD4 makes an IP change audited-only); see §10 Open
 
 Domain types are added by these tasks:
 - `PlatformRole { User, Admin, Owner }` (D16) — used by `AppUser.Role`.
-- `UserActionKind { PasswordReset, EmailVerify }` (09.3.3-T1).
+- `UserActionKind { PasswordReset }` (the `EmailVerify` member is deleted with phase S, DEC 10.14) (09.3.3-T1).
 - `SessionLimits(TimeSpan Absolute, TimeSpan? Idle)` + `SessionLimits.For(PlatformRole)` (09.3.2-T1) — the values BD3/09 §4 fix: owner/admin 12 h / 30 min, user 14 d / none.
 - `LegalDocument { Tos, Privacy }` (09.3.1-T1) [INFERENCE name].
 
@@ -76,7 +77,7 @@ All routes are Minimal-API endpoint groups (`IEndpointGroup`, D14) under `/api/v
 
 | Route | Owner | Success | Errors |
 |---|---|---|---|
-| `POST /auth/register` | 09.3.1-T1 (gate) / 09.3.1-T3 (S flow) | 202 `{ }` | 403 `registration_closed`, 400 `validation_failed`, 400 `breached_password` |
+| `POST /auth/register` | 09.3.1-T1 (gate; the S flow is dropped by DEC 10.14) | 202 `{ }` | 403 `registration_closed`, 400 `validation_failed`, 400 `breached_password` |
 | `POST /auth/login` | 09.3.2-T1 | 200 `{ accessToken, expiresAt, role, amr }` + `__Secure-nts_rt` | 400 `validation_failed`, 401 `invalid_credentials`, 403 `email_not_verified`, 401 `session_revoked`, 401 `mfa_required`, 401 `mfa_enrolment_required` [INFERENCE code] |
 | `POST /auth/login/mfa` | 09.3.2-T3 | 200 tokens + cookie | 401 `invalid_mfa_code`, 401 `mfa_token_invalid`, 400 `validation_failed` |
 | `POST /auth/refresh` | 09.3.2-T1 | 200 `{ accessToken, expiresAt }` + rotated cookie | 401 `refresh_token_reused`, 401 `session_revoked`, 403 `forbidden` (Origin) |
@@ -88,10 +89,9 @@ All routes are Minimal-API endpoint groups (`IEndpointGroup`, D14) under `/api/v
 | `POST /me/mfa/verify` | 09.10.4-T1 | 200 `{ recoveryCodes[10] }` | 401 `invalid_mfa_code`, 400 `validation_failed` |
 | `POST /me/mfa/recovery-codes` | 09.10.4-T1 | 200 `{ recoveryCodes[10] }` | 401 `reauth_required` |
 | `DELETE /me/mfa` | 09.10.4-T1 | 204 | 403 `forbidden` (admin/owner), 401 `reauth_required` |
-| `POST /auth/verify-email`, `POST /auth/resend-verification` (S) | 09.3.1-T3 | 200 / 202 | 400 `validation_failed` |
 
 Events (D11 outbox, ids/enums only): `UserSecurityChanged` → `user_security_changed.v1` (written in the same
-transaction whenever `security_stamp` rotates; consumed by 09.3.2-T2 in S); `EmailRequested` → `email_requested.v1`
+transaction whenever `security_stamp` rotates; its phase-S consumer is dropped by DEC 10.14); `EmailRequested` → `email_requested.v1`
 is **not** written here — tasks call `IEmailSender.QueueAsync` (09.2.6-T3, BD1/BD9). Protected actions are plain
 `ICommand<ErrorOr<…>>` through the D4 pipeline (`LoggingBehavior` → `AuthorizationBehavior` → `ValidationBehavior` →
 `UnitOfWorkBehavior` → `IdempotencyBehavior` → `AuditBehavior`); token/consent writes join the handler's transaction
@@ -105,7 +105,7 @@ Config keys and defaults (all [INFERENCE names], secrets via the secret manager)
 | Key | Default | Used by |
 |---|---|---|
 | `Registration:Mode` | `closed` | 09.3.1-T1 |
-| `Registration:DisposableDomains` | empty list (P) | 09.3.1-T3 (check → 400 `validation_failed`) |
+| `Registration:DisposableDomains` | empty list (P) | — (the check was a phase-S task, dropped by DEC 10.14) |
 | `Auth:Access:UserMinutes` / `Auth:Access:AdminMinutes` | `15` / `5` | 09.3.2-T1 |
 | `Auth:Access:ClockSkewSeconds` | `30` | 09.3.2-T1 |
 | `Auth:Session:AdminAbsoluteHours` / `Auth:Session:AdminIdleMinutes` | `12` / `30` | 09.3.2-T1 (values fixed by BD3) |
@@ -113,7 +113,7 @@ Config keys and defaults (all [INFERENCE names], secrets via the secret manager)
 | `Auth:Refresh:CookieName` | `__Secure-nts_rt` | 09.3.2-T1 |
 | `Auth:Mfa:ChallengeMinutes` / `Auth:Mfa:MaxAttempts` | `5` / `5` | 09.3.2-T3 |
 | `Auth:Reauth:WindowMinutes` / `Auth:Reauth:MaxAttempts` | `5` / `5` | 09.10.4-T1 |
-| `Auth:ActionToken:PasswordResetMinutes` / `:EmailVerifyHours` | `60` / `24` | 09.3.3-T1 |
+| `Auth:ActionToken:PasswordResetMinutes` | `60` (the former `:EmailVerifyHours` = 24 is deleted with phase S, DEC 10.14) | 09.3.3-T1 |
 | `Security:BreachedPasswords:Mode` | `list` (`range` \| `list` \| `off`) | 09.3.1-T1 |
 | `App:PublicOrigin` | — (required) | Origin check, reset/verify links |
 
@@ -132,16 +132,15 @@ re-auth modal for sensitive actions. `/admin/*` shows 404 until the acting owner
   (`09.2.6-T3-email-pipeline.md:21-24`), so params are a string dictionary and the locale is the `Language` enum (D16,
   converted from `users.ui_locale`); `email_messages.params` is emptied once the row reaches `sent`.
   **Registered in `EmailTemplateCatalog` (verified at `09.2.6-T3-email-pipeline.md:78-88`):** `password_reset`
-  (`displayName`, `link`, `expiresMinutes`), `email_verify` (`displayName`, `link`, `expiresHours`),
-  `refresh_token_reuse` (`displayName`, `occurredAt`, `device`, `sessionsLink` — BD3's reuse-detection warning),
-  `password_changed` (`displayName`, `occurredAt`) and `email_verify_duplicate` (`displayName`, `occurredAt`) — the last
-  two registered at this plan's request, all token-free so nothing sensitive is stored.
+  (`displayName`, `link`, `expiresMinutes`), `refresh_token_reuse` (`displayName`, `occurredAt`, `device`, `sessionsLink` —
+  BD3's reuse-detection warning) and `password_changed` (`displayName`, `occurredAt`), all token-free so nothing sensitive is
+  stored. `email_verify` / `email_verify_duplicate` are deleted with phase S (DEC 10.14).
   An unknown template is `Error.Validation("email_template_unknown")`, a param key outside the allow-list
   `Error.Validation("email_template_keys")`, and all four file variants (vi/en × txt/html) must exist or that host
   refuses to start.
-  **S-phase only** (nobody registers these yet): a "recovery code used" notice and the owner fan-out templates
-  `security_mfa_enrolled`, `security_mfa_disabled`, `security_reauth_failed` [INFERENCE names]. Addresses are never
-  logged; only `to_hash` exists (BD9).
+  **Deleted with phase S (DEC 10.14):** the "recovery code used" notice and the owner fan-out templates
+  (`security_mfa_enrolled`, `security_mfa_disabled`, `security_reauth_failed` [INFERENCE names]) are not registered at all.
+  Addresses are never logged; only `to_hash` exists (BD9).
 - Integrations: the TOTP secret is protected with `IDataProtectionProvider.CreateProtector("identity.totp.v1")` **directly, not through `ITokenProtector`** (WT43), over the Data Protection key ring (09.9.4-T1); `IAuditWriter`
   (09.3.6-T1) for auth events; `ISecurityAlerter` (port declared here, e-mail/SIEM fan-out is S). [RULED — README §B10 WT43]
 
@@ -165,8 +164,8 @@ re-auth modal for sensitive actions. `/admin/*` shows 404 until the acting owner
 
 ## 9. Test plan
 
-Harness (D13): `ApiFactory`, `TestAuthHandler`, `WorkerHost` + `InlineJobScheduler`, `FakeClock`, Testcontainers
-PostgreSQL; hand-written fakes only (no mocking library). Integration classes (namespace `NightTales.Api.Tests.Features.Auth`):
+Harness (D13): `ApiFactory`, `TestAuthHandler`, `WorkerHost` + `InlineJobScheduler`, `FakeClock`, real PostgreSQL 17
+via `PostgresFixture` on `NTS_TEST_PG` (09 W3 CR-35); hand-written fakes only (no mocking library). Integration classes (namespace `NightTales.Api.Tests.Features.Auth`):
 
 - `IdentitySetupTests`: `Login_DummyHashTiming_IsWithinBudget`, `PasswordPolicy_TwelveChars_NoCompositionRules`,
   `Register_ClosedMode_ReturnsRegistrationClosed`.
@@ -191,28 +190,26 @@ PostgreSQL; hand-written fakes only (no mocking library). Integration classes (n
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.3.1-T1 | Identity setup, password policy and consents | BE | S (0.5) | 09.2.2-T2 | 09.2.5-T2, 09.3.2-T1, 09.3.1-T3, 13.2.1-T1 (13 CR-5), 09.3.1-T2 (09 W3 CR-17), 13.2.3-T1, 13.1.1-T2, 12.4.2-T1 |
-| 09.3.1-T3 | Register and verify e-mail (S) | BE | M (1.0) | 09.3.1-T1, 09.2.6-T3; 09.3.3-T1 soft (`user_action_tokens`) | 09.3.1-T2, 09.10.6-T1 |
-| 09.3.2-T1 | Login, refresh-token families and logout | BE | M (1.0) | 09.3.1-T1 | 09.3.2-T3, 09.10.4-T1, 09.3.3-T1, 09.3.4-T1, 09.3.5-T1, 09.8.1-T1, 10.2.1-T1 (10 CR-8), 06.1.2-T1 (06 CR-8), 09.3.2-T2, 09.3.7-T1 (09 W3 CR-17), 07.1.2-T1 |
-| 09.10.4-T1 | TOTP MFA, recovery codes and re-auth | BE | M (1.0) | 09.3.2-T1, 09.9.4-T1 | 09.3.2-T3, 09.2.6-T2, 10.3.3-T3 (10 CR-8), 06.1.2-T1 (06 CR-8), 09.3.3-T3, 09.9.1-T1, 09.10.4-T2, 09.10.4-T3 (09 W3 CR-17), 12.5.1-T1, 10.9.4-T2 |
-| 09.3.2-T3 | MFA login step | BE | M (1.0) | 09.3.2-T1, 09.10.4-T1 | 10.3.3-T3 (10 CR-8), 09.3.3-T3 (09 W3 CR-17) |
-| 09.3.3-T1 | Forgot and reset password | BE | S (0.5) | 09.3.2-T1, 09.2.6-T3 | 09.3.1-T3 soft, 10.3.3-T1 (10 CR-8), 06.2.2-T2 (06 CR-8), 09.3.3-T2, 09.10.7-T1 (09 W3 CR-17), 12.7.2-T2, 10.3.3-T0 |
+| 09.3.1-T1 | Identity setup, password policy and consents | BE | S (0.5) | 09.2.2-T2 | 09.2.5-T2, 09.3.2-T1, 13.2.1-T1 (13 CR-5) |
+| 09.3.2-T1 | Login, refresh-token families and logout | BE | M (1.0) | 09.3.1-T1 | 09.3.2-T3, 09.10.4-T1, 09.3.3-T1, 09.3.4-T1, 09.3.5-T1, 09.8.1-T1, 10.2.1-T1 (10 CR-8), 06.1.2-T1 (06 CR-8), 07.1.2-T1 |
+| 09.10.4-T1 | TOTP MFA, recovery codes and re-auth | BE | M (1.0) | 09.3.2-T1, 09.9.4-T1 | 09.3.2-T3, 09.2.6-T2, 10.3.3-T3 (10 CR-8), 06.1.2-T1 (06 CR-8) — the former admin consumers 10.9.4-T2 and the plan-12 row 12.5.1-T1 are deleted by DEC 10.14 |
+| 09.3.2-T3 | MFA login step | BE | M (1.0) | 09.3.2-T1, 09.10.4-T1 | 10.3.3-T3 (10 CR-8) |
+| 09.3.3-T1 | Forgot and reset password | BE | S (0.5) | 09.3.2-T1, 09.2.6-T3 | 10.3.3-T1 (10 CR-8), 06.2.2-T2 (06 CR-8), 10.3.3-T0 |
 
-Folder total: **4.5 d raw** (P 4.0, of which 09.10.4-T1 1.0; S 1.0 per B9). Wave-2 P total 21.5 d, plan 09 56.0 d raw (B9).
+Folder total: **4.0 d raw** — the five rows above: 09.3.1-T1 0.5, 09.3.2-T1 1.0, 09.10.4-T1 1.0, 09.3.2-T3 1.0, 09.3.3-T1 0.5. The phase-S row deleted by DEC 10.14 is out of the total. Wave-2 P total 21.5 d, plan 09 56.0 d raw (B9).
 
 ### Open items
 
-- [RESOLVED 2026-09-24] **B8.1 edge gap:** `09.3.1-T3` consumes `user_action_tokens` kind `email_verify`, whose table + service are owned by `09.3.3-T1` (BD1, BD3, W2 CR-5). The soft edge `09.3.1-T3 → 09.3.3-T1 soft (user_action_tokens)` was added to B8.1 (README.md:777) and to `09.3.3-T1`'s Blocks cell (README.md:781), which also carries the `09.3.1-T3 soft` back-edge. Shell command: `grep -n "soft" ../09-backend-api/README.md`.
-- [OPEN] **Family id at request time:** BD3's `IReauthGuard` reads the caller's `sid` family live, but D10's `ICurrentUser` exposes only `Id`, `IsAuthenticated`, `Role`, `Actor`. This plan proposes adding `Guid? SessionId` (from the `sid` claim) to `ICurrentUser` [INFERENCE]; needs a TL ruling because it edits a Part A decision.
+- [RESOLVED 2026-10-01, 09.3.2-T1] **Family id at request time:** `ICurrentUser` gained `Guid? SessionId` (from the `sid` claim; `HttpCurrentUser`, `ScopedCurrentUser`, `TestCurrentUser`) so BD3's `IReauthGuard` can read the caller's family live.
 - [OPEN] **No catalogue code** for a missing/expired/unknown refresh cookie or an `email_confirmed = false` owner/admin login: this plan maps both to existing codes (`session_revoked`; `mfa_enrolment_required` is a new code absent from 09 §5.4) [INFERENCE] — the TL should rule whether to extend the catalogue.
 - [RESOLVED 2026-09-24] **MFA challenge ownership:** 09.3.2-T1 ships password login for users **without** MFA and 09.3.2-T3 edits that same login handler to create the challenge for MFA users (as 03.4.2-T1 edits `PollRenderJob`); the interim `PendingMfaChallengeService` is removed. [RULED — README §B10 WT22, WT39]
-- [RESOLVED 2026-09-24] **Template names** — all five templates this wave needs are now in `EmailTemplateCatalog` (`09.2.6-T3-email-pipeline.md:78-88`): `password_reset`, `email_verify`, `refresh_token_reuse`, plus `password_changed` and `email_verify_duplicate` registered at this plan's request and verified in that file. Params are token-free, unknown template → `email_template_unknown`, unknown key → `email_template_keys`, and all four file variants (vi/en × txt/html) must exist or that host fails at startup. The S-phase MFA notices (`security_mfa_enrolled`, `security_mfa_disabled`, `security_reauth_failed`, "recovery code used") are intentionally **not** registered by anyone.
-- [OPEN] **`ISecurityAlerter`** (BD4/09 §4 09.10.4): P declares the port and writes the audit row; the owner e-mail fan-out and SIEM delivery (11.6.2) are S — confirm this split is acceptable at the 09-W2-auth gate.
+- [RESOLVED 2026-09-24] **Template names** — the templates this wave needs are in `EmailTemplateCatalog` (`09.2.6-T3-email-pipeline.md:78-88`): `password_reset`, `refresh_token_reuse` and `password_changed`, verified in that file. Params are token-free, unknown template → `email_template_unknown`, unknown key → `email_template_keys`, and all four file variants (vi/en × txt/html) must exist or that host fails at startup. `email_verify`, `email_verify_duplicate` and the MFA notices (`security_mfa_enrolled`, `security_mfa_disabled`, `security_reauth_failed`, "recovery code used") are deleted with phase S by DEC 10.14 and are not registered at all.
+- [OPEN] **`ISecurityAlerter`** (BD4/09 §4 09.10.4): P declares the port and writes the audit row; the owner e-mail fan-out and SIEM delivery (11.6.2) were phase S, dropped by DEC 10.14 — confirm this split is acceptable at the 09-W2-auth gate.
 - [RESOLVED 2026-09-24] **`refresh_tokens.reauth_attempts` / `reauth_last_attempt_at`:** BD4 requires "5 wrong re-auth attempts per family revoke it" but W2 CR-1's `refresh_tokens` column list has no counter, so 09.3.2-T1 creates the two columns in `_09_RefreshTokens` and 09.10.4-T1 reads/increments them [INFERENCE] — increment is `WHERE family_id = @f AND revoked_at IS NULL` and rotation copies both values to the successor row. [RULED — README §B10 WT32]
-- [OPEN] **Registration mode source + enum:** BD2 (README.md:663) binds `Registration:Mode ∈ closed | invite | open` as config, but 09 §4 story 09.10.6 (`plans/09-backend-api.md:287`) makes registration mode an owner-editable non-secret setting `registration.mode` with only `open`/`closed` (read through 09.10.1, S). P reads the config value behind an `IRegistrationPolicyProvider` seam; the TL should rule (a) whether the S-phase settings value overrides the config and (b) whether `invite` exists at all.
-- [OPEN] **`trial.credits` (same story, `plans/09-backend-api.md:287`) is out of scope for this folder:** a registration must not write credits — the ledger is 02.2.2's port (W13, `ICreditLedger`) and plan 12 reads it; if the product wants a trial grant, it is an event-driven S-phase change owned by those plans, and the value would be a `system_settings` key like `registration.mode`. `registration.disposable_domains` from the same sentence **is** honoured here (09.3.1-T3, 400 `validation_failed`).
-- [OPEN] **`trusted_devices`** (D9, owner 09.3.x) is not created in P because no P task uses a trusted device and `mfa_locked_untrusted` (09 §5.4, 09.3.2) is a 50-failures/24 h rule that belongs with the S-phase brute-force work.
-- [INFERENCE] `user_tokens` name `totp_secret_pending` for an unverified enrolment secret; `LegalDocument { Tos, Privacy }`; `UserActionKind { PasswordReset, EmailVerify }`; the config keys, metric names and cookie/spin-off names in §5.
+- [OPEN] **Registration mode source + enum:** BD2 (README.md:663) binds `Registration:Mode ∈ closed | invite | open` as config, but 09 §4 story 09.10.6 (`plans/09-backend-api.md:287`) makes registration mode an owner-editable non-secret setting `registration.mode` with only `open`/`closed` (read through the phase-S settings store, dropped by DEC 10.14). P reads the config value behind an `IRegistrationPolicyProvider` seam; the TL only needs to rule whether `invite` stays in the enum.
+- [RESOLVED by DEC 10.14] **`trial.credits` (same story, `plans/09-backend-api.md:287`) is deleted:** there is no credit system (plan 12 deleted), so a registration writes no grant, and `registration.disposable_domains` is gone with its phase-S check. The ledger stays 02.2.2's metering-only port (W13, `ICreditLedger`) — it records OpenAI spend, never credits.
+- [RESOLVED by DEC 10.14] **`trusted_devices`** is not created: the table was phase S, as was the `mfa_locked_untrusted` brute-force work that used it.
+- [INFERENCE] `user_tokens` name `totp_secret_pending` for an unverified enrolment secret; `LegalDocument { Tos, Privacy }`; `UserActionKind { PasswordReset }` (the `EmailVerify` member is deleted with phase S, DEC 10.14); the config keys, metric names and cookie/spin-off names in §5.
 
 ## 11. Rollout
 
@@ -221,10 +218,10 @@ Folder total: **4.5 d raw** (P 4.0, of which 09.10.4-T1 1.0; S 1.0 per B9). Wave
 - **Migrations:** four expand-only migrations in this order (`09_UserConsents`, `09_RefreshTokens`, `09_AuthChallenges`,
   `09_UserActionTokens`); no destructive change, so a rollback is an app-version rollback plus leaving the tables in place.
   `Registration:Mode` stays `closed` in P (W2-O1); it is the **P-only default** — the owner-editable setting
-  `registration.mode` (`system_settings`, 09.10.1, edited on the settings screen 09.10.6) supersedes it behind
+  `registration.mode` (`system_settings`, phase-S settings store and screen, dropped by DEC 10.14) would supersede it behind
   `IRegistrationPolicyProvider` once that read side lands, and the app never flips the mode itself.
 - **Data Protection:** the TOTP secret and the key ring require 09.9.4-T1 (`PersistKeysToDbContext<AppDbContext>` +
   `ProtectKeysWithCertificate` with the PFX secret `DP_KEK`, WF15); on a missing/wrong KEK the app starts degraded and
   must not read empty TOTP secrets (12.8.3 alert path).
 - **Gate 09-W2-auth:** owner logs in with password + TOTP, refresh rotates, reuse revokes, re-auth guards a sensitive
-  route, reset by e-mail works in the local stack (B7); the S-phase 09.3.1-T3 is not part of this gate.
+  route, reset by e-mail works in the local stack (B7); no phase-S task is part of this gate (DEC 10.14).

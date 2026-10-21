@@ -1,0 +1,146 @@
+{
+  "valid-rev1.json": {
+    "code": null,
+    "voiceId": null
+  },
+  "valid-boundaries.json": {
+    "code": null,
+    "voiceId": null
+  },
+  "valid-rev0-no-active-en.json": {
+    "code": null,
+    "voiceId": null
+  },
+  "invalid-voice-id-nfd.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "Ha\u0309i \u0110a\u0306ng"
+  },
+  "invalid-voice-id-whitespace.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng "
+  },
+  "invalid-voice-id-pattern.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "_H\u1ea3i"
+  },
+  "invalid-voice-id-too-long.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "Abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "invalid-voice-id-female-substring.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "Ng\u1ecdc-Female Huy\u1ec1n"
+  },
+  "invalid-voice-id-connector-punct.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "H\u1ea3i\u203f\u0110\u0103ng"
+  },
+  "invalid-voice-id-male-substring.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "H\u1ea3i-Male \u0110\u0103ng"
+  },
+  "invalid-voice-id-colon.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "H\u1ea3i:\u0110\u0103ng"
+  },
+  "invalid-voice-id-v2-suffix.json": {
+    "code": "voice_id_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng-V2"
+  },
+  "invalid-slug-mismatch.json": {
+    "code": "voice_slug_mismatch",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-display-name-empty.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-display-name-too-long.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-language.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-gender.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-tag-unknown.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-tag-duplicate.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Ng\u1ecdc Huy\u1ec1n"
+  },
+  "invalid-tag-too-many.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-preview-key.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-preview-key-version-zero.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-duplicate-id.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-duplicate-slug.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Hai Dang"
+  },
+  "invalid-no-active-en.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-schema.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-revision-negative.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-vieneu-commit.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-unknown-property.json": {
+    "code": "catalog_invalid",
+    "voiceId": "H\u1ea3i \u0110\u0103ng"
+  },
+  "invalid-not-json.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-value-fault-before-structure-fault.json": {
+    "code": "voice_slug_mismatch",
+    "voiceId": "Hải Đăng"
+  },
+  "invalid-header-fault-before-entry-fault.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-duplicate-slug-before-duplicate-id.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Hải Đăng"
+  },
+  "invalid-empty-slug-preview-key.json": {
+    "code": "catalog_invalid",
+    "voiceId": "中"
+  },
+  "invalid-display-name-python-whitespace-only.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Hải Đăng"
+  },
+  "valid-display-name-python-whitespace-40.json": {
+    "code": null,
+    "voiceId": null
+  }
+}

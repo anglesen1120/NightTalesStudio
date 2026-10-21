@@ -1,0 +1,7 @@
+Subject: Một hành động của chủ sở hữu đang chờ bạn
+
+Hành động {{action}} trên {{targetDisplayName}} đang chờ bạn quyết định.
+
+Lý do: {{reason}}. Thời điểm áp dụng dự kiến: {{applyAfter}}.
+
+Duyệt tại {{approveUrl}} hoặc huỷ tại {{cancelUrl}}.

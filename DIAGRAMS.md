@@ -2,7 +2,7 @@
 
 > Visual companion to `WORKFLOW.md`. Every diagram summarises `DECISIONS.md` and `plans/00`–`13`; if one disagrees with them, the plans win — fix the diagram.
 > Rendered copies: `docs/diagrams/*.svg` (regenerate after editing a block here).
-> Phase tags: **P** = personal phase (owner's autopilot channel), **S** = SaaS phase (after Gate 2), **R2** = TikTok release.
+> Phase tags: there is **one phase, P** (the owner's own channels and autopilot); phase S was dropped and plan 12 deleted by DEC 10.14.
 
 Contents:
 1. System context
@@ -18,12 +18,11 @@ Contents:
 11. RenderJob state machine
 12. Core data model (P)
 13. YouTube data deletion duties (P)
-14. YouTube compliance path (P → S)
-15. Credits and payments (S)
-16. Critical settings change (S)
-17. Milestones and gates
-18. Planning process
-19. CI/CD
+14. YouTube compliance path (P)
+15. Credits, payments and admin settings — removed by DEC 10.14 (kept for history)
+16. Milestones and the personal path
+17. Planning process
+18. CI/CD
 
 ---
 
@@ -31,14 +30,13 @@ Contents:
 
 ```mermaid
 flowchart LR
-  OWNER(["Owner (P) / Creators (S)"]) -->|"browser, vi + en"| NTS["Night Tales Studio"]
+  OWNER(["Owner (the only account, P)"]) -->|"browser, vi + en"| NTS["Night Tales Studio"]
   NTS -->|"story text"| OAI["OpenAI API (text project)"]
   NTS -->|"render requests"| GPU["GPU render node: MPT + VieNeu + whisper"]
   GPU -->|"images"| OAI2["OpenAI API (image project)"]
   NTS -->|"official Data API: upload, status"| YT["YouTube"]
-  NTS -. "R2: Content Posting API" .-> TT["TikTok"]
+  NTS -->|"official Content Posting API: direct post, status"| TT["TikTok"]
   NTS -->|"fetch allow-listed pages"| WEB(("Public research sites"))
-  PAY["Payment provider (S)"] -->|"signed webhooks"| NTS
   NTS -->|"e-mail: veto notices, alerts"| MAIL["SMTP provider"]
 ```
 
@@ -251,7 +249,7 @@ stateDiagram-v2
   story_review --> story_approved: approve (owner or autopilot gate)
   story_approved --> story_review: reopen
   story_approved --> rendering: render
-  rendering --> story_approved: render failed / cancelled (refund)
+  rendering --> story_approved: render failed / cancelled
   rendering --> video_review: rendered
   video_review --> rendering: re-render
   video_review --> story_review: reject video
@@ -367,7 +365,7 @@ erDiagram
   }
 ```
 
-Every user-owned table carries `user_id` behind an EF global filter. All columns: `plans/00-overview.md` §6. The S tables (credits, payments, settings, owner actions) are left out here.
+Every user-owned table carries `user_id` behind an EF global filter. All columns: `plans/00-overview.md` §6. The S-only tables (credits, payments, admin settings, owner actions) no longer exist (DEC 10.14).
 
 ## 13. YouTube data deletion duties (P)
 
@@ -384,7 +382,7 @@ flowchart LR
 
 Sources: YouTube Developer Policies III.D.2 ✅; `plans/06-youtube-posting.md` 06.4; `plans/13-compliance.md` 13.3.1.
 
-## 14. YouTube compliance path (P → S)
+## 14. YouTube compliance path (P)
 
 ```mermaid
 flowchart TD
@@ -395,86 +393,42 @@ flowchart TD
   EP --> AU["File YouTube API compliance audit (M1)"]
   AU -->|"approved"| PUBL["Public autopilot, Channel phase"]
   AU -->|"rejected"| APL["Appeal, fix, re-file (stays private)"]
-  PUBL -->|"Gate 2"| S1["S: lawyer review, OAuth verification, audit extension for multi-user"]
+  PUBL --> STEADY["M3 Steady autopilot operation (daily YouTube + TikTok)"]
 ```
 
-## 15. Credits and payments (S)
+## 15. Credits, payments and admin settings — REMOVED
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant U as Creator
-  participant API as Api
-  participant L as Credit ledger
-  participant J as Job (story / render)
-  participant P as Payment provider
-  U->>API: paid action (generate / render)
-  API->>L: reserve (estimated max, never below zero)
-  API->>API: outbox row in the same transaction (the Api never enqueues, 09 CR-14) - the Worker enqueues the job
-  alt success
-    J->>L: settle (actual) + release (difference)
-  else failure
-    J->>L: refund the reserve
-  end
-  U->>API: POST /billing/checkout
-  API-->>U: redirect to provider
-  P->>API: POST /billing/webhooks/{provider}
-  API->>API: verify signature, store payment_events (idempotent)
-  API->>P: re-fetch payment by id (server-side)
-  alt paid, amount and currency match
-    API->>L: purchase ledger row + credit lot
-  else mismatch
-    API->>API: needs_review + alert admins
-  end
-```
+Sections 15 (credits/payments) and 16 (critical settings change for a multi-admin SaaS) existed only for public users. They are deleted with plan 12 by `DEC 10.14` (`DECISIONS.md` §10.14): nothing is sold, so there is no ledger, no payment provider and no owner-action approval flow. What stays is the **metering** path: every OpenAI image call or GPU render writes `usage_records` (per episode, per render, per provider request) and the autopilot auto-pauses on the owner's spend cap; `ICreditLedger` keeps working in metering-only mode (`usage_records`), with no balances to reserve or refund.
 
-In the personal phase, `ICreditLedger` only meters usage (`usage_records`); this ledger is added at M2 (`plans/12-billing-credits.md`).
-
-## 16. Critical settings change (S)
+## 16. Milestones and the personal path
 
 ```mermaid
 flowchart LR
-  RQ["Owner requests change to a critical setting (payment, OAuth clients)"] --> PD["system_setting_changes: pending"]
-  PD --> EM["E-mail every owner with a personal single-use cancel link"]
-  PD -->|"second owner approves"| AP["Apply"]
-  PD -->|"24 h time-lock passes"| AP
-  EM -->|"cancel link used"| CX["cancelled (canceller recorded)"]
-  AP --> JOB["SettingChangeApplyJob: re-checks status + apply_after, writes new version"]
-  JOB --> VER["system_setting_versions (history, rollback)"]
-```
-
-Source: `plans/09-backend-api.md` 09.10.2 and 09.10.8. Owner-action rules (09.10.4) are unchanged and not shown here.
-
-## 17. Milestones and gates
-
-```mermaid
-flowchart LR
-  M0["M0 Trial (01-05)"] -->|"Gate 1: quality + cost"| M1["M1 Personal studio (P: 235.5 d buffered)"]
-  M1 --> AUD["YouTube audit filed"]
+  M0["M0 Trial (01-05)"] -->|"Gate 1: quality + cost"| M1["M1 Personal studio (P: 249.6 d buffered)"]
+  M1 --> AUD["YouTube audit filed (owner's channel)"]
   AUD -->|"approved, unknown wait"| CH["Channel phase: at least 12 weeks"]
-  CH -->|"Gate 2: SaaS go"| M2["M2 Closed beta (S: 105.0 d buffered)"]
-  M2 --> M3["M3 Public launch"]
-  M3 --> R2["R2 TikTok"]
+  CH --> M3["M3 Steady autopilot operation"]
+  M1 -.->|"TikTok audit approved"| TT["TikTok autopilot (P, 07)"]
 ```
 
-## 18. Planning process
+## 17. Planning process
 
 ```mermaid
 flowchart LR
-  H["High-level plans 00-13"] --> RV["Review touched sections (+ security review for auth/admin/billing/data)"]
+  H["High-level plans 00-11, 13"] --> RV["Review touched sections (+ security review for auth/credentials/data)"]
   RV --> FP["Feature plan: plans/features/story-id-slug.md"]
   FP --> DR["Review: Definition of Ready"]
   DR --> IM["Build"]
   IM --> DD["Definition of Done; feature plan updated; contract changes to 00 first"]
 ```
 
-## 19. CI/CD
+## 18. CI/CD
 
 ```mermaid
 flowchart LR
-  PR["Pull request (no secrets)"] --> CI["Build + tests: .NET (Testcontainers), Angular lint/test/build, e2e with mock-mpt"]
+  PR["Pull request (no secrets)"] --> CI["Build + tests: .NET (PostgreSQL 17 service), Angular lint/test/build, e2e with mock-mpt"]
   CI --> MG["Merge to main"]
-  MG --> IM["Images tagged with git SHA + digest (signing and SBOM in S)"]
+  MG --> IM["Images tagged with git SHA + digest"]
   IM --> MI["EF migration bundle: expand, then contract"]
   MI --> ST["Staging: automatic deploy"]
   ST --> PD["Production: manual approval, OIDC deploy"]
@@ -482,4 +436,4 @@ flowchart LR
   NB --> ND["nts-node deploy by the operator over VPN: drain, install, smoke, activate"]
 ```
 
-Node lane: GPU nodes are updated from a CI-built, hashed bundle by the operator over the VPN; CI never reaches the render network. Image signing and SBOM are phase S (11.5.3-T2) (11 CR-9).
+Node lane: GPU nodes are updated from a CI-built, hashed bundle by the operator over the VPN; CI never reaches the render network. Image signing and SBOM (`11.5.3-T2`, 11 CR-9) were **deleted with phase S** (DEC 10.14): images are tagged and digested, not cosign-signed, and no SBOM is published.

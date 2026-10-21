@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-28",
+  "currency": "USD",
+  "unit": "per_1m_tokens",
+  "fx_vnd_per_usd": {
+    "value": 25641,
+    "as_of": "2026-09-25",
+    "source": "SBV daily reference rate via https://en.vietnamplus.vn/reference-exchange-rate-rises-6-vnd-on-september-25-post352574.vnp"
+  },
+  "tier": "standard",
+  "models": {
+    "gpt-6-luna": {
+      "kind": "chat",
+      "input": 0.10, "cached_input": 0.01, "cache_write": 0.125, "output": 0.50,
+      "sources": ["https://developers.openai.com/api/docs/pricing.md"]
+    },
+    "gpt-6-sol": {
+      "kind": "chat",
+      "input": 2.00, "cached_input": 0.20, "cache_write": 2.50, "output": 10.00,
+      "sources": ["https://developers.openai.com/api/docs/pricing.md"]
+    },
+    "gpt-image-2.5-flare": {
+      "kind": "image",
+      "text_input": 5.00, "text_cached_input": 1.25,
+      "image_input": 8.00, "image_cached_input": 2.00,
+      "image_output": 30.00,
+      "sources": [
+        "https://developers.openai.com/api/docs/pricing.md",
+        "https://developers.openai.com/api/docs/models/gpt-image-2.5-flare.md"
+      ]
+    },
+    "gpt-image-2": {
+      "kind": "image",
+      "unit": "per_image", "currency": "VND", "per_image": 184,
+      "note": "DEC-9 relay, no dashboard; image_count x 184 VND / fx_vnd_per_usd",
+      "sources": ["owner 2026-09-28 (relay account)"]
+    }
+  },
+  "rate_limits": { "gpt-image-2.5-flare": { "tier1_images_per_minute": 5 } },
+  "model_match": "exact key, or key followed by -YYYY-MM-DD snapshot suffix"
+}

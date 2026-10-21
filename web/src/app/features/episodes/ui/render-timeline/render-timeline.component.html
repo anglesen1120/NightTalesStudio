@@ -1,0 +1,46 @@
+<section class="timeline" data-testid="render-timeline">
+  <h2>{{ 'episodes.render.timeline.heading' | transloco }}</h2>
+  <ol>
+    @for (step of steps(); track step.key) {
+      <li data-testid="render-stage" [attr.aria-current]="step.state === 'active' ? 'step' : null" [class.is-done]="step.state === 'done'" [class.is-failed]="step.state === 'failed'">
+        <span class="stage-icon" aria-hidden="true">
+          @switch (step.state) {
+            @case ('done') { <nts-icon-check /> }
+            @case ('failed') { <nts-icon-alert /> }
+            @default { <nts-icon-clock /> }
+          }
+        </span>
+        <div class="stage-copy">
+          <strong>{{ 'episodes.render.stage.' + step.key | transloco }}</strong>
+          <span class="stage-state">{{ 'episodes.render.timeline.state.' + step.state | transloco }}</span>
+          @if (step.state === 'active' && activeSubStep(); as subStep) {
+            <p class="sub-step">{{ 'episodes.render.subStep.' + subStep | transloco }}</p>
+          }
+        </div>
+      </li>
+    }
+  </ol>
+  @if (showProgress()) {
+    <div class="progress" role="progressbar" [attr.aria-label]="'episodes.render.timeline.heading' | transloco" [attr.aria-valuenow]="safePercent()" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuetext]="('episodes.render.stage.' + activeKey() | transloco) + ' — ' + ('episodes.render.timeline.percent' | transloco: { percent: safePercent() })">
+      <span class="progress-fill" [style.width.%]="safePercent()"></span>
+    </div>
+    <p class="percent" data-testid="render-percent">{{ 'episodes.render.timeline.percent' | transloco: { percent: safePercent() } }}</p>
+  }
+  <p class="elapsed" aria-hidden="true">{{ 'episodes.render.timeline.elapsed' | transloco: { duration: duration() } }}</p>
+  <p class="sr-only" data-testid="render-elapsed-summary">{{ 'episodes.render.timeline.elapsed' | transloco: { duration: stageDuration() } }}</p>
+  @if (waitingForSlot()) {
+    <p class="waiting" data-testid="render-waiting"><nts-icon-clock aria-hidden="true" />{{ 'episodes.render.waiting.slot' | transloco }}</p>
+  }
+  @if (showEmailNotice()) {
+    <div class="notice"><p>{{ 'episodes.render.timeline.emailNotice' | transloco }}</p><p>{{ 'episodes.render.timeline.leave' | transloco }}</p></div>
+  }
+  @if (cancellable()) {
+    <div class="cancel-actions">
+      <button mat-stroked-button class="cancel-button" type="button" data-testid="render-cancel" [disableRipple]="true" [attr.aria-disabled]="cancelling() ? 'true' : null" [attr.aria-busy]="cancelling() ? 'true' : null" (click)="onCancel($event)">{{ (cancelling() ? 'episodes.render.cancel.busy' : 'episodes.render.cancel.action') | transloco }}</button>
+    </div>
+  }
+  @if (cancelErrorKey(); as errorKey) {
+    <p class="cancel-error" role="alert">{{ errorKey | transloco }}</p>
+  }
+  <p class="sr-only" aria-live="polite" aria-atomic="true">@if (activeKey(); as key) { {{ 'episodes.render.timeline.announce' | transloco: { stage: ('episodes.render.stage.' + key | transloco) } }}@if (activeSubStep(); as subStep) { — {{ 'episodes.render.subStep.' + subStep | transloco }} } }@if (cancelling()) { {{ 'episodes.render.cancel.busy' | transloco }} }</p>
+</section>

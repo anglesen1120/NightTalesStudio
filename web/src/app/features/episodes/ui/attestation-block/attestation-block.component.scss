@@ -1,0 +1,7 @@
+:host { display: block; min-width: 0; }
+.attestation { min-width: 0; margin: 0; padding: var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); }
+legend { padding-inline: var(--nts-space-2); font-weight: var(--nts-type-label-weight); }
+.attestation__text { max-width: var(--nts-measure); margin: 0 0 var(--nts-space-4); white-space: pre-wrap; overflow-wrap: anywhere; }
+.attestation__checkbox { display: block; min-height: var(--nts-target-min); border-radius: var(--nts-radius-control); }
+.attestation__checkbox:focus-visible, .attestation__checkbox:focus-within { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+.attestation__error { margin: var(--nts-space-2) 0 0; color: var(--nts-color-error); overflow-wrap: anywhere; }

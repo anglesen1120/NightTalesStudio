@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <UserSecretsId>nighttales-api</UserSecretsId>
+    <!-- 09.1.5-T1 (09 README D14): the build writes openapi.json; the copy target below moves it to
+         the path the CI artifact and the 10 client generation read. -->
+    <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+    <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/obj/openapi</OpenApiDocumentsDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.Application\NightTales.Application.csproj" />
+    <ProjectReference Include="..\NightTales.Infrastructure\NightTales.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.AspNetCore" />
+    <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!--
+      09.1.5-T1 (09 README D14): the build-time OpenAPI document generator. It runs during the build
+      (it boots the app in-process), so it contributes only its targets/analyzers to the output: the
+      package is build-time only and must not flow to the referencing test projects.
+    -->
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive" PrivateAssets="all" />
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+
+  <!--
+    The generator writes `$(MSBuildProjectName).json` into `$(OpenApiDocumentsDirectory)` (obj/openapi
+    here). The artifact the CI job uploads, the 10 client generation and the 09.9.5 contract diff read
+    is `openapi.json` next to the project file (09 README D14), so copy it there after every generation.
+  -->
+  <Target Name="CopyOpenApiDocument" AfterTargets="GenerateOpenApiDocuments">
+    <Copy SourceFiles="$(OpenApiDocumentsDirectory)/$(MSBuildProjectName).json" DestinationFiles="$(MSBuildProjectDirectory)/openapi.json" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

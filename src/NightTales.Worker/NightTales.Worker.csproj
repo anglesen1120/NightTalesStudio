@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <UserSecretsId>nighttales-worker</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.Application\NightTales.Application.csproj" />
+    <ProjectReference Include="..\NightTales.Infrastructure\NightTales.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <!--
+    Program.cs builds a WebApplication for the /health/* listener (09 W3 CR-42 / WRK-18), which the
+    plain Worker SDK does not reference; 11.1.1-T1 pins the Worker image as aspnet:10.0 for the same
+    reason.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hangfire.AspNetCore" />
+    <PackageReference Include="Hangfire.NetCore" />
+    <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" />
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+</Project>

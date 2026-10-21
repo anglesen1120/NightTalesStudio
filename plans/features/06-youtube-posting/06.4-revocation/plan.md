@@ -66,7 +66,7 @@ State machine (arrows this folder's jobs/commands trigger, all via the members a
 | `active`/`expired`/`error` | `revoked` | refresh fails `invalid_grant`/`TokenRevoked` in `TokenHealthJob` | 06.4.2-T1 | tokens nulled, 30-day deletion request (`google_revoke`), outbox |
 | `expired`/`error` | `active` | refresh succeeds inside `ITokenService` (called by `TokenHealthJob`) | `ITokenService` (06.1.2-T2), triggered by 06.4.2-T1 | rotated tokens, `last_verified_at = now` (06.4.2-T1 does not call `MarkRefreshed` itself) |
 | any | unchanged | classifier outcome `PlatformIncident` | 06.4.2-T2 | **no** status change, **no** deletion request; `IPlatformIncidentStore.RaiseAsync` called, refresh skipped for the rest of the client group |
-| `revoked` | `active` | user reconnects the channel | 06.1.2-T2 (`Reconnect`) | new tokens, same row, `revoked_at = null` |
+| `revoked` | (unchanged, stays history) | user reconnects the same Google account | 06.1.2-T1/T2 connect path (`Reconnect` refuses a revoked row, S61 CODE-3) | a **new** `active` row is inserted for that account; the revoked row is never revived and keeps its `revoked_at` |
 | `revoked` | (identity nulled) | `DataDeletionJob` executes a `channel` request | 06.4.3-T1 (`PurgeYouTubeData`) | tokens + identity nulled; row stays `revoked` |
 
 Publication cascade (`Publication.Cancel(...)`, owned by 06.2.6-T1, called here in bulk): `awaiting_consent` | `scheduled` → `cancelled`. `uploading` | `processing` | `published` | `failed` are **never** touched by a disconnect (no video deletion on the user's channel, 06.2.6).
@@ -269,7 +269,7 @@ Copy keys this folder needs (proposed, [INFERENCE] — 10 owns the final names):
 
 ## 9. Test plan
 
-Projects (09 README D2, canonical names): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Infrastructure.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.Architecture.Tests`, `tests/NightTales.TestKit`. xunit.v3 + Shouldly; integration on **real PostgreSQL via Testcontainers**; `FakeClock`; `FakeGoogleServer` (Kestrel, 06 README D19) — **no mocking library**. This folder consumes the fake's `/revoke`, `/token` (`invalid_grant`, `invalid_client`), `channels.list` and `videos.list` routes (all already extended by 06.1.2-T1/06.2.3-T1) and adds the `videos.list` "video gone / `uploadStatus = deleted`" and "429 quotaExceeded" responses (TestKit, owner 06.4.2-T1). `ChannelConnection.Revoke`/`MarkRefreshed`/`RefreshFromApi`/`PurgeYouTubeData` domain tests live in 06.1.2-T2's `ChannelConnectionTests.cs` — this folder's tests exercise them only through its own commands/jobs, never re-testing the aggregate directly.
+Projects (09 README D2, canonical names): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Infrastructure.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.Architecture.Tests`, `tests/NightTales.TestKit`. xunit.v3 + Shouldly; integration on **real PostgreSQL 17 via `PostgresFixture`**; `FakeClock`; `FakeGoogleServer` (Kestrel, 06 README D19) — **no mocking library**. This folder consumes the fake's `/revoke`, `/token` (`invalid_grant`, `invalid_client`), `channels.list` and `videos.list` routes (all already extended by 06.1.2-T1/06.2.3-T1) and adds the `videos.list` "video gone / `uploadStatus = deleted`" and "429 quotaExceeded" responses (TestKit, owner 06.4.2-T1). `ChannelConnection.Revoke`/`MarkRefreshed`/`RefreshFromApi`/`PurgeYouTubeData` domain tests live in 06.1.2-T2's `ChannelConnectionTests.cs` — this folder's tests exercise them only through its own commands/jobs, never re-testing the aggregate directly.
 
 | Test | Project | Assertion |
 |---|---|---|
@@ -306,7 +306,7 @@ Projects (09 README D2, canonical names): `tests/NightTales.Domain.UnitTests`, `
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 06.4.1-T1 | Disconnect: Google revoke, wipe tokens, cancel publications, deletion request | S (0.5) | 06.1.2-T2, 06.2.6-T1, 06.3.1-T1, 13.3.1-T1 | 06.4.2-T1, 06.4.3-T1, 10.7.1-T1 (10 CR-15), 13.3.2-T1 (13 CR-17) |
+| 06.4.1-T1 | Disconnect: Google revoke, wipe tokens, cancel publications, deletion request | S (0.5) | 06.1.2-T2, 06.2.6-T1, 06.3.1-T1, 13.3.1-T1 | 06.4.2-T1, 06.4.3-T1, 10.7.1-T1 (10 CR-15) |
 | 06.4.2-T1 | `TokenHealthJob`: refresh check, Google-page revoke, 30-day data refresh | M (1.0) | 06.4.1-T1 | 06.4.2-T2, 02.8.3-T4 |
 | 06.4.2-T2 | Token-health incident path per `oauth_client_id` | XS (0.25) | 06.4.2-T1, 06.2.3-T3 | 06.5.1-T1 |
 | 06.4.3-T1 | YouTube channel-scope deletion handler + due-date alert | S (0.5) | 06.4.1-T1, 13.3.1-T1 | 06.5.1-T1 |

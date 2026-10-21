@@ -1,0 +1,13 @@
+<section data-testid="quality-notes" [attr.aria-labelledby]="headingId">
+  <h3 [id]="headingId">{{ 'episodes.render.review.hints' | transloco }}</h3>
+  @if (keys().length > 0) {
+    <ul>
+      @for (key of keys(); track key) {
+        <li><nts-icon-alert aria-hidden="true" /><span>{{ key | transloco }}</span></li>
+      }
+    </ul>
+  } @else {
+    <p>{{ 'episodes.render.review.hints.none' | transloco }}</p>
+  }
+  <p class="advisory">{{ 'episodes.render.review.advisory' | transloco }}</p>
+</section>

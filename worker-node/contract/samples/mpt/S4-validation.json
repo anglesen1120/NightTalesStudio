@@ -1,0 +1,74 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S4",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "note": "request-validation on the spike instance",
+ "rows": [
+  {
+   "case": "missing video_subject",
+   "request": {
+    "video_script": "x",
+    "video_terms": [
+     "t"
+    ]
+   },
+   "response": {
+    "status": 400,
+    "data": [
+     {
+      "type": "missing",
+      "loc": [
+       "body",
+       "video_subject"
+      ],
+      "msg": "Field required",
+      "input": {
+       "video_script": "x",
+       "video_terms": [
+        "t"
+       ]
+      }
+     }
+    ],
+    "message": "field required"
+   }
+  },
+  {
+   "case": "video_aspect=landscape (invalid literal)",
+   "request": {
+    "video_aspect": "landscape"
+   },
+   "response": {
+    "status": 400,
+    "data": [
+     {
+      "type": "enum",
+      "loc": [
+       "body",
+       "video_aspect"
+      ],
+      "msg": "Input should be '16:9', '9:16' or '1:1'",
+      "input": "landscape",
+      "ctx": {
+       "expected": "'16:9', '9:16' or '1:1'"
+      }
+     }
+    ],
+    "message": "field required"
+   }
+  }
+ ],
+ "extra_field": {
+  "case": "video_concat_mod=bogus (typo of video_concat_mode)",
+  "request_note": "body contained the unknown key video_concat_mod",
+  "submit_response": {
+   "status": 200,
+   "message": "success",
+   "data": {
+    "task_id": "d8666553-3c5e-4987-9698-bca6eb944bb0"
+   }
+  },
+  "observed": "task completed (state=1, progress=100) despite the unknown field \u2014 unknown fields are ignored (C5); the typo does NOT raise, so a closed submit schema is required on the adapter (F10)"
+ }
+}

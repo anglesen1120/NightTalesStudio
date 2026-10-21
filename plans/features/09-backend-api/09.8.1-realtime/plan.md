@@ -14,7 +14,7 @@
 **In scope.**
 
 - Hub `/hubs/episodes` — **WebSockets only** (`skipNegotiation`), groups `user:{id}` only, no sticky sessions required (BD11 ✅, 09 L217 ✅); the load balancer must carry WebSockets (11 README L253, 11.2.2-T3) or sticky sessions are configured instead (09 L217).
-- `IRealtimeNotifier.NotifyAsync(Guid userId, RealtimeEvent e, ct)` + `PgNotifyRealtimeNotifier` → `SELECT pg_notify('realtime', <json ≤ 8 KB: userId, event, ids>)` **inside the caller's transaction**, delivered at commit (BD11 ✅, D5 ✅).
+- `IRealtimeNotifier.NotifyAsync(Guid userId, RealtimeEvent e, ct)` + `PgNotifyRealtimeNotifier` → `SELECT pg_notify('realtime', <json shorter than 8 KB: userId, event, ids>)` **inside the caller's transaction**, delivered at commit (BD11 ✅, D5 ✅).
 - `RealtimeListenerService` — **one** `LISTEN` connection per Api instance, reconnect with backoff 1→30 s, fan-out to that instance's local sockets; on reconnect the client refetches (BD11 ✅, 09 L216 ✅).
 - Events: `EpisodeUpdated`, `RenderProgress`, `PublicationUpdated`, `CreditBalanceChanged` (S). `RenderProgress` is emitted by `PollRenderJob` only when stage/percent changed (BD7 ✅).
 - The `security` channel from 09 L218 (`UserSecurityChanged` → abort that user's live connections) and the connection cap backstop `Hubs:MaxConnectionMinutes` = the role's access-token lifetime (owner 5, user 15) with **no stamp cache in P** ([RULED — README §B10 WT37]), because this task owns `RealtimeListenerService` and the connection registry.
@@ -76,7 +76,7 @@ No `SELECT … FOR UPDATE`, no advisory lock, no Redis: the row update is the cl
 
 [RULED — README §B10 WT37] the open question above is settled: **no stamp cache in P** — the connection cap is `Hubs:MaxConnectionMinutes` per **role's access-token lifetime** (owner 5, user 15), every family revocation still sends `NOTIFY security` (user id) and the hub aborts that user's connections, and no `security_stamp`/`token_expires_at` column is added to `hub_tickets` (a stamp check is deferred). The BD11 column list stands as written.
 
-Payload on the wire (**ids only** in `ids`, ≤ 8 KB — BD11/BD16 ✅; `data` is the one ruled exception, WT54):
+Payload on the wire (**ids only** in `ids`, shorter than 8 KB — BD11/BD16 ✅; `data` is the one ruled exception, WT54):
 
 ```json
 { "userId": "0192…", "event": "render_progress",
@@ -126,18 +126,18 @@ public interface IRealtimeNotifier
 }
 ```
 
-[RULED — README §B10 WT54] the `RealtimeEvent(Name, Ids, Data?)` shape is frozen: `RealtimeData` is allowed **only** for `RenderProgress` and may carry **only** `stage` (the `RenderStage` enum) and `percent` (0–100); all other events leave `Data = null` and the NOTIFY body must stay ≤ 8 KB. `RealtimeIds`/`RealtimeEventName` remain the wave-2 [INFERENCE] shapes to confirm at implementation.
+[RULED — README §B10 WT54] the `RealtimeEvent(Name, Ids, Data?)` shape is frozen: `RealtimeData` is allowed **only** for `RenderProgress` and may carry **only** `stage` (the `RenderStage` enum) and `percent` (0–100); all other events leave `Data = null` and the NOTIFY body must stay shorter than 8 KB. `RealtimeIds`/`RealtimeEventName` remain the wave-2 [INFERENCE] shapes to confirm at implementation.
 
 `PgNotifyRealtimeNotifier` (Infrastructure `Realtime/PgNotifyRealtimeNotifier.cs`):
 
 ```csharp
 public sealed class PgNotifyRealtimeNotifier(AppDbContext db) : IRealtimeNotifier
 {
-    public const int MaxPayloadBytes = 8_000;                 // BD11/BD16, PostgreSQL's own limit
+    public const int MaxPayloadBytes = 8_000;                 // BD11/BD16, PostgreSQL's own exclusive limit
     public async Task NotifyAsync(Guid userId, RealtimeEvent e, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(new { userId, @event = e.Name.ToWireName(), ids = e.Ids, data = e.Data }, Json);
-        if (Encoding.UTF8.GetByteCount(json) > MaxPayloadBytes) { /* drop + metric + error log, never truncate */ }
+        if (Encoding.UTF8.GetByteCount(json) >= MaxPayloadBytes) { /* drop + metric + error log, never truncate */ }
         await db.Database.ExecuteSqlRawAsync("SELECT pg_notify('realtime', {0})", [json], ct);
     }
 }
@@ -191,16 +191,18 @@ Consumed by 10.2.4 and the episode page; no UI in this folder.
 | `Realtime:ListenerBackoffSeconds` | `1,2,4,8,16,30` | Listener reconnect schedule (BD11) |
 | `Hubs:MaxConnectionMinutes` | owner/admin `5`, user `15` | Absolute connection cap = the **role's** access-token lifetime ([RULED — README §B10 WT37]; replaces the former single `Realtime:MaxConnectionMinutes`) |
 | `Realtime:RevalidateSeconds` | `60` | backstop sweep interval; it closes only on the `Hubs:MaxConnectionMinutes` cap in P — **no stamp cache** (WT37) |
-| `Realtime:MaxPayloadBytes` | `8000` | Hard cap; exceeding it drops the event and increments a metric |
+| `Realtime:MaxPayloadBytes` | `8000` | Exclusive cap (PostgreSQL refuses a payload this long); a body this long or longer drops the event and increments a metric |
+| `Realtime:DeliveryQueueCapacity` | `1024` | Bounded queue between the `LISTEN` loop and the one group sender; a full queue drops its oldest event and increments a metric, so a socket under back-pressure never holds the loop, the `security` abort or the backstop |
+| `Realtime:DeliveryTimeoutSeconds` | `10` | Per-send bound of the delivery consumer; a send that exceeds it is abandoned and counted, so one slow socket cannot hold the events behind it |
 
-Metrics (OTel, BD12/09.9.3-T1 names it): `realtime_notify_total{event}`, `realtime_notify_dropped_total`, `realtime_listener_reconnects_total`, `realtime_listener_messages_total{channel}`, `realtime_connections_active` (gauge) [INFERENCE: exact names].
+Metrics (OTel, BD12/09.9.3-T1 names it): `realtime_notify_total{event}`, `realtime_notify_dropped_total`, `realtime_listener_reconnects_total`, `realtime_listener_messages_total{channel}`, `realtime_listener_deliveries_dropped_total`, `realtime_listener_deliveries_failed_total`, `realtime_connections_active` (gauge) [INFERENCE: exact names].
 
 ## 8. Security and privacy
 
 - **Ticket is a bearer secret.** 32 random bytes (`RandomNumberGenerator`), base64url; stored **only** as SHA-256 hex (BD16 ✅); TTL 60 s; single use via one atomic `UPDATE`; never logged (not the ticket, not the hash, not the URL). The access log redaction processor (09.9.3-T2 — which B8.1 makes depend on this task ✅) must strip the `ticket` query parameter; until then the Api must not log `Request.QueryString` for the hub path (checked in review).
 - **JWT never in a query string** (R11 ✅): the ticket is the only URL credential, and it dies at connect.
 - **Group membership is server-derived** from `Context.UserIdentifier`; a client cannot subscribe to another user's group, and the listener re-checks that the message's `userId` matches the group before sending (defence in depth against a malformed payload).
-- **Ids only, ≤ 8 KB** (BD11/BD16 ✅): no story text, no titles, no e-mail, no IP, no token, no storage key. The **one** ruled exception is `RenderProgress`, whose `data` carries `stage` + `percent` (0–100) and nothing else ([RULED — README §B10 WT54]); every other event sends `data: null`, and an over-sized payload is dropped with a metric instead of being truncated (a truncated JSON is worse than a lost event; the client refetches anyway).
+- **Ids only, shorter than 8 KB** (BD11/BD16 ✅): no story text, no titles, no e-mail, no IP, no token, no storage key. The **one** ruled exception is `RenderProgress`, whose `data` carries `stage` + `percent` (0–100) and nothing else ([RULED — README §B10 WT54]); every other event sends `data: null`, and an over-sized payload is dropped with a metric instead of being truncated (a truncated JSON is worse than a lost event; the client refetches anyway).
 - **Tenant/authorization:** the notifier takes `userId` from the calling scope's `ICurrentUser`/`ISystemContext` (D10) — producers must pass their own user id, never a client-supplied one; the hub only ever serves that user's group.
 - **Revocation:** every family revocation sends `NOTIFY security` (user id only) and the hub aborts that user's live connections; the backstop closes a connection once `Hubs:MaxConnectionMinutes` = the role's access-token lifetime (owner 5, user 15) has elapsed — **no stamp cache is read in P** ([RULED — README §B10 WT37]); the ticket is never re-usable, so a stolen one is useless after use/60 s.
 - **Transport:** TLS only (11.2.2-T3), `Origin` validation on the WebSocket handshake against `App:PublicOrigin` (same rule as cookie POSTs, BD16) so a foreign page cannot open a socket with a victim's ticket; browser clients send no cookies to the hub (the ticket is in the URL, the `__Secure-nts_rt` cookie is scoped to `/api/v1/auth`, BD3 ✅).
@@ -249,7 +251,7 @@ Harness: D13 (`ApiFactory`, `TestAuthHandler`, `PostgresFixture`, `WorkerHost`, 
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.8.1-T1 | Hub `/hubs/episodes`, `IRealtimeNotifier` (`pg_notify`) and the LISTEN service | BE | M (1.0) | 09.2.4-T1, 09.3.2-T1 | 09.8.1-T2, 09.6.3-T1, 06.2.5-T1 (06 CR-8), 09.3.2-T2 soft (09 W3 CR-17), 07.3.2-T1 |
+| 09.8.1-T1 | Hub `/hubs/episodes`, `IRealtimeNotifier` (`pg_notify`) and the LISTEN service | BE | M (1.0) | 09.2.4-T1, 09.3.2-T1 | 09.8.1-T2, 09.6.3-T1, 06.2.5-T1 (06 CR-8), 07.3.2-T1 |
 | 09.8.1-T2 | `hub_tickets`, `POST /hubs/ticket`, single-use claim and cleanup job | BE | S (0.5) | 09.8.1-T1 | 09.9.3-T2, 10.2.4-T1 (10 CR-8), 10.2.4-T0 |
 
 Both rows are **copied verbatim from README B8.1** ✅. Folder total **1.5 d raw**, matching B9 ("09.8.1 | 1.5 | 1.5 | —") — no re-estimate.

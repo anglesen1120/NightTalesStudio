@@ -1,0 +1,9 @@
+Subject: NightTales security alert
+
+Event: {{event}} (severity {{severity}}), at {{at}}.
+
+Actor: {{actorEmail}}.
+
+Details: {{dataSummary}}
+
+If you did not perform this action, contact support immediately.

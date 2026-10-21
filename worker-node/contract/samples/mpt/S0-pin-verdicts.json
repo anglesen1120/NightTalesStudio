@@ -1,0 +1,120 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S0",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "mpt_head_checked": "git -C $NTS_HOME/src/mpt rev-parse HEAD = MPT_COMMIT",
+ "note": "verdict per README C-fact at the pin; 'same' = behaviour + cited lines identical; 'moved' = same behaviour, different lines; 'changed' = different behaviour. All 22 same; minor line-range drift noted inside evidence text (app/models/schema.py C3/C5, app/services/video.py C14 codec set ends L100).",
+ "verdicts": [
+  {
+   "id": "C1",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/v1/base.py L4-11; app/controllers/v1/video.py L181/188/195/240/258/290/457/490; app/controllers/v1/llm.py L21-55; app/controllers/ping.py; app/asgi.py L285/288 mounts, L242 FastAPI"
+  },
+  {
+   "id": "C2",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/base.py L47-98 (api_key empty->None L58-60, compare_digest L89-90, 401 L80-82); app/asgi.py L258-273 middleware guards /tasks; warning L27-30"
+  },
+  {
+   "id": "C3",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/v1/video.py L202-237 (update_task L214, delete+raise L223-224, 429 L233); app/controllers/base.py L13-26 normalize_task_id; app/models/schema.py L285-292 (README L278-287 off ~7) TaskStatusData; TaskResponse L357"
+  },
+  {
+   "id": "C4",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/v1/video.py L225 logger.success('Task created: '+to_json(task)); params=body.model_dump() L212-214"
+  },
+  {
+   "id": "C5",
+   "verdict": "same",
+   "pin_evidence": "app/asgi.py L57-63 -> 400 'field required'; app/models/schema.py VideoParams L88-161 (README L91-161 off ~3); no extra=forbid on VideoParams"
+  },
+  {
+   "id": "C6",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/v1/video.py L258-287 GET /tasks/{id}; _task_file_to_uri L107-127 /tasks/<id>/final-1.mp4; app/models/const.py L25-27; app/models/schema.py L292 extra=allow; 404 'task not found' L285-287"
+  },
+  {
+   "id": "C7",
+   "verdict": "same",
+   "pin_evidence": "app/services/task.py L1388(5) L1510(10) L1537(20) L1562(30) L1587(40) L1613(50) L965-966+1023-1024(+=50/count/2=75) L1674(100); 5->20 no LLM (generate_script/terms short-circuit)"
+  },
+  {
+   "id": "C8",
+   "verdict": "same",
+   "pin_evidence": "app/services/task.py L243-290 _mark_task_failed (first error kept L257-263); stages preflight/script/terms/audio/materials/video/pipeline; uncaught -> 'pipeline' f'{type}:{exc}' L1732-1739"
+  },
+  {
+   "id": "C9",
+   "verdict": "same",
+   "pin_evidence": "app/services/state.py L44-95 MemoryState whole-record replace L69-74; L153-172 RedisState hset per field; L238-243 state=MemoryState when enable_redis false; app/asgi.py L43 recovers cross-posts only"
+  },
+  {
+   "id": "C10",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/manager/base_manager.py L48-85 (slot vs queue, queue_size >= max_queued_tasks L69-75); app/controllers/manager/memory_manager.py L7-19; 429 message at app/controllers/v1/video.py L230-233; config.example.toml L464-465"
+  },
+  {
+   "id": "C11",
+   "verdict": "same",
+   "pin_evidence": "app/controllers/v1/video.py L290-322 (409 'task is still running' L306-308; rmtree+delete L313-316; 404 L321); app/services/task.py L106-123 is_task_busy; no cancel route"
+  },
+  {
+   "id": "C12",
+   "verdict": "same",
+   "pin_evidence": "app/utils/file_security.py L15-32 realpath+commonpath+isfile; app/controllers/v1/video.py /stream L457-486 (206 + Content-Range), /download L490-508 FileResponse media_type=video/<ext>"
+  },
+  {
+   "id": "C13",
+   "verdict": "same",
+   "pin_evidence": "app/services/task.py L532 audio.mp3 L592 subtitle.srt L917-918/968 combined-N/final-N; app/services/task_artifacts.py L16-18 script.json; app/services/material.py L1409 openai-image-<12hex>.png, L1530-1532 task_dir when material_directory=''; app/services/video.py L1553 <png>.mp4; no auto-delete"
+  },
+  {
+   "id": "C14",
+   "verdict": "same",
+   "pin_evidence": "app/models/schema.py L34-46 (1920x1080/1080x1920/1080x1080); app/services/video.py L71-75 aac 192k fps30; L86-100 codec set (ends L100, off by 1); L181-189 +0.1s margin; app/services/task.py L559-562 audio_duration=ceil"
+  },
+  {
+   "id": "C15",
+   "verdict": "same",
+   "pin_evidence": "app/services/task.py L590-593 subtitle_enabled->'' / provider; app/services/subtitle.py L62-69 transcribe(beam5, word_ts, vad, min_silence 500, initial_prompt only); L19 initial_prompt global; L47-55 model load fail -> None; L300-318 leftover chunks -> 00:00:00,000; app/services/task.py L637-638 sentence mode runs subtitle.correct"
+  },
+  {
+   "id": "C16",
+   "verdict": "same",
+   "pin_evidence": "app/services/video.py L1446-1457 SubtitlesClip composite burned-in; L1240-1242 font from resource/fonts, default STHeitiMedium.ttc; L1260 max_width=0.9W; L1404-1423 positions incl custom (H-h)*p/100; webui/Main.py L7774 only WebUI caller"
+  },
+  {
+   "id": "C17",
+   "verdict": "same",
+   "pin_evidence": "app/services/video.py L1433-1437 narration*voice_volume; L1487-1498 bgm*bgm_volume + AudioFadeOut(3) + AudioLoop; L1499-1506 mix fail -> video without music; no loudness normalisation in app/"
+  },
+  {
+   "id": "C18",
+   "verdict": "same",
+   "pin_evidence": "app/services/video.py L656-681 get_bgm_file ('' -> none, 'random' -> choice both dirs); app/services/bgm.py L73-88 should_use_bgm (volume>0); L338-340+385-386 storage/bgm then resource/songs; app/services/task.py L75-90 sonilo/elevenlabs"
+  },
+  {
+   "id": "C19",
+   "verdict": "same",
+   "pin_evidence": "app/services/task.py L292-310 non-empty video_script skips generate_script; L313-334 non-empty video_terms skips generate_terms; L347 rerank bypassed when match_materials_to_script"
+  },
+  {
+   "id": "C20",
+   "verdict": "same",
+   "pin_evidence": "config.example.toml L11-12 listen 0.0.0.0:8080; L26 api_key; L429 subtitle_provider edge; L440 commented video_codec; L448 endpoint; L453 material_directory; L457 enable_redis; L464-465 max_concurrent 5/queued 100; L500-511 [whisper]"
+  },
+  {
+   "id": "C21",
+   "verdict": "same",
+   "pin_evidence": "uv.lock L685-686 ctranslate2 4.7.1; L768-769 fastapi 0.136.3; L784-785 faster-whisper 1.1.0; L1574-1575 moviepy 2.2.1; L2822-2823 starlette 1.2.1; L3082-3083 uvicorn 0.32.1"
+  },
+  {
+   "id": "C22",
+   "verdict": "same",
+   "pin_evidence": "app/models/schema.py L113-116 clip_duration ge1 d5, video_count ge1; L56-57 Literal sentence/word_by_word + none/pop_spring; L152-158 text_background_color bool|str, font_size 60, stroke_width 1.5, n_threads 2; L140-149 subtitle_position/custom_position from config.ui"
+  }
+ ]
+}

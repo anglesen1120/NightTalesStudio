@@ -1,0 +1,44 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-dup",
+      "file": "fixture-dup.mp3",
+      "title": "Fixture fixture-dup",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-dup",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "8f83d2c6072507ce3f4eb431e3343417aa6616fc53ce467b7a3f69ee7a38460a",
+      "active": true
+    },
+    {
+      "id": "fixture-dup",
+      "file": "fixture-dup.mp3",
+      "title": "Fixture fixture-dup",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-dup",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "ac03199196bc02e9dbe3e504c30fe8215592ccbd2719748be59676a376edbc06",
+      "active": true
+    }
+  ]
+}

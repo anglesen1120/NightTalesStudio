@@ -1,0 +1,48 @@
+{
+  "schema": "mpt-sample.v1",
+  "scenario": "S8-sine-zero-cue",
+  "date": "2026-09-26",
+  "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+  "task_id": "d34ab243-4ce4-451a-a8f8-aab652d8a5e2",
+  "setup": "custom_audio_file='sine-20s.mp3' (20s sine staged into the queued task dir before dequeue — the only API-safe way, task.py L364-419); subtitle_enabled=true",
+  "verdict": "zero-speech audio -> task SUCCEEDS; subtitle.srt exists with 15 cues, ALL '00:00:00,000 --> 00:00:00,000' carrying the script text (subtitle.correct merges script onto empty ASR). final-1.mp4 duration 20.0s = the sine, not the script. This is F02's 'all zero cues' and the D9 zero_duration/coverage_share=0 input.",
+  "task": {
+    "status": 200,
+    "message": "success",
+    "data": {
+      "task_id": "d34ab243-4ce4-451a-a8f8-aab652d8a5e2",
+      "state": 1,
+      "progress": 100,
+      "videos": [
+        "/tasks/d34ab243-4ce4-451a-a8f8-aab652d8a5e2/final-1.mp4"
+      ],
+      "combined_videos": [
+        "/tasks/d34ab243-4ce4-451a-a8f8-aab652d8a5e2/combined-1.mp4"
+      ],
+      "failed_stage": null,
+      "error": null,
+      "cross_post_state": null,
+      "cross_post_results": null,
+      "cross_post_error": null,
+      "script": "<text sha256=bccb8756662418c3>",
+      "terms": [
+        "<text sha256=2590a2147192d5ee>",
+        "<text sha256=80662f8827549424>",
+        "<text sha256=bf021f0bdabc68e7>",
+        "<text sha256=3745142148f39efd>",
+        "<text sha256=207007b0eeb9fc26>",
+        "<text sha256=0739201301592015>",
+        "<text sha256=f4bce78575bb62ba>",
+        "<text sha256=86c6780238056ab6>"
+      ],
+      "audio_file": "<task_dir>/sine-20s.mp3",
+      "audio_duration": 20.0,
+      "subtitle_path": "<task_dir>/subtitle.srt",
+      "materials": [
+        "<task_dir>/openai-image-2691e7f1ad36.png.mp4",
+        "<task_dir>/openai-image-1cf040775d3a.png.mp4"
+      ],
+      "warnings": null
+    }
+  }
+}

@@ -1,0 +1,30 @@
+<div class="top-bar__row">
+  @if (showMenuButton()) {
+    <button
+      #menuButton
+      class="top-bar__menu"
+      type="button"
+      aria-controls="shell-navigation"
+      [attr.aria-expanded]="menuExpanded()"
+      [attr.aria-label]="'shell.nav.open' | transloco"
+      (click)="menuToggle.emit()"
+    >
+      <nts-icon-menu aria-hidden="true" />
+    </button>
+  }
+
+  <span class="top-bar__context">{{ title() || 'NightTales Studio' }}</span>
+  <span class="top-bar__spacer"></span>
+
+  @if (headerEnd(); as template) {
+    <span class="top-bar__slot"><ng-container [ngTemplateOutlet]="template" /></span>
+  }
+
+  <nts-language-switch
+    [locale]="locale()"
+    [saving]="localeSaving()"
+    (localeChange)="localeChange.emit($event)"
+  />
+  <nts-user-menu [me]="me()" [userLabel]="userLabel()" (logOut)="logOut.emit()" />
+</div>
+<nts-realtime-status [state]="realtimeState()" (resumeRequested)="resumeRequested.emit()" />

@@ -1,0 +1,7 @@
+Subject: Repeated wrong two-factor codes
+
+Hello {{displayName}},
+
+In the last {{windowMinutes}} minutes the two-factor code of this account was entered wrong {{failedCount}} times.
+
+If this was not you, change your password and review your account security at {{securityUrl}}.

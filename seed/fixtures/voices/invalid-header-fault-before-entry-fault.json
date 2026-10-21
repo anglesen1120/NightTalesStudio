@@ -1,0 +1,16 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abb",
+  "voices": [
+    {
+      "id": "Hải Đăng",
+      "slug": "hai-dang",
+      "displayName": "Hải Đăng",
+      "language": "vi",
+      "gender": "male",
+      "active": true,
+      "previewStorageKey": null
+    }
+  ]
+}

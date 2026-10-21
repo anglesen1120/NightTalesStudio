@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
+    <!--
+      The render-node core is a leaf of the node, not of the backend: it is referenced so its assembly is loaded
+      for RenderNode_ReferencesOnlyTheContractAndAspNetCore (11 README D3/D5).
+    -->
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+    <!--
+      The adapter host is referenced for the same reason (11 README D3): its assembly must be loaded so the
+      node's reference rules cover it too.
+    -->
+    <ProjectReference Include="..\..\src\NightTales.MptAdapter\NightTales.MptAdapter.csproj" />
+    <!-- The mock is the third node assembly the reference rules cover (11 README D3). -->
+    <ProjectReference Include="..\..\tools\mock-mpt\NightTales.MockMpt.csproj" />
+  </ItemGroup>
+
+  <!--
+    NightTales.Fetcher.Core is referenced so its assembly is loaded and FetcherCore_HasNoEfCoreOrOpenAiReference /
+    FetcherHost_DependsOnDomainAndCoreOnly cannot pass vacuously (02.5.2-T3 [DECISION T40]).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
+  </ItemGroup>
+
+  <!-- NightTales.Fetcher (the host): loaded so FetcherHost_DependsOnDomainAndCoreOnly cannot pass vacuously, and so
+       Fetcher_RegistersProductionAddressValidator can build its service collection (02.5.2-T3). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TngTech.ArchUnitNET" />
+    <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

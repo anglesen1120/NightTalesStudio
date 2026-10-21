@@ -1,0 +1,222 @@
+{
+  "id": "en-truecrime-clean-01",
+  "language": "en",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": true,
+  "brief": "A synthetic clean true-crime draft: two complaints filed eleven days apart describe the same address, the same method and the same missing goods, and the file shows the two reports are one case with no charge against any person. Every checkable claim is supported by the supplied facts, every reference is valid, the framing is careful, and the required warnings are declared. No real person, place or incident is used.",
+  "draft": {
+    "title": "Two Complaints and the Same Closed Office Door",
+    "hook": {
+      "text": "The first call came from a customer who had paid for goods that never arrived. Eleven days later a second caller described the same address, the same method and the same missing order.",
+      "keywords": ["shop counter with an empty tray in grey light"],
+      "fact_refs": ["f1", "f2"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "The first call came from a customer who had paid for goods that never arrived. It was a short call. She had paid for every order in the complaint, and none of the orders had been delivered. The city that week was grey and wet, and the streets emptied before dark.",
+        "keywords": ["narrow city street with shop awnings in morning light"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "setup",
+        "text": "Eleven days later the same address appeared in a second report. The second caller described the same method and the same missing goods as the first. The address on the second report was the one on the first, written the same way. Both reports set out what had been paid for, and neither order had arrived.",
+        "keywords": ["plain office door in a small city street at dusk"],
+        "fact_refs": ["f2", "f5"]
+      },
+      {
+        "beat": "setup",
+        "text": "The file records that the company took payments for goods it had not yet received from any supplier. Nothing was sent out in return, and no supplier had been asked for anything.",
+        "keywords": ["small office desk with a telephone and an empty tray"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "setup",
+        "text": "A clerk told the file that the order list had been rewritten twice in the same month. That was the part the clerk remembered. It was a cold month, and the shop lights stayed on late.",
+        "keywords": ["small desk with a telephone and a bare tray"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "setup",
+        "text": "The calls came in on ordinary mornings, from people who had waited for a delivery. Both of the callers had paid for their orders, and neither of them had received anything. They filed their reports eleven days apart, and both named the same business address.",
+        "keywords": ["city street with a queue outside a small office"],
+        "fact_refs": ["f1", "f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The city is small enough that two strangers can walk into the same office in the same month. The crossroads and the bus station are a short walk apart, and the main street is busy from early morning. The shops along it close early in winter and open again in the dark. The cafe on the corner puts its chairs out at seven and takes them in at six. The fountain in the square runs all year, and the pigeons work the steps around it. In winter the stone holds the cold until late in the morning.",
+        "keywords": ["small city square with a fountain in grey weather"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Payments came in for goods that no supplier had sent. Nobody at the office had a reason to look twice at any one of them.",
+        "keywords": ["stack of closed cardboard boxes in an empty room"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The shops along the main street close early in winter. After dark the only light is above the doors that are still open, and the street empties within minutes. By nine the pavements are wet and empty, and the market has shut its gates. The market hall stands open all day, and its lights stay on until the gates are closed. The rain has stopped by then, and the street reflects the shop windows. Few people walk it after that hour.",
+        "keywords": ["city street with lit shop windows after dark"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The order list had been rewritten twice in the same month. A clerk remembered the changes and told the file about them. Their reports were taken eleven days apart, and both named the same address.",
+        "keywords": ["counter with a closed till under a low lamp"],
+        "fact_refs": ["f2", "f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The two reports describe the same address, the same method and the same missing goods. Read one after the other, they are the same story told twice, in two different voices, in the same order.",
+        "keywords": ["two separate phone booths on opposite sides of a street"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The street the office stands on is narrow enough that two people pass with care. It runs between a covered market and a row of small shops. In the morning it is busy, and by the middle of the afternoon it is quiet. The hardware shop at the corner keeps its door open in all weather. The market keeps its stalls under cover, and the smell of it reaches the top of the street.",
+        "keywords": ["covered market entrance seen from a narrow street"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Goods were paid for and never sent, and the supplier had never received the order. The goods were never held by the company at all.",
+        "keywords": ["loading bay behind a shop with the shutter down"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "The second report was made eleven days after the first, and it named the same address. Both reports were made by customers, and both described orders that had been paid for and never sent.",
+        "keywords": ["letterbox beside a plain door in a city street"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "The order list had been rewritten twice in one month. A clerk told the file so.",
+        "keywords": ["counter with a pen and a closed tray"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "Payments were taken, and no supplier had sent anything in return. The file records that the company took money for goods it had not received from anyone.",
+        "keywords": ["shop counter with a till and an empty order tray"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "The office is up a narrow stair, over a shop that sells hardware. The stair is lit by a single bulb, and the door at the top of it is plain and unmarked. From the landing window the market is visible across the street, and the bus stop is just past it. The stair creaks at the fourth step, and everyone who uses it knows which one it is.",
+        "keywords": ["narrow wooden staircase above a small shop"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The order list had been rewritten twice, and a clerk remembered the change. In a month of ordinary trade, that was the unusual part. The desk in the back room was piled with paper, and the window looked out onto the street.",
+        "keywords": ["stair landing with a single bulb above the steps"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "twist",
+        "text": "The file shows one case, not two. The same address, the same method and the same missing goods tie the reports together. What looked like two complaints is one business taking orders.",
+        "keywords": ["two identical doors side by side in a corridor"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "Two complaints turn out to be one business taking money for goods it never held. Nothing arrives, and nothing is sent out in return.",
+        "keywords": ["empty warehouse floor with daylight through a high window"],
+        "fact_refs": ["f3", "f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "The two reports were made eleven days apart, by two customers who had paid for their orders. They describe the same address, the same method and the same goods.",
+        "keywords": ["two separate chairs at one long counter"],
+        "fact_refs": ["f2", "f5"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Who directed the company, and where the payments went, has not been established. The file records no charge against any person.",
+        "keywords": ["empty office chair behind a bare desk at night"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Two reports, one address and one method, and no name joined to any of it. The investigation remains open, and nothing has been charged to anyone.",
+        "keywords": ["closed shutters on a city shopfront at dusk"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "reveal",
+        "text": "The office above the shop is shut, and the stair light is off. Nothing in the street outside says what used to be up there, and the door is the same plain door. The glass in the door is old, and it has a crack across one corner. The stair carpet is worn in the middle of each step. From the street the building looks like any other on it.",
+        "keywords": ["dark stairwell behind a glass door at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "The investigation remains open, and no charge has been brought against any person. The office door stays shut, and the stair is used by nobody.",
+        "keywords": ["empty courthouse steps in grey morning light"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The customers paid for goods that were never sent to them. Their orders were paid for and never fulfilled.",
+        "keywords": ["parcel shelf empty behind a shop counter"],
+        "fact_refs": ["f1", "f5"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The street keeps its shops, and the address the reports name stays shut. The lights behind its door stay off, and the stair is dark in the mornings now. The market across the street still fills the road with people every day. Both reports name the same address, and they were filed eleven days apart.",
+        "keywords": ["quiet city street with closed doors in evening light"],
+        "fact_refs": ["f2"]
+      }
+    ],
+    "ending": {
+      "text": "Two reports described the same office, and the investigation into it is still open. Have you ever seen a case turn on two complaints like these?",
+      "keywords": ["small city street at sunrise with no one in frame"],
+      "fact_refs": ["f6"]
+    },
+    "description": "Two complaints, eleven days apart, describe the same address and the same missing goods. The file records payments taken for goods no supplier had sent, and no charge against any person.",
+    "tags": ["large-scale fraud", "small city", "connected reports", "missing goods", "true crime"],
+    "content_warnings": ["crime", "disturbing"],
+    "structure": {
+      "sub_genre": "large-scale fraud",
+      "setting": "small city",
+      "opening": "a call to report",
+      "twist_type": "two cases connected",
+      "narrator_mode": "third_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "The first report came from a customer who said the orders she had paid for were never delivered.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f2",
+      "statement": "The same business address appears in a second report filed eleven days later.",
+      "source_aliases": ["s1", "s2"]
+    },
+    {
+      "id": "f3",
+      "statement": "The file records that the company took payments for goods it had not yet received from any supplier.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f4",
+      "statement": "A clerk told the file that the order list had been rewritten twice in the same month.",
+      "source_aliases": ["s2", "s3"]
+    },
+    {
+      "id": "f5",
+      "statement": "The two reports describe the same address, the same method and the same missing goods.",
+      "source_aliases": ["s1", "s3"]
+    },
+    {
+      "id": "f6",
+      "statement": "The file records no charge against any person, and the investigation remains open.",
+      "source_aliases": ["s1"]
+    }
+  ],
+  "defects": []
+}

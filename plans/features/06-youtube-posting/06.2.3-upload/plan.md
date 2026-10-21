@@ -44,7 +44,7 @@
 | D13 | Outbox `publication_updated.v1 { publicationId, episodeId, userId, status, errorCode? }`, `channel_connection_changed.v1 { connectionId, userId, status }`, `platform_incident_raised.v1 { incidentId, platform, oauthClientId, affectedConnections }`, `platform_incident_cleared.v1 { incidentId, platform, oauthClientId }`; SignalR `PublicationUpdated` with ids only, no `RealtimeData` | `../README.md:135` [DECISION] |
 | D14 | `platform_incidents(id, platform, oauth_client_id, error_code, raised_at, cleared_at, cleared_by, note)`, partial unique `(platform, oauth_client_id) WHERE cleared_at IS NULL`; while open the client's publications stay `scheduled` with `next_attempt_at = null`, `TokenHealthJob` skips the client, the UI shows `publishing_temporarily_unavailable`; cleared by `nts-worker incident clear <id> --note "<text>"` (audit `support`, `internal`) which re-schedules held publications with jitter; P1 alert through 11.6.2-T1 | `../README.md:137` [DECISION] |
 | D18 | Streamed uploads (one chunk buffer), jobs batch ≤ 50 rows with `SKIP LOCKED`, indexes `publications (status, next_attempt_at) WHERE status IN ('awaiting_consent','scheduled','uploading','processing')` and `publications (channel_connection_id)`, `videos.list` batched by 50 | `../README.md:144` [DECISION] |
-| D19 | `FakeGoogleServer` in `NightTales.TestKit` (Kestrel, hand-written, no mocking library) must expose the token endpoint, revoke, `channels.list`, resumable upload (session create, chunk `308` + `Range`, probe, `404` expiry, **drop-after-last-chunk**), `videos.insert` errors (`quotaExceeded`, `invalidPublishAt`) and `videos.list` transitions; `GoogleYouTubeClient` takes base URLs from options so tests point at the fake; integration tests on real PostgreSQL via Testcontainers; PT-day tests across DST with `FakeClock` | `../README.md:145` [DECISION] |
+| D19 | `FakeGoogleServer` in `NightTales.TestKit` (Kestrel, hand-written, no mocking library) must expose the token endpoint, revoke, `channels.list`, resumable upload (session create, chunk `308` + `Range`, probe, `404` expiry, **drop-after-last-chunk**), `videos.insert` errors (`quotaExceeded`, `invalidPublishAt`) and `videos.list` transitions; `GoogleYouTubeClient` takes base URLs from options so tests point at the fake; integration tests on real PostgreSQL 17 via `PostgresFixture`; PT-day tests across DST with `FakeClock` | `../README.md:145` [DECISION] |
 | D20 | `_06_PlatformIncidents` is one expand-only migration | `../README.md:146` [DECISION] |
 
 ## 3. Domain and data
@@ -296,7 +296,7 @@ Rules the UI must not break: no upload progress bar (no `RealtimeData`, WT54); a
 
 ## 9. Test plan
 
-Projects (canonical names, 09 README Part A D2): `tests/NightTales.Application.UnitTests` (pure rules), `tests/NightTales.Api.IntegrationTests` (**every DB, HTTP and Worker-job test; the Worker host runs in-process**), `tests/NightTales.TestKit` (fakes). xunit.v3 + Shouldly; **no mocking library** (hand-written fakes, D19/09 N10-N11); real PostgreSQL via Testcontainers; `FakeClock` for time; `FakeGoogleServer` (Kestrel) for Google.
+Projects (canonical names, 09 README Part A D2): `tests/NightTales.Application.UnitTests` (pure rules), `tests/NightTales.Api.IntegrationTests` (**every DB, HTTP and Worker-job test; the Worker host runs in-process**), `tests/NightTales.TestKit` (fakes). xunit.v3 + Shouldly; **no mocking library** (hand-written fakes, D19/09 N10-N11); real PostgreSQL 17 via `PostgresFixture`; `FakeClock` for time; `FakeGoogleServer` (Kestrel) for Google.
 
 | Project / class | Cases |
 |---|---|
@@ -316,8 +316,8 @@ Projects (canonical names, 09 README Part A D2): `tests/NightTales.Application.U
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
 | 06.2.3-T1 | `IYouTubeClient` upload: resumable session, persisted session URI, streaming from storage, `FakeGoogleServer` | L (2.0) | 06.1.2-T2, 09.7.2-T1 | 06.2.3-T2 |
-| 06.2.3-T2 | `PublishYouTubeJob` + token refresh + error mapping | M (1.0) | 06.2.3-T1, 06.2.2-T1, 06.3.1-T1, 09.2.6-T1 | 06.2.3-T3, 06.2.4-T1, 06.2.5-T1, 02.8.3-T4, 07.3.1-T1 (07 CR-11), 06.3.2-T1 (06 CR-18) |
-| 06.2.3-T3 | `OAuthErrorClassifier` + platform incidents (hold, alert, clear verb) | XS (0.25) | 06.2.3-T2, 11.6.2-T1 (soft) | 06.4.2-T2, 08.2.2-T1 (08 CR-16) |
+| 06.2.3-T2 | `PublishYouTubeJob` + token refresh + error mapping | M (1.0) | 06.2.3-T1, 06.2.2-T1, 06.3.1-T1, 09.2.6-T1 | 06.2.3-T3, 06.2.4-T1, 06.2.5-T1, 02.8.3-T4, 07.3.1-T1 (07 CR-11) |
+| 06.2.3-T3 | `OAuthErrorClassifier` + platform incidents (hold, alert, clear verb) | XS (0.25) | 06.2.3-T2, 11.6.2-T1 (soft) | 06.4.2-T2 |
 
 **Folder total 3.25 d** (L 2.0 + M 1.0 + XS 0.25) against README §9's 06.2 band (7.0 → 8.5 d for the whole epic): this folder's share is unchanged from the high-level sizing — the L was already the largest single item in 06.2, and the two additions found in the review (the persisted encrypted session URI and the incident gate inside the job) are absorbed by T2's M because the port and the table live in T1/T2 respectively. No re-estimate change is requested.
 

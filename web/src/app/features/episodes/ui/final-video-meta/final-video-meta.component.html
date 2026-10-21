@@ -1,0 +1,8 @@
+@if (finalVideo()) {
+  <dl>
+    <div><dt>{{ 'episodes.render.review.size' | transloco }}</dt><dd>{{ size() }}</dd></div>
+    @if (duration(); as value) { <div><dt>{{ 'episodes.render.review.duration' | transloco }}</dt><dd>{{ value }}</dd></div> }
+  </dl>
+  @if (retention(); as time) { <p>{{ 'episodes.render.review.retentionUntil' | transloco: { time } }}</p> }
+}
+@if (expiry(); as time) { <p data-testid="video-expiry">{{ 'episodes.render.review.expiresAt' | transloco: { time } }}</p> }

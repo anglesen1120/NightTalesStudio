@@ -1,0 +1,82 @@
+[
+  {
+    "id": "Adam",
+    "slug": "adam",
+    "key": "voice-previews/adam.v1.mp3",
+    "sha256": "aa97f77c8864b47702b93621bdc2279f7ce4a5af5c74c173b34505e0f350bf31",
+    "bytes": 119084,
+    "duration_s": 7.39,
+    "text_sha256": "50f944bf2a1f435b7e1b5ecd4329c1b51ceb31fc5795fce64a5984fea7eec9fe",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Đức Trí",
+    "slug": "duc-tri",
+    "key": "voice-previews/duc-tri.v1.mp3",
+    "sha256": "c5b382d575c13eb4a053acc4d759950e560ba2210e5c8234528967570c13c24f",
+    "bytes": 157484,
+    "duration_s": 9.79,
+    "text_sha256": "5f2b8647101e2d2512c93f6c4caeb44bd2ba11de54f08697951c68f370726dae",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Mai Anh",
+    "slug": "mai-anh",
+    "key": "voice-previews/mai-anh.v1.mp3",
+    "sha256": "3a9be8ba73e23ec995f1fcf9fc549264525da86f47d37850bd28803d3fe14751",
+    "bytes": 120236,
+    "duration_s": 7.46,
+    "text_sha256": "5f2b8647101e2d2512c93f6c4caeb44bd2ba11de54f08697951c68f370726dae",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Phạm Tuyên",
+    "slug": "pham-tuyen",
+    "key": "voice-previews/pham-tuyen.v1.mp3",
+    "sha256": "ad3b922e6cf2060e0a7c5b49e1eee688238ec47fc34f9b0f1a496204addd32d3",
+    "bytes": 125612,
+    "duration_s": 7.8,
+    "text_sha256": "50f944bf2a1f435b7e1b5ecd4329c1b51ceb31fc5795fce64a5984fea7eec9fe",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Thái Sơn",
+    "slug": "thai-son",
+    "key": "voice-previews/thai-son.v1.mp3",
+    "sha256": "1bb85752506004873bebf44bc555ee173466091204c1fea3213b6af683cd6c90",
+    "bytes": 148652,
+    "duration_s": 9.24,
+    "text_sha256": "50f944bf2a1f435b7e1b5ecd4329c1b51ceb31fc5795fce64a5984fea7eec9fe",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Thiện Minh",
+    "slug": "thien-minh",
+    "key": "voice-previews/thien-minh.v1.mp3",
+    "sha256": "95d179b605e0b147442055013bbbd8008ecf75060d180e574854270bae4c8bd8",
+    "bytes": 106412,
+    "duration_s": 6.6,
+    "text_sha256": "5f2b8647101e2d2512c93f6c4caeb44bd2ba11de54f08697951c68f370726dae",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Thiền Tâm Đức",
+    "slug": "thien-tam-duc",
+    "key": "voice-previews/thien-tam-duc.v1.mp3",
+    "sha256": "6cb1fb8568f09041154763f1289d19e801873030c5bd2c5f70de80bed5737f9f",
+    "bytes": 138284,
+    "duration_s": 8.59,
+    "text_sha256": "5f2b8647101e2d2512c93f6c4caeb44bd2ba11de54f08697951c68f370726dae",
+    "catalog_revision": 1
+  },
+  {
+    "id": "Thục Đoan",
+    "slug": "thuc-doan",
+    "key": "voice-previews/thuc-doan.v1.mp3",
+    "sha256": "cb2db4f84ea6ab3d9ada76e588cce038cecd413304f980936d1211284fcf6494",
+    "bytes": 147116,
+    "duration_s": 9.14,
+    "text_sha256": "50f944bf2a1f435b7e1b5ecd4329c1b51ceb31fc5795fce64a5984fea7eec9fe",
+    "catalog_revision": 1
+  }
+]

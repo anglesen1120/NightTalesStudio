@@ -1,0 +1,135 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "Mai Anh",
+      "slug": "mai-anh",
+      "displayName": "Mai Anh",
+      "language": "vi",
+      "gender": "female",
+      "tags": [
+        "news",
+        "northern",
+        "deep"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Đức Trí",
+      "slug": "duc-tri",
+      "displayName": "Đức Trí",
+      "language": "vi",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "southern",
+        "warm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Thiền Tâm Đức",
+      "slug": "thien-tam-duc",
+      "displayName": "Thiền Tâm Đức",
+      "language": "vi",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "northern",
+        "deep"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Thiện Minh",
+      "slug": "thien-minh",
+      "displayName": "Thiện Minh",
+      "language": "vi",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "northern",
+        "deep"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Adam",
+      "slug": "adam",
+      "displayName": "Adam",
+      "language": "en",
+      "gender": "male",
+      "tags": [
+        "natural",
+        "deep"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Thục Đoan",
+      "slug": "thuc-doan",
+      "displayName": "Thục Đoan",
+      "language": "en",
+      "gender": "female",
+      "tags": [
+        "storyteller",
+        "warm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Phạm Tuyên",
+      "slug": "pham-tuyen",
+      "displayName": "Phạm Tuyên",
+      "language": "en",
+      "gender": "male",
+      "tags": [
+        "natural",
+        "calm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Thái Sơn",
+      "slug": "thai-son",
+      "displayName": "Thái Sơn",
+      "language": "en",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "warm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Hải Đăng",
+      "slug": "hai-dang",
+      "displayName": "Hải Đăng",
+      "language": "vi",
+      "gender": "male",
+      "tags": [],
+      "active": false,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Ngọc Huyền",
+      "slug": "ngoc-huyen",
+      "displayName": "Ngọc Huyền",
+      "language": "en",
+      "gender": "female",
+      "tags": [],
+      "active": false,
+      "previewStorageKey": null
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "Ha\u0309i \u0110a\u0306ng",
+      "slug": "hai-dang",
+      "displayName": "Ha\u0309i \u0110a\u0306ng",
+      "language": "vi",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "northern"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Ng\u1ecdc Huy\u1ec1n",
+      "slug": "ngoc-huyen",
+      "displayName": "Ng\u1ecdc Huy\u1ec1n",
+      "language": "en",
+      "gender": "female",
+      "tags": [
+        "calm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    }
+  ]
+}

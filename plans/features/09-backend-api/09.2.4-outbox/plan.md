@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.4**, L97–99), §2 T2, §5.3 (the `OutboxDispatcher` row, renamed by CR-3), §8 (outbox lag); `../../../00-overview.md` §5.2 CQRS rule (side effects via the outbox).
 > Contract: `../README.md` — **F06**, **F07**, **D3**, **D5**, **D10**, **D11**, **D12**, **D13**; CR-3, CR-4.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet. Security-relevant (tenant context in the Worker): second reader required.
+> Status: task **implemented 2026-09-30** (09.2.4-T1, branch `feature/09.2.4-T1-outbox`). Security-relevant (tenant context in the Worker): second reader required.
 
 ## 1. Scope
 
@@ -94,7 +94,7 @@ Integration tests through `WorkerHost.RunOutboxOnceAsync` with `FakeClock`, no s
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.4-T1 | Outbox interceptor, registry, `OutboxDispatcher`, handlers, metrics, cleanup | L (2.0) | 09.2.2-T1, 09.2.3-T1, 09.2.6-T1 | 09.5.1-T1, every 02 outbox handler, 09.8.1-T1, 09.3.6-T1, 09.2.6-T3 (09 W2 CR-9), 09.3.2-T2, 09.10.3-T1 (09 W3 CR-17) |
+| 09.2.4-T1 | Outbox interceptor, registry, `OutboxDispatcher`, handlers, metrics, cleanup | L (2.0) | 09.2.2-T1, 09.2.3-T1, 09.2.6-T1 | 09.5.1-T1, every 02 outbox handler, 09.8.1-T1, 09.3.6-T1, 09.2.6-T3 (09 W2 CR-9) |
 
 Total **2.0 d** (+1.0, README §9).
 

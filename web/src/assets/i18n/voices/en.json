@@ -1,0 +1,15 @@
+{
+  "tag": {
+    "storyteller": "Storyteller",
+    "natural": "Natural",
+    "news": "News",
+    "deep": "Deep",
+    "warm": "Warm",
+    "calm": "Calm",
+    "bright": "Bright",
+    "whisper": "Whisper",
+    "northern": "Northern accent",
+    "central": "Central accent",
+    "southern": "Southern accent"
+  }
+}

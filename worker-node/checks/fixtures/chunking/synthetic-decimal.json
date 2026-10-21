@@ -1,0 +1,32 @@
+{
+  "input": "synthetic:synthetic-decimal",
+  "input_sha256": "a443accdba4377ea18dcc104983ea7529aa1090807a8f3cb2d92932999282e96",
+  "input_text": "The fee is 2.5% of 1,000 years, charged at 2.5%\nSecond line stays whole.",
+  "normalized": "The fee is 2.5% of 1,000 years, charged at 2.5%\nSecond line stays whole.",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "The fee is 2.5% of 1,000 years",
+    "charged at 2.5%",
+    "Second line stays whole"
+  ]
+}

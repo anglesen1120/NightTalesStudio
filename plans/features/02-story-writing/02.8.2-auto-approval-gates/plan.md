@@ -51,7 +51,7 @@ Source of every input is the current `story_versions` row (via `audit_report` = 
 | 6 | `moderation_draft` | `audit_report.moderation.flagged` | must be false | owner |
 | 7 | `moderation_gate` | T2 result over narration + metadata + scene prompts | no category above its threshold | owner |
 | 8 | `real_world_signal` | T2 detector result (framing lexicon / dated incident / `real_world_claims[]`) | no hit | owner |
-| 9 | `similarity_sources` | `story_versions.similarity_score` | ≤ `Autopilot:Gates:Story:MaxSourceSimilarity` = **0.05** (`Similarity:WarnAbove`, stricter than the human block 0.15) | owner |
+| 9 | `similarity_sources` | `story_versions.similarity_score` | ≤ `Autopilot:Gates:Story:MaxSourceSimilarity` = **0.05** (was the `Similarity:WarnAbove` default; 02.5.6-T2 calibrated `WarnAbove` to 0.02 and `BlockAbove` to 0.45 (amended rule 3, owner 2026-10-17), so 0.05 is now looser than the warn level and stricter than the human block; the value is an 02.8.2-T3 decision, STATUS `CAL-S50-1`) | owner |
 | 10 | `similarity_past_episodes` | `SimilarityScorer.Score` vs the past-episode corpus, `ISimilarityCorpusProvider.GetPastEpisodesAsync(seriesId, excludeEpisodeId, 50, ct)` (02.5.6; the **sources** corpus of check 9 comes from `LoadAsync(episodeId, lang, ct)`, D21, and is already folded into `story_versions.similarity_score` by the job) | ≤ `…:MaxPastEpisodeSimilarity` = **0.10** | owner |
 | 11 | `length_in_range` | `word_count` vs the D4 band for `length_tier × language` | inside the band (±15 % advisory band counts as pass, F07/D4) | owner |
 | 12 | `keyword_rules` | `KeywordRules` violations (03 FR-03-3) and `keywords.Count` vs `ceil(D × 6)` | 0 violations, count ≤ cap | owner |
@@ -114,7 +114,7 @@ Input: the `render_jobs` row of the finished render (`status = succeeded`), its 
 
 - `strict` is a partial overlay on `default` (missing keys inherit). `loose` exists only as a documented example and is **not** shipped enabled — [DECISION] loosening a gate is an owner decision recorded in the run log, never a default.
 - Every threshold appears in `gate_results` as the `threshold` of its check, so a verdict is reproducible from the stored run row alone. That is what makes T3's calibration possible without re-evaluating.
-- Config is bound with `IOptionsMonitor<AutopilotGateOptions>` so a change does not need a restart ⚠️ (09.10.3 `SettingsChanged` handles DB-backed settings; these are appsettings values in P).
+- Config is bound with `IOptionsMonitor<AutopilotGateOptions>` so a change does not need a restart (the DB-backed `SettingsChanged` path of 09.10.3 was dropped by DEC 10.14; these are appsettings values).
 
 ### 3.4 `gate_results` payload (`gates.v1`) on `autopilot_runs.gate_results`
 
@@ -301,7 +301,7 @@ Domain/unit (`tests/NightTales.Domain.UnitTests/Stories/Gates/`, `tests/NightTal
 | `GateStreak_TwoConsecutiveGateFailures_ReturnsTwo` | the SQL above, also with a `published` run in between → 0 |
 | `AutopilotApproval_DryRun_NeverCallsApproveCommand` | fake command bus records zero sends; `mode = dry_run` stored |
 
-Integration (`tests/NightTales.Api.IntegrationTests/Features/Autopilot/`, Testcontainers PostgreSQL + `FakeTextClient`/`FakeContentModerator` from D20):
+Integration (`tests/NightTales.Api.IntegrationTests/Features/Autopilot/`, real PostgreSQL 17 via `PostgresFixture` + `FakeTextClient`/`FakeContentModerator` from D20):
 
 | Test | Expects |
 |---|---|

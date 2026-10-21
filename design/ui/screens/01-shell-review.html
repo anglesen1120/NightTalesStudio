@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html data-lang="vi" data-theme="dark" lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01A — Đặc tả khung bảo vệ — Night Tales Studio</title>
+  <link rel="stylesheet" href="../assets/tokens.css">
+  <link rel="stylesheet" href="../assets/kit.css">
+  <style>
+    .spec-skip {
+      position: absolute;
+      top: var(--nts-space-2);
+      left: var(--nts-space-2);
+      z-index: 30;
+      padding: var(--nts-space-2) var(--nts-space-3);
+      border: 1px solid var(--nts-color-focus);
+      background: var(--nts-color-sheet);
+      color: var(--nts-color-ink);
+      transform: translateY(-160%);
+    }
+    .spec-skip:focus-visible { transform: none; }
+    .spec-placeholder {
+      min-height: var(--nts-control-h);
+      border: 1px dashed var(--nts-color-line);
+      background: var(--nts-color-soft);
+    }
+    .spec-line { height: var(--nts-space-3); border-radius: var(--nts-radius-control); background: var(--nts-color-line); }
+    .spec-line--short { width: 38%; }
+    .spec-line--medium { width: 68%; }
+    .spec-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(14rem, .46fr);
+      gap: var(--nts-space-5);
+    }
+    .spec-focus {
+      display: inline-grid;
+      place-items: center;
+      width: 1.75rem;
+      height: 1.75rem;
+      border: 1px solid var(--nts-color-focus);
+      border-radius: var(--nts-radius-pill);
+      color: var(--nts-color-ink);
+      font-size: var(--nts-type-meta-size);
+      font-weight: 600;
+    }
+    .spec-focus-list { list-style: none; padding: 0; }
+    .spec-focus-list li {
+      display: grid;
+      grid-template-columns: 1.75rem minmax(0, 1fr);
+      align-items: center;
+      gap: var(--nts-space-3);
+      padding: var(--nts-space-3) 0;
+      border-bottom: 1px solid var(--nts-color-line);
+    }
+    .spec-map { list-style: none; padding: 0; border-top: 2px solid var(--nts-color-ink); }
+    .spec-map > li {
+      display: grid;
+      grid-template-columns: minmax(9rem, .32fr) minmax(0, 1fr);
+      gap: var(--nts-space-4);
+      padding: var(--nts-space-4) 0;
+      border-bottom: 1px solid var(--nts-color-line);
+    }
+    .spec-links { display: flex; flex-wrap: wrap; gap: var(--nts-space-2) var(--nts-space-4); }
+    .spec-states { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--nts-color-line); border-left: 1px solid var(--nts-color-line); }
+    .spec-state { min-width: 0; padding: var(--nts-space-4); border-right: 1px solid var(--nts-color-line); border-bottom: 1px solid var(--nts-color-line); }
+    .spec-state > :first-child { margin-bottom: var(--nts-space-3); }
+    .spec-flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--nts-space-2); list-style: none; padding: 0; }
+    .spec-flow li { position: relative; min-width: 0; padding: var(--nts-space-4); border-top: 3px solid var(--nts-color-signal); background: var(--nts-color-soft); }
+    .spec-flow li:not(:last-child)::after { content: '›'; position: absolute; right: calc(-1 * var(--nts-space-3)); top: 50%; z-index: 2; color: var(--nts-color-playhead); font-size: var(--nts-type-section-size); }
+    .spec-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--nts-space-5); }
+    .spec-menu { padding: var(--nts-space-2); border: 1px solid var(--nts-color-line); border-radius: var(--nts-radius-dialog); background: var(--nts-color-sheet); box-shadow: var(--nts-menu-shadow); }
+    .spec-menu button { display: flex; width: 100%; min-height: var(--nts-target-min); align-items: center; padding: 0 var(--nts-space-3); border: 0; background: transparent; color: var(--nts-color-ink); text-align: left; }
+    .spec-menu button[aria-checked="true"] { border-left: 3px solid var(--nts-color-signal); background: var(--nts-color-soft); font-weight: 600; }
+    .spec-live { padding: var(--nts-space-3) var(--nts-space-4); border-left: 4px solid var(--nts-color-playhead); background: var(--nts-color-playhead-soft); }
+    .spec-live--success { border-left-color: var(--nts-color-signal); background: var(--nts-color-signal-soft); }
+    .spec-profile-region { display: flex; align-items: center; }
+    .spec-profile-trigger .spec-profile-name { width: 6rem; height: var(--nts-space-3); }
+    html[data-theme="dark"] .theme-next--dark,
+    html[data-theme="light"] .theme-next--light { display: none; }
+    @container app (max-width: 767px) {
+      .spec-content, .spec-switches { grid-template-columns: minmax(0, 1fr); }
+      .spec-states { grid-template-columns: minmax(0, 1fr); }
+      .spec-flow { grid-template-columns: minmax(0, 1fr); }
+      .spec-flow li:not(:last-child)::after { content: '⌄'; right: var(--nts-space-3); top: auto; bottom: calc(-1 * var(--nts-space-3)); }
+      .spec-map > li { grid-template-columns: minmax(0, 1fr); gap: var(--nts-space-2); }
+    }
+  </style>
+</head>
+<body data-back="../index.html" data-title="01A — Đặc tả khung bảo vệ">
+<main class="board">
+  <header class="board__intro">
+    <h1><span data-l="vi">Khung bảo vệ, realtime và i18n</span><span data-l="en">Protected shell, realtime and i18n</span></h1>
+    <p class="muted"><span data-l="vi">Phần bổ sung T0 này ghi rõ wireframe, ma trận trạng thái và đường đi bàn phím. Mockup hi-fi vẫn ở màn 01 gốc; các liên kết bên dưới đưa thẳng tới từng khung đã có.</span><span data-l="en">This T0 supplement makes the wireframe, state matrix and keyboard paths explicit. High-fidelity mockups remain in the original screen 01; links below jump to each existing frame.</span></p>
+    <nav class="board__toc" aria-label="Khung đặc tả">
+      <a href="#f-shell-lofi"><span data-l="vi">Wireframe responsive</span><span data-l="en">Responsive wireframe</span></a>
+      <a href="#f-shell-state-matrix"><span data-l="vi">Ma trận màn hình × trạng thái</span><span data-l="en">Screen × state matrix</span></a>
+      <a href="#f-shell-core-states"><span data-l="vi">Loading / empty / error / success</span><span data-l="en">Loading / empty / error / success</span></a>
+      <a href="#f-shell-null-me"><span data-l="vi">Hồ sơ đang tải</span><span data-l="en">Loading profile</span></a>
+      <a href="#f-shell-a11y-flow"><span data-l="vi">Tiêu điểm và điều hướng</span><span data-l="en">Focus and navigation</span></a>
+      <a href="#f-shell-theme-language"><span data-l="vi">Ngôn ngữ và giao diện</span><span data-l="en">Language and theme</span></a>
+    </nav>
+  </header>
+
+  <section class="frame" id="f-shell-lofi" aria-labelledby="f-shell-lofi-t">
+    <div class="frame__cap">
+      <h2 id="f-shell-lofi-t"><span data-l="vi">Wireframe — khung bảo vệ</span><span data-l="en">Wireframe — protected shell</span></h2>
+      <span class="caption"><span data-l="vi">Dùng thanh review để xem 360 / 768 / 1280; ngưỡng drawer là dưới 600 px.</span><span data-l="en">Use the review bar for 360 / 768 / 1280; the drawer threshold is below 600 px.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app">
+        <a class="spec-skip" href="#lofi-content"><span data-l="vi">Chuyển tới nội dung chính</span><span data-l="en">Skip to main content</span></a>
+        <nav class="app-rail" aria-label="Điều hướng chính">
+          <a class="brand" href="../index.html"><span class="brand__mark" aria-hidden="true"></span><span class="brand__name">Night Tales Studio</span></a>
+          <a href="#"><svg aria-hidden="true"><use href="#i-home"></use></svg><span><span data-l="vi">Bảng điều khiển</span><span data-l="en">Dashboard</span></span></a>
+          <a href="#" aria-current="page"><svg aria-hidden="true"><use href="#i-series"></use></svg><span><span data-l="vi">Loạt bài kể chuyện đêm khuya cho gia đình</span><span data-l="en">Long-form bedtime story series</span></span></a>
+          <a href="#"><svg aria-hidden="true"><use href="#i-episodes"></use></svg><span><span data-l="vi">Tập phim</span><span data-l="en">Episodes</span></span></a>
+        </nav>
+        <div class="app-main">
+          <header class="app-top">
+            <button class="icon-btn app-top__menu" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg><span class="sr-only"><span data-l="vi">Mở điều hướng</span><span data-l="en">Open navigation</span></span></button>
+            <span class="app-top__context"><span data-l="vi">Loạt bài</span><span data-l="en">Series</span></span>
+            <span class="app-top__spacer"></span>
+            <button class="app-top__locale" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-globe"></use></svg><span class="hide-sm" aria-hidden="true"><span data-l="vi">Tiếng Việt</span><span data-l="en">English</span></span><span class="sr-only" data-l="vi">Ngôn ngữ</span><span class="sr-only" data-l="en">Language</span></button>
+            <button class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-moon"></use></svg><span class="sr-only"><span class="theme-next--light"><span data-l="vi">Chuyển sang giao diện sáng</span><span data-l="en">Switch to light theme</span></span><span class="theme-next--dark"><span data-l="vi">Chuyển sang giao diện tối</span><span data-l="en">Switch to dark theme</span></span></span></button>
+            <button class="app-top__user" type="button" aria-haspopup="menu" aria-expanded="false"><span class="avatar" aria-hidden="true">NA</span><span class="hide-sm" aria-hidden="true">Nguyễn An</span><span class="sr-only" data-l="vi">Tài khoản</span><span class="sr-only" data-l="en">Account</span></button>
+          </header>
+          <div class="spec-live" role="status" aria-live="polite"><strong><span data-l="vi">Cập nhật trực tiếp đang tạm dừng</span><span data-l="en">Live updates paused</span></strong> <button class="btn btn--sm" type="button"><span data-l="vi">Tiếp tục</span><span data-l="en">Continue</span></button></div>
+          <div class="app-content" id="lofi-content" tabindex="-1">
+            <header class="page-header"><div><h1><span data-l="vi">Loạt bài</span><span data-l="en">Series</span></h1><p class="page-header__lede"><span data-l="vi">Tiêu đề trang nhận tiêu điểm sau khi đổi route.</span><span data-l="en">The page title receives focus after a route change.</span></p></div></header>
+            <div class="spec-content">
+              <section class="sheet stack" aria-label="Nội dung chính wireframe"><div class="spec-line spec-line--short"></div><div class="spec-line"></div><div class="spec-line spec-line--medium"></div><div class="spec-placeholder"></div></section>
+              <aside class="sheet stack" aria-label="Khe phụ wireframe"><div class="spec-line spec-line--medium"></div><div class="spec-placeholder"></div><div class="spec-placeholder"></div></aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details><summary><span data-l="vi">Chú thích thiết kế và a11y</span><span data-l="en">Design and a11y annotations</span></summary><ul>
+      <li><span data-l="vi">360 px: rail chuyển sang drawer <code>mode="over"</code>; nút menu xuất hiện. 768 px: rail biểu tượng 72 px. 1280 px: rail đầy đủ 224 px. Không có cuộn ngang.</span><span data-l="en">360 px: the rail becomes a <code>mode="over"</code> drawer and the menu trigger appears. 768 px: 72 px icon rail. 1280 px: full 224 px rail. No horizontal scroll.</span></li>
+      <li><span data-l="vi">Landmark: một header, một nav có tên, một <code>main#content</code>; skip link là phần tử focus đầu tiên. Mục active có <code>aria-current="page"</code>, nền và vạch trái — không chỉ màu.</span><span data-l="en">Landmarks: one header, one named nav and one <code>main#content</code>; the skip link is first in focus order. The active item has <code>aria-current="page"</code>, a surface and a left rule — never colour alone.</span></li>
+      <li><span data-l="vi">Dùng token Phòng thu và lớp kit <code>app</code>, <code>app-rail</code>, <code>app-top</code>, <code>btn</code>, <code>sheet</code>; không có asset bên thứ ba.</span><span data-l="en">Uses Phòng thu tokens and the kit's <code>app</code>, <code>app-rail</code>, <code>app-top</code>, <code>btn</code> and <code>sheet</code> classes; no third-party asset.</span></li>
+      <li><span data-l="vi">Tất cả mục tiêu dùng <code>--nts-target-min</code> 44 px trên pointer thô; focus dùng <code>--nts-color-focus</code>. Reduced motion bỏ trượt drawer và animation reconnect.</span><span data-l="en">All coarse-pointer targets use the 44 px <code>--nts-target-min</code>; focus uses <code>--nts-color-focus</code>. Reduced motion removes drawer sliding and reconnect animation.</span></li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-shell-state-matrix" aria-labelledby="f-shell-state-matrix-t">
+    <div class="frame__cap"><h2 id="f-shell-state-matrix-t"><span data-l="vi">Ma trận màn hình × trạng thái</span><span data-l="en">Screen × state matrix</span></h2><span class="caption"><span data-l="vi">Các liên kết mở mockup hi-fi đã có trong 01-shell-auth.html.</span><span data-l="en">Links open existing high-fidelity mockups in 01-shell-auth.html.</span></span></div>
+    <div class="frame__view"><div class="app app--bare"><div class="app-main"><div class="app-content">
+      <ul class="spec-map">
+        <li><strong>ShellComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-shell-1280">authenticated 1280</a><a href="01-shell-auth.html#f-shell-768">768</a><a href="01-shell-auth.html#f-shell-360-closed">360 closed</a><a href="01-shell-auth.html#f-shell-360-open">360 open</a><a href="01-shell-auth.html#f-shell-anonymous">anonymous</a></div></li>
+        <li><strong>TopBarComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-topbar-title">title + empty slot</a><a href="01-shell-auth.html#f-topbar-slot-filled">filled slot</a></div></li>
+        <li><strong>SideNavComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-nav-baseline">empty baseline</a><a href="01-shell-auth.html#f-nav-three">3 items + active</a><a href="01-shell-auth.html#f-nav-long">long/full-role labels</a><a href="01-shell-auth.html#f-shell-360-open">overlay + restore</a></div></li>
+        <li><strong>LanguageSwitchComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-lang-closed">closed</a><a href="01-shell-auth.html#f-lang-open">open</a><a href="01-shell-auth.html#f-lang-saving">saving</a><a href="01-shell-auth.html#f-lang-failed">save failed</a></div></li>
+        <li><strong>UserMenuComponent</strong><div class="spec-links"><a href="#f-shell-null-me">me null / labelled profile region</a><a href="01-shell-auth.html#f-user-loaded">loaded</a><a href="01-shell-auth.html#f-user-open">open</a><a href="01-shell-auth.html#f-user-signout">sign-out in flight</a><a href="01-shell-auth.html#f-session-expired">session ended</a></div></li>
+        <li><strong>RealtimeStatusComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-shell-1280">connected / hidden</a><a href="01-shell-auth.html#f-rt-paused">paused</a><a href="01-shell-auth.html#f-rt-connecting">reconnecting</a><a href="01-shell-auth.html#f-rt-backoff">backoff</a><a href="01-shell-auth.html#f-rt-offline">offline composition</a><a href="01-shell-auth.html#f-rt-reconnected">reconnected composition</a></div></li>
+        <li><strong>nav-items.ts</strong><div class="spec-links"><a href="01-shell-auth.html#f-nav-baseline">empty shell</a><a href="01-shell-auth.html#f-nav-three">dashboard / series / episodes</a><a href="01-shell-auth.html#f-nav-long">append pattern</a></div></li>
+      </ul>
+    </div></div></div></div>
+    <details><summary><span data-l="vi">Quy tắc ma trận</span><span data-l="en">Matrix rules</span></summary><ul>
+      <li><span data-l="vi">Toolbar của deck áp dụng 360 / 768 / 1280 × dark / light × vi / en cho từng frame hi-fi; nội dung song ngữ dùng độ dài thật.</span><span data-l="en">The deck toolbar applies 360 / 768 / 1280 × dark / light × vi / en to each high-fidelity frame; bilingual copy uses realistic lengths.</span></li>
+      <li><span data-l="vi"><code>connected</code> là n/a cho status bar vì component ẩn; trạng thái vẫn hiện bằng đèn Live trong shell. Offline và reconnected là composition hình ảnh, không thêm enum vào <code>RealtimeState</code>.</span><span data-l="en"><code>connected</code> is n/a for the status bar because the component is hidden; the shell's Live lamp still communicates it. Offline and reconnected are visual compositions, not new <code>RealtimeState</code> enum members.</span></li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-shell-null-me" aria-labelledby="f-shell-null-me-t">
+    <div class="frame__cap"><h2 id="f-shell-null-me-t">/dashboard — null_me_profile_skeleton</h2><span class="caption"><span data-l="vi">Khối hồ sơ có tên và trạng thái bận; điều hướng và trigger tài khoản vẫn dùng được trong lúc GET /me chậm.</span><span data-l="en">The profile region is named and busy; navigation and the account trigger remain available while GET /me is slow.</span></span></div>
+    <div class="frame__view"><div class="app">
+      <nav class="app-rail" aria-label="Điều hướng chính">
+        <a class="brand" href="../index.html"><span class="brand__mark" aria-hidden="true"></span><span class="brand__name">Night Tales Studio</span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-home"></use></svg><span><span data-l="vi">Bảng điều khiển</span><span data-l="en">Dashboard</span></span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-series"></use></svg><span><span data-l="vi">Loạt bài</span><span data-l="en">Series</span></span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-episodes"></use></svg><span><span data-l="vi">Tập phim</span><span data-l="en">Episodes</span></span></a>
+      </nav>
+      <div class="app-main">
+        <header class="app-top">
+          <button class="icon-btn app-top__menu" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg><span class="sr-only"><span data-l="vi">Mở điều hướng</span><span data-l="en">Open navigation</span></span></button>
+          <span class="app-top__context">Night Tales Studio</span><span class="app-top__spacer"></span>
+          <div class="spec-profile-region" role="region" aria-labelledby="null-me-profile-label" aria-busy="true">
+            <span id="null-me-profile-label" class="sr-only"><span data-l="vi">Hồ sơ tài khoản</span><span data-l="en">Account profile</span></span>
+            <button class="app-top__user spec-profile-trigger" type="button" aria-haspopup="menu" aria-expanded="false"><span class="avatar skeleton" aria-hidden="true"></span><span class="spec-profile-name skeleton hide-sm" aria-hidden="true"></span><span class="sr-only"><span data-l="vi">Tài khoản</span><span data-l="en">Account</span></span></button>
+          </div>
+        </header>
+        <main class="app-content"><header class="page-header"><div><h1><span data-l="vi">Bảng điều khiển</span><span data-l="en">Dashboard</span></h1><p class="page-header__lede"><span data-l="vi">Nội dung và điều hướng không chờ hồ sơ tải xong.</span><span data-l="en">Content and navigation do not wait for the profile to finish loading.</span></p></div></header></main>
+      </div>
+    </div></div>
+    <details><summary><span data-l="vi">Hành vi null-/me và a11y</span><span data-l="en">Null-/me behaviour and a11y</span></summary><ul>
+      <li><span data-l="vi">Vùng hồ sơ lấy tên song ngữ từ <code>aria-labelledby</code> và đặt <code>aria-busy="true"</code>; hình skeleton là trang trí nên không công bố tên giả.</span><span data-l="en">The profile region takes its bilingual name from <code>aria-labelledby</code> and sets <code>aria-busy="true"</code>; skeleton shapes are decorative, so no fake name is announced.</span></li>
+      <li><span data-l="vi">Theo 10.2.6-T1, khi <code>me</code> còn null, thanh trên chỉ hiện tên sản phẩm; trigger vẫn nhận focus, có <code>aria-haspopup="menu"</code> và đọc <code>shell.menu.triggerLabel</code> (“Tài khoản”). Điều hướng vẫn hoạt động đầy đủ.</span><span data-l="en">Per 10.2.6-T1, while <code>me</code> is null the top bar shows only the product name; the trigger stays focusable, exposes <code>aria-haspopup="menu"</code> and reads <code>shell.menu.triggerLabel</code> (“Account”). Navigation remains fully functional.</span></li>
+      <li><span data-l="vi">Skeleton đứng yên khi reduced motion; lỗi GET /me không chặn shell mà thay riêng vùng hồ sơ bằng ErrorState.</span><span data-l="en">The skeleton is static under reduced motion; a GET /me failure does not block the shell and replaces only the profile region with ErrorState.</span></li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-shell-core-states" aria-labelledby="f-shell-core-states-t">
+    <div class="frame__cap"><h2 id="f-shell-core-states-t">Loading · empty · error · success · session-ended</h2><span class="caption"><span data-l="vi">Các pattern D11 trong chrome của shell; mỗi ô liên kết tới hi-fi chuyên biệt.</span><span data-l="en">D11 patterns inside shell chrome; each cell links to its dedicated high-fidelity frame.</span></span></div>
+    <div class="frame__view"><div class="app app--bare"><div class="app-main"><div class="app-content">
+      <div class="spec-states">
+        <section class="spec-state"><span class="chip chip--neutral"><span data-l="vi">Đang tải</span><span data-l="en">Loading</span></span><div class="loading" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div><a href="#f-shell-null-me">#f-shell-null-me</a></section>
+        <section class="spec-state"><span class="chip chip--neutral"><span data-l="vi">Trống</span><span data-l="en">Empty</span></span><div class="empty"><div class="empty__art" aria-hidden="true"></div><div><strong><span data-l="vi">Chưa có mục điều hướng</span><span data-l="en">No navigation items yet</span></strong></div></div><a href="01-shell-auth.html#f-nav-baseline">#f-nav-baseline</a></section>
+        <section class="spec-state"><span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"></use></svg><span data-l="vi">Lỗi</span><span data-l="en">Error</span></span><div class="error-state"><div><strong><span data-l="vi">Không lưu được ngôn ngữ. Vui lòng thử lại.</span><span data-l="en">Could not save your language. Please try again.</span></strong></div></div><a href="01-shell-auth.html#f-lang-failed">#f-lang-failed</a></section>
+        <section class="spec-state"><span class="chip chip--success"><svg aria-hidden="true"><use href="#i-check"></use></svg><span data-l="vi">Thành công</span><span data-l="en">Success</span></span><div class="spec-live spec-live--success" role="status"><strong><span data-l="vi">Đã kết nối lại</span><span data-l="en">Reconnected</span></strong></div><a href="01-shell-auth.html#f-rt-reconnected">#f-rt-reconnected</a></section>
+        <section class="spec-state"><span class="chip chip--error"><svg aria-hidden="true"><use href="#i-lock"></use></svg><span data-l="vi">Phiên kết thúc</span><span data-l="en">Session ended</span></span><div class="spec-live" role="alert"><strong><span data-l="vi">Phiên của bạn đã kết thúc. Hãy đăng nhập lại.</span><span data-l="en">Your session has ended. Sign in again.</span></strong></div><a href="01-shell-auth.html#f-session-expired">#f-session-expired</a></section>
+      </div>
+    </div></div></div></div>
+    <details><summary><span data-l="vi">Chú thích trạng thái</span><span data-l="en">State annotations</span></summary><ul>
+      <li><span data-l="vi">Loading dùng <code>LoadingState</code> và skeleton tĩnh khi reduced motion. Empty dùng <code>EmptyState</code>. Lỗi cục bộ dùng <code>ErrorState</code>; realtime lỗi dùng icon + text, không chỉ màu.</span><span data-l="en">Loading uses <code>LoadingState</code> with static skeletons under reduced motion. Empty uses <code>EmptyState</code>. Local failures use <code>ErrorState</code>; realtime failures use icon plus text, never colour alone.</span></li>
+      <li><span data-l="vi">Reconnected dùng <code>role="status"</code> polite một lần; session-ended dùng <code>role="alert"</code>, xóa chrome bảo vệ và chuyển tới login.</span><span data-l="en">Reconnected uses a one-time polite <code>role="status"</code>; session-ended uses <code>role="alert"</code>, clears protected chrome and routes to login.</span></li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-shell-a11y-flow" aria-labelledby="f-shell-a11y-flow-t">
+    <div class="frame__cap"><h2 id="f-shell-a11y-flow-t"><span data-l="vi">Đường đi bàn phím và tiêu điểm route</span><span data-l="en">Keyboard path and route focus</span></h2><span class="caption"><span data-l="vi">Thứ tự ổn định; overlay khôi phục tiêu điểm; route mới tập trung h1.</span><span data-l="en">Stable order; overlays restore focus; a new route focuses its h1.</span></span></div>
+    <div class="frame__view"><div class="app app--bare"><div class="app-main"><div class="app-content">
+      <ol class="spec-focus-list">
+        <li><span class="spec-focus">1</span><div><strong><span data-l="vi">Skip link</span><span data-l="en">Skip link</span></strong><p class="caption"><span data-l="vi">Hiện khi focus; Enter chuyển tới main#content.</span><span data-l="en">Visible on focus; Enter moves to main#content.</span></p></div></li>
+        <li><span class="spec-focus">2</span><div><strong><span data-l="vi">Nút menu (chỉ &lt; 600)</span><span data-l="en">Menu trigger (below 600 only)</span></strong><p class="caption"><span data-l="vi">aria-expanded; mở đưa focus vào mục đầu; Escape/scrim/chọn mục trả về trigger.</span><span data-l="en">aria-expanded; opening focuses the first item; Escape/scrim/selection restores the trigger.</span></p></div></li>
+        <li><span class="spec-focus">3</span><div><strong><span data-l="vi">Điều hướng</span><span data-l="en">Navigation</span></strong><p class="caption"><span data-l="vi">Thứ tự NAV_ITEMS; mục hiện tại có aria-current="page" + vạch hiển thị.</span><span data-l="en">NAV_ITEMS order; the current item has aria-current="page" plus a visible rule.</span></p></div></li>
+        <li><span class="spec-focus">4</span><div><strong><span data-l="vi">Ngôn ngữ → giao diện → tài khoản</span><span data-l="en">Language → theme → account</span></strong><p class="caption"><span data-l="vi">Menu ngôn ngữ/tài khoản đóng bằng Escape hoặc click ngoài và trả focus.</span><span data-l="en">Language/account menus close on Escape or outside click and restore focus.</span></p></div></li>
+        <li><span class="spec-focus">5</span><div><strong><span data-l="vi">Nội dung chính / h1</span><span data-l="en">Main content / h1</span></strong><p class="caption"><span data-l="vi">Sau NavigationEnd, focus tới h1 có tabindex="-1"; Title và html lang đã cập nhật trước thông báo.</span><span data-l="en">After NavigationEnd, focus moves to the h1 with tabindex="-1"; Title and html lang update before the announcement.</span></p></div></li>
+      </ol>
+      <ol class="spec-flow" aria-label="Trình tự đổi route">
+        <li><strong>Nav intent</strong></li><li><strong>Router outlet</strong></li><li><strong>Title.setTitle</strong></li><li><strong>&lt;html lang&gt;</strong></li><li><strong>h1.focus()</strong></li><li><strong><span data-l="vi">Đọc tiêu đề</span><span data-l="en">Announce title</span></strong></li>
+      </ol>
+    </div></div></div></div>
+    <details><summary><span data-l="vi">Chú thích a11y</span><span data-l="en">A11y annotations</span></summary><ul>
+      <li><span data-l="vi">Focus ring dùng token đạt ≥ 3:1; chữ token đạt ≥ 4.5:1 ở dark/light. Mục tiêu tối thiểu 24 px theo D16, bộ kit dùng 44 px cho pointer thô.</span><span data-l="en">The focus-ring token targets ≥ 3:1; text tokens target ≥ 4.5:1 in dark/light. D16 minimum target is 24 px; the kit uses 44 px for coarse pointers.</span></li>
+      <li><span data-l="vi">Drawer không phải dialog: không tự gắn role dialog. Nội dung sau drawer không tương tác; đóng luôn khôi phục trigger. Language/user overlays tuân theo menu semantics và giữ focus trong popup khi mở.</span><span data-l="en">The drawer is not a dialog and never gains dialog semantics. Background content is non-interactive while open; closing always restores its trigger. Language/user overlays follow menu semantics and keep focus in the popup while open.</span></li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-shell-theme-language" aria-labelledby="f-shell-theme-language-t">
+    <div class="frame__cap"><h2 id="f-shell-theme-language-t"><span data-l="vi">Bộ chuyển ngôn ngữ và giao diện</span><span data-l="en">Language and theme switches</span></h2><span class="caption"><span data-l="vi">Endonym ổn định, áp dụng tức thì, lưu độc lập.</span><span data-l="en">Stable endonyms, immediate application, independent persistence.</span></span></div>
+    <div class="frame__view"><div class="app app--bare"><div class="app-main"><div class="app-content">
+      <div class="spec-switches">
+        <section class="sheet stack"><div class="section-head"><div class="section-head__copy"><h2><span data-l="vi">Ngôn ngữ</span><span data-l="en">Language</span></h2><p class="caption"><span data-l="vi">Trigger: shell.language.label</span><span data-l="en">Trigger: shell.language.label</span></p></div></div><div class="spec-menu" role="menu" aria-label="Ngôn ngữ"><button type="button" role="menuitemradio" aria-checked="true">Tiếng Việt</button><button type="button" role="menuitemradio" aria-checked="false">English</button></div><div class="spec-live" role="status"><span data-l="vi">Không lưu được ngôn ngữ. Vui lòng thử lại.</span><span data-l="en">Could not save your language. Please try again.</span></div></section>
+        <section class="sheet stack"><div class="section-head"><div class="section-head__copy"><h2><span data-l="vi">Giao diện</span><span data-l="en">Theme</span></h2><p class="caption"><span data-l="vi">Tối mặc định; sáng là tuỳ chọn.</span><span data-l="en">Dark by default; light is optional.</span></p></div></div><label class="switch"><input type="checkbox" checked><span><span data-l="vi">Dùng giao diện tối</span><span data-l="en">Use dark theme</span></span></label><div class="row"><span class="chip chip--info"><span data-l="vi">Áp dụng ngay</span><span data-l="en">Applied immediately</span></span><span class="caption"><span data-l="vi">Không gọi API</span><span data-l="en">No API call</span></span></div></section>
+      </div>
+    </div></div></div></div>
+    <details><summary><span data-l="vi">Hành vi và copy</span><span data-l="en">Behaviour and copy</span></summary><ul>
+      <li><span data-l="vi">Language: đổi Transloco, <code>html lang</code> và document title ngay; người dùng đã đăng nhập mới PATCH /me. Saving không đảo ngôn ngữ; thất bại thông báo polite và giữ lựa chọn cục bộ. Tiếng Việt / English luôn là endonym.</span><span data-l="en">Language: updates Transloco, <code>html lang</code> and document title immediately; only an authenticated user PATCHes /me. Saving never reverts the language; failure is announced politely and keeps the local choice. Tiếng Việt / English always remain endonyms.</span></li>
+      <li><span data-l="vi">Theme: dark mặc định, light tuỳ chọn; dùng cùng bộ semantic token. Không flash theme sai khi boot. Nút có accessible name phản ánh hành động kế tiếp.</span><span data-l="en">Theme: dark default, optional light; both use the same semantic tokens. No wrong-theme flash on boot. The trigger's accessible name describes the next action.</span></li>
+      <li><span data-l="vi">Thanh review phía trên là công cụ duyệt: chọn theme/lang/width để kiểm mọi frame. Nó không đại diện cho chrome sản phẩm.</span><span data-l="en">The review bar is inspection tooling: use theme/lang/width to check every frame. It is not product chrome.</span></li>
+    </ul></details>
+  </section>
+</main>
+<script src="../assets/review.js"></script>
+</body>
+</html>

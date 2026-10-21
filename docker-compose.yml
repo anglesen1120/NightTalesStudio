@@ -1,0 +1,246 @@
+# Optional path for e2e and image smoke runs only (09.1.1-T2, 09 W3 CR-35; 11.1.1-T1).
+# Daily development is native on macOS: tools/dev/up.sh starts the same services without Docker
+# (docs/dev-setup.md, D14, 11 CR-16). Never start both paths at once: 5432/8333/1025 collide.
+name: nighttales
+
+# Environment shared by the two app services. Every value comes from .env (or its default); no
+# credential is ever written in this file (11.1.1-T1 rule 3).
+x-app-env: &app-env
+  ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+# The dev-only key material tools/dev/up.sh generates into .nts/dev/config (git-ignored). The Data
+# Protection KEK PFX is the only file the containers see, read-only; the ES256 signing key is the
+# Api's alone: it travels as an env file (a PEM cannot go through ${...} interpolation) that only the
+# api service loads, because the Worker never composes the auth services and must not hold the Api's
+# signing key (09.3.2-T1). Nothing is committed (09.3.2-T1, 09.9.4-T1).
+#
+# The bind-mounted PFX stays owner-only (up.sh runs with umask 077, mode 0600), so the containers run
+# as the UID that owns the checkout instead of the image's own APP_UID (1654): a bind mount keeps the
+# host ownership, and a non-owner UID cannot read a 0600 file. Set NTS_COMPOSE_UID/NTS_COMPOSE_GID to
+# the checkout owner's `id -u`/`id -g` in .env — on a workstation and on a CI runner alike
+# (docs/dev-setup.md). 1654 is only correct where the key is not needed.
+x-dev-app: &dev-app
+  user: "${NTS_COMPOSE_UID:-1654}:${NTS_COMPOSE_GID:-1654}"
+  volumes:
+    # Only the PFX is mounted, never the config directory (which also holds the signing key).
+    # `create_host_path: false` makes the start-up fail loudly when the key material has not been
+    # generated yet, instead of Docker creating a directory over the path.
+    - type: bind
+      source: "${NTS_DEV_CONFIG_DIR:-./.nts/dev/config}/dp-kek.pfx"
+      target: /run/nts-dev/dp-kek.pfx
+      read_only: true
+      bind: { create_host_path: false }
+
+x-dev-env: &dev-env
+  DataProtection__KekPfxPath: /run/nts-dev/dp-kek.pfx
+  DataProtection__KekPfxPassword: ${DEV_KEK_PASSWORD:?set DEV_KEK_PASSWORD in .env (tools/dev/up.sh generates the PFX with it)}
+
+# Storage and mail for the two app hosts (11.1.1-T2). Inside the compose network they use the
+# service names (T41); the native path uses the loopback values tools/dev/up.sh exports. The keys are
+# the canonical settings names — Storage:ServiceUrl/AccessKey/SecretKey/Region and
+# Storage:Buckets:{Media,Public,Music} of StorageSettings, and Email:Smtp:*/Email:From:Address —
+# never the flat `Smtp` alias: both hosts' appsettings.json commits Email:Smtp:Host/Port, which wins
+# over the alias, so an alias spelling would leave the container dialling its own loopback instead of
+# the `mail` service (09.2.6-T3; the flat .env names stay STORAGE_*/SMTP_* and are interpolated here).
+# The credentials come from .env like every other value, with the safe dev defaults from .env.example.
+x-storage-mail-env: &storage-mail-env
+  Storage__ServiceUrl: http://storage:8333
+  Storage__AccessKey: ${STORAGE_ACCESS_KEY:-dev}
+  Storage__SecretKey: ${STORAGE_SECRET_KEY:-dev-secret-local}
+  Storage__Region: ${STORAGE_REGION:-us-east-1}
+  Storage__Buckets__Media: ${STORAGE_BUCKET_MEDIA:-nt-media-dev}
+  Storage__Buckets__Public: ${STORAGE_BUCKET_PUBLIC:-nt-public-dev}
+  Storage__Buckets__Music: ${STORAGE_BUCKET_MUSIC:-nt-music-dev}
+  Email__Smtp__Host: mail
+  Email__Smtp__Port: "1025"
+  Email__Smtp__Username: ${SMTP_USER:-dev}
+  Email__Smtp__Password: ${SMTP_PASSWORD:-dev-secret-local}
+  Email__From__Address: ${SMTP_FROM:-dev@nighttales.local}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nighttales}
+      POSTGRES_USER: ${POSTGRES_USER:-nighttales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      # Password login over TCP (the socket is trust); pg_isready alone ignores user, database and password.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$${POSTGRES_PASSWORD}\" psql -X -At -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -c 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *dev-app
+    build: { context: ., dockerfile: src/NightTales.Api/Dockerfile }
+    image: nighttales-api:dev
+    # Api-only: the ES256 signing key the Api verifies bearers with. The Worker must not hold it.
+    env_file:
+      - path: .nts/dev/config/compose.env
+        required: false
+    environment:
+      <<: [*app-env, *dev-env, *storage-mail-env]
+      # 02.3.2-T1: edit/approval moderation shares the existing Worker provider credential.
+      # Canonical configuration wins; absent both values, the Api refuses startup (no dev placeholder).
+      OpenAi__ApiKey: ${OpenAi__ApiKey:-${OPENAI_API_KEY:-}}
+      # The internal lease API (02 D10, 02.5.2-T2) is enabled in the container with its own Kestrel endpoint on
+      # 0.0.0.0:8081; FETCHER_API_TOKEN comes from compose.env above. 8081 is NOT in ASPNETCORE_HTTP_PORTS (the
+      # host declares it in code and the public pipeline never serves it, so listing it would double-bind).
+      ASPNETCORE_HTTP_PORTS: "8080"
+      Fetcher__Internal__Enabled: "true"
+      Fetcher__Internal__ListenAddress: "0.0.0.0"
+    ports: ["127.0.0.1:5000:8080"]        # only the public listener is published; 8081 stays on the compose network (T10)
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  worker:
+    <<: *dev-app
+    build: { context: ., dockerfile: src/NightTales.Worker/Dockerfile }
+    image: nighttales-worker:dev
+    environment:
+      <<: [*app-env, *dev-env, *storage-mail-env]
+      Worker__HealthPort: "8082"
+      # 02.2.1-T2: the Worker's OpenAI text adapter requires a key; unset, a throwaway placeholder lets the stack
+      # boot and a story call fails at the provider.
+      OpenAi__ApiKey: ${OPENAI_API_KEY:-dev-openai-api-key-unset}
+      # The listener must bind the container's interface, not its loopback, or the published port
+      # below could never reach it (the Dockerfile's app default is 127.0.0.1). The host side stays
+      # 127.0.0.1, so nothing is exposed beyond this machine.
+      Worker__HealthAddress: "0.0.0.0"
+    ports: ["127.0.0.1:8082:8082"]        # 09.2.6 Worker health port; the listener binds 0.0.0.0 inside the container
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  fetcher:
+    # The source fetcher (02.5.2-T3, 02 D10/D11/D19). Opt-in: `docker compose --profile fetcher up fetcher`.
+    # It leases tasks from the api's internal listener (http://api:8081, on the compose network only) and
+    # fetches public web pages; it holds no database, storage, mail or OpenAI credential and listens on no
+    # port. Hardening: read-only root, a 64 MiB tmpfs /tmp, no volumes, no ports, no capabilities.
+    # The authoritative network (a dedicated subnet with internet-only egress, no route to postgres,
+    # storage, mail or the render nodes) is 11.2.2-T2; this dev compose cannot enforce an egress deny.
+    profiles: ["fetcher"]
+    build: { context: ., dockerfile: src/NightTales.Fetcher/Dockerfile }
+    image: nighttales-fetcher:dev
+    # Only the token: .nts/dev/config/compose.env also carries the Api's ES256 signing key, which the
+    # fetcher must never see, so tools/dev/up.sh writes the token alone to fetcher.env.
+    env_file:
+      - path: .nts/dev/config/fetcher.env
+        required: false
+    environment:
+      Fetcher__Internal__BaseUrl: http://api:8081
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+    depends_on:
+      api: { condition: service_healthy }
+
+  mock-mpt:
+    # The fake render node (11.1.2-T1, 11 README D14/F25): the optional Compose variant used by e2e.yml and
+    # image smoke. The daily path is native (`tools/dev/up.sh` runs `dotnet run --project tools/mock-mpt` on
+    # 127.0.0.1:8090, 11 CR-16). `expose` and never `ports`: the mock is reachable only from the compose
+    # network, so nothing in the stack is reachable from a café LAN (D14, 05 D15 S2).
+    build: { context: ., dockerfile: tools/mock-mpt/Dockerfile }
+    image: nighttales-mock-mpt:dev
+    environment:
+      # Same value as .env.example/tools/dev/up.sh: the core rejects < 32 bytes (05 D15 S3), so the old
+      # 12-byte `dev-mock-key` fallback left a fresh checkout (no .env) permanently unhealthy. This is also
+      # the variable the --healthcheck probe below reads, so a custom key is probed with the real value
+      # (11.1.2-T1 review fixes CODE-1/CODE-2).
+      RenderNodeServer__ApiKey: ${MOCK_API_KEY:-dev-mock-api-key-local-0123456789}
+      RenderNodeServer__MaxConcurrentTasks: ${MOCK_MAX_CONCURRENT:-2}
+      MOCK_RENDER_SECONDS: ${MOCK_RENDER_SECONDS:-20}
+      MOCK_VIDEO_SECONDS: ${MOCK_VIDEO_SECONDS:-10}
+      # Failure injection (11.1.2-T2): the committed values are the normal mock; set them in .env for a failing node.
+      MOCK_FAIL_RATE: ${MOCK_FAIL_RATE:-0}
+      MOCK_FAIL_MODE: ${MOCK_FAIL_MODE:-}
+      MOCK_IMAGE_REPORT: ${MOCK_IMAGE_REPORT:-ok}
+    volumes: ["./worker-node/contract/fixtures:/fixtures:ro"]   # README §10 T33: fixture edits need no rebuild
+    expose: ["8090"]
+    healthcheck:
+      # The mock's own --healthcheck mode (11.1.2-T1 review fixes CODE-1/CODE-2): one authenticated
+      # GET /v1/health with the same key resolution the server uses, so the runtime image needs no curl and a
+      # custom MOCK_API_KEY is probed with the real value. The key travels as a header, never on argv (01 D9).
+      test: ["CMD", "dotnet", "NightTales.MockMpt.dll", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    profiles: ["web"]                      # image defined by 10.1.1-T2 (10 CR-2)
+    build: { context: ./web, dockerfile: Dockerfile }
+    image: nighttales-web:dev
+    ports: ["127.0.0.1:4200:8080"]         # nginx-unprivileged listens on 8080 (10 D3)
+    environment:
+      NTS_CSP_MEDIA_ORIGINS: "http://localhost:8333"   # presigned media host = Storage:PublicServiceUrl (10 CR-21)
+      NTS_API_UPSTREAM: http://api:8080    # dev-only proxy of /api, /hubs, /health to the api service (10.1.1-T2) (api container port 8080, never the internal 8081)
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]   # 10 CR-2
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  storage:
+    # SeaweedFS S3 gateway (11.1.1-T2, D14; Apache-2.0, E11). Digest-pinned: a version bump is a
+    # hand edit (T12). Only the S3 port is published, on loopback; master (9333), filer (8888) and
+    # the volume server (8084) stay inside the compose network, so nothing reaches MPT's 8080.
+    # `-master.volumeSizeLimitMB=64` is the same value the native path uses: the 30 GB default
+    # leaves no free volume slot for a new bucket (04.2.3-T1 rehearsal).
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d  # 4.48
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-master.volumeSizeLimitMB=64"]
+    environment:
+      # `-s3` reads these; they are the same .env rows the client and tools/dev/storage-init.sh use.
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:-dev}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:-dev-secret-local}
+    ports:
+      - "127.0.0.1:8333:8333"             # S3 API (the third dev port that collides with the native path)
+    volumes: ["seaweedfs:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  mail:
+    # Mailpit: the local SMTP sink and its UI/API (11.1.1-T2, D14; MIT, E11). Digest-pinned.
+    # `MP_SMTP_AUTH_ACCEPT_ANY`/`_ALLOW_INSECURE` match the native
+    # `--smtp-auth-accept-any --smtp-auth-allow-insecure`, so .env's SMTP_USER/SMTP_PASSWORD work.
+    image: axllent/mailpit@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d  # v1.31.3
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"        # dev only: any credentials accepted
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:1025:1025"             # SMTP
+      - "127.0.0.1:8025:8025"             # UI + API
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8025/api/v1/info >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata: {}
+  seaweedfs: {}

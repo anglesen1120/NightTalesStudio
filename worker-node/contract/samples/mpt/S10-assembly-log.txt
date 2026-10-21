@@ -1,0 +1,12 @@
+[32m2026-09-26 22:34:45[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/openai-image-bd1afd2981f8.png.mp4[0m
+[32m2026-09-26 22:34:56[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/openai-image-1e118048631e.png.mp4[0m
+[32m2026-09-26 22:35:06[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/openai-image-e0af7aabd374.png.mp4[0m
+[32m2026-09-26 22:35:06[0m | [1mINFO[0m | "./app/services/material.py:145":[34m _persist_material_sources[0m - [1msaved material source records: task_id=17f5ee64-243e-43d5-836f-e329f2349e51, count=4[0m
+## combining video: 1 => ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/combined-1.mp4[0m
+## generating video: 1 => ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/final-1.mp4[0m
+[32m2026-09-26 22:35:35[0m | [1mINFO[0m | "./app/services/video.py:1228":[34m generate_video[0m - [1m  ① video: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/combined-1.mp4[0m
+[32m2026-09-26 22:35:35[0m | [1mINFO[0m | "./app/services/video.py:1229":[34m generate_video[0m - [1m  ② audio: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/audio.mp3[0m
+[32m2026-09-26 22:35:35[0m | [1mINFO[0m | "./app/services/video.py:1230":[34m generate_video[0m - [1m  ③ subtitle: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/subtitle.srt[0m
+[32m2026-09-26 22:35:35[0m | [1mINFO[0m | "./app/services/video.py:1231":[34m generate_video[0m - [1m  ④ output: ./storage/tasks/17f5ee64-243e-43d5-836f-e329f2349e51/final-1.mp4[0m
+[32m2026-09-26 22:35:36[0m | [31m[1mERROR[0m | "./app/services/task.py:1733":[34m start[0m - [31m[1munexpected task pipeline failure, task_id: 17f5ee64-243e-43d5-836f-e329f2349e51, error: Invalid font ./resource/fonts/missing-font-xyz.ttf, pillow failed to use it with error cannot open resource[0m
+[32m2026-09-26 22:35:36[0m | [31m[1mERROR[0m | "./app/services/task.py:267":[34m _mark_task_failed[0m - [31m[1mtask failed, task_id: 17f5ee64-243e-43d5-836f-e329f2349e51, stage: pipeline, error: ValueError: Invalid font ./resource/fonts/missing-font-xyz.ttf, pillow failed to use it with error cannot open resource[0m

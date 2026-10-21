@@ -32,7 +32,7 @@ The story's `POST /series/{id}/bible/proposal/accept|dismiss` (00 §8) is unchan
 | D14 | Metering operation `bible_proposal`; `IUsageMeter.RecordAsync` writes its own transaction | ✅ README D14 |
 | D19 | Retention: the `series_bibles` row is deleted with the series | ✅ README D19 |
 | D21 | `StoryWriteRequest` carries `BibleSnapshot? bible` and `IReadOnlyList<string> avoidPlots`; `RunContext` travels with every call | ✅ README D21 |
-| 12.1.1 | "Series-bible proposals and publishing are free (cost absorbed)" | ✅ `plans/12-billing-credits.md` §12.1.1 |
+| 12.1.1 | "Series-bible proposals and publishing are free (cost absorbed)" | ✅ DEC 10.14: nothing has a price; the `bible_proposal` operation only writes measured cost into `usage_records` (the plan-12 price table it cited is deleted) |
 | — | 00 §6 `series_bibles`: `user_id, series_id (unique), version, content jsonb (narrator, recurring_characters, places, rules, episode_summaries), proposed_content jsonb, proposed_from_episode_id` | ✅ 00 §6 |
 | — | 10.5.7: narrator, recurring characters, places, rules **and past episode summaries** are editable with `If-Match`; a pending proposal shows a diff with Accept/Dismiss | ✅ `plans/10-web-ui.md` 10.5.7 |
 
@@ -86,6 +86,8 @@ Stored in `series_bibles.content`; `schema_version` is written by the backend, n
 
 Validation rules in `BibleContentValidator.Validate(SeriesBibleContent, BibleLimits) → IReadOnlyList<BibleFieldError>`: `BibleFieldError(string Field, string Code, string? Detail)` with `Field` = a JSON path (`episode_summaries[3].summary`) so the API can fill ProblemDetails `errors[]`. Codes: `too_long`, `too_many`, `empty`, `duplicate`, `unknown_episode`, `not_approved_episode`, `invalid_structure`, `read_only`. Also: no `<`/`>` in any string (the metadata rule of D3/F36 is applied for consistency), and `episode_id` must be a UUID of an **approved** episode of the same series.
 
+Owner-approved rules (2026-10-15, 02.6.3-T1): (1) item ids match `^(ch|pl|rl)[1-9][0-9]{0,8}$`, are unique within their array, and a blank/absent id on a PUT is a new entry numbered `max suffix + 1` over the request and the stored content (no high-water mark is stored, see STATUS BIBLE-2); (2) an array over its limit reports one `too_many` and its entries are not walked; (3) the returned field-error list is capped at 100 entries (the whole-content byte-budget error `too_long` is dropped only when the cap is full).
+
 ### 3.3 Table and EF mapping (CR-4 owns the table; this task owns the migration)
 
 `series_bibles` — 00 §6 plus `created_at`/`updated_at`:
@@ -94,14 +96,14 @@ Validation rules in `BibleContentValidator.Validate(SeriesBibleContent, BibleLim
 |---|---|---|
 | `id` | `uuid` PK | UUIDv7 in .NET |
 | `user_id` | `uuid` NOT NULL | denormalised from `series` at insert, never from the request (09.2.3); `IUserOwned` |
-| `series_id` | `uuid` NOT NULL | FK → `series.id`, **unique** |
+| `series_id` | `uuid` NOT NULL | same-owner composite FK with `user_id` → `series(id, user_id)` CASCADE (NTS-922-SEC-001), **unique** per series |
 | `version` | `int` NOT NULL default 1 | bumped by PUT and by accept; the ETag source (D9) |
 | `content` | `jsonb` NOT NULL | `bible.v1` |
 | `proposed_content` | `jsonb` NULL | `BibleProposal` (`{ops:[…], based_on_version, proposed_at}`) |
-| `proposed_from_episode_id` | `uuid` NULL | FK → `episodes.id`; the episode whose approval created/merged the proposal |
+| `proposed_from_episode_id` | `uuid` NULL | same-owner composite FK with `user_id` → `episodes(id, user_id)`; the episode whose approval created/merged the proposal. EF can only emit a plain `ON DELETE SET NULL`, which would null the NOT NULL `user_id`, so the migration replaces the constraint with PostgreSQL 15's column-list form `ON DELETE SET NULL (proposed_from_episode_id)` (the InitialCore/02_AddFactSheets precedent) |
 | `created_at`, `updated_at` | `timestamptz` NOT NULL | |
 
-Indexes: `UX_series_bibles_series_id (series_id)`, `IX_series_bibles_user_id (user_id)` (tenant filter). Concurrency is the `version` column, not `xmin` (the ETag is `sb-<version>`, D9).
+Indexes: `UX_series_bibles_series_id (series_id)` unique, `ix_series_bibles_series_id_user_id (series_id, user_id)` unique (the one-to-one builder's key index), `IX_series_bibles_user_id (user_id)` (tenant filter) and the foreign-key convention's `ix_series_bibles_proposed_from_episode_id_user_id (proposed_from_episode_id, user_id)`, whose leading column serves the episode key's delete scan. Concurrency is the `version` column, not `xmin` (the ETag is `sb-<version>`, D9).
 
 Files:
 
@@ -137,7 +139,7 @@ WHERE NOT EXISTS (SELECT 1 FROM series_bibles b WHERE b.series_id = s.id);
   `{ seriesId, version, etag, content, proposal }` where `proposal` is `null` or
   `{ basedOnVersion, proposedFromEpisodeId, proposedAt, ops: [ { kind, summary?, name?, description?, text?, reason? } ], preview: { characters: n, places: n, rules: n, summaryForEpisodeId } }`.
   `preview` is computed server-side so the UI can render the diff banner without resolving op semantics (10.5.7).
-- `ETag` header = `"sb-<version>"` and the same value in `etag`.
+- `ETag` header = `"sb-<version>"` and the same value in `etag` (quoted, also in the PUT 200 body; owner decision 2026-10-15). `If-Match: *` is refused on PUT like on the fact-sheet route (412 `bible_conflict`).
 - Unknown series, another tenant's series, or a series of another user → **404** (09.2.3, no 403).
 - No state change (CQRS rule): a missing row is a data-integrity error → 500 `series_bible_missing` and an alert; it is **not** auto-created by the query.
 
@@ -164,6 +166,7 @@ WHERE NOT EXISTS (SELECT 1 FROM series_bibles b WHERE b.series_id = s.id);
 - Effect: `ApplyProposal` applies every op onto the **current** content — append-only, so no conflict by construction (F27) — bumps `version`, clears the proposal. Response 200 `{ version, etag }` + `ETag`.
 - Op semantics (`ApplyOps` in the Domain, reused by the autopilot auto-accept):
   - `AddSummary`: skip if a summary for that `episode_id` already exists (one summary per episode, invariant §3.2). Title/summary from the op; `structure`/`approved_at` filled from the episode's approved story version. If the op's summary is > 200 chars → truncate on a word boundary (never fail an accept for length).
+  - *Superseded (Notes R2, S42):* a same-episode `add_summary` replaces the existing summary; a summary for a different episode is kept, so each merged summary binds to its own `episode_id`. Content-op dedupe above is unchanged.
   - `AddCharacter` / `AddPlace` / `AddRule`: skip when `BibleOpNormalizer.Normalize(name|text)` already exists in the array (dedupe, F27) or when the array is already at its limit (§3.2). Skipped ops are counted and returned so the handler can log `applied` vs `skipped` (counts only).
   - No op kind updates or deletes; the narrator is never touched by ops ([DECISION] the model has no `set_narrator` op — narrator changes are a manual edit in 10.5.7).
   - Ids for new characters/places/rules = `max(existing numeric suffix) + 1`, per prefix, computed at apply time.
@@ -211,7 +214,7 @@ ProblemDetails body for 400:
 Events:
 
 - **No new SignalR event in P** [DECISION]. `00 §8` fixes the event list (`EpisodeUpdated`, `RenderProgress`, `PublicationUpdated`, `CreditBalanceChanged`). A pending bible proposal appears in `GET /series/{id}/bible`; the UI refreshes that route when the user opens/navigates to the bible panel and after an approve action on the episode page (the user is already there when a proposal is created). A `SeriesBibleUpdated` event is a §10 open item if 10.5.7 wants live banners.
-- Outbox: `SeriesBibleProposalCreated` (internal, new, consumed by nothing in P; written so the fact is observable and a future `SeriesBibleUpdated` notification is a one-line handler). Payload `{ SeriesId, UserId, Version, ProposedFromEpisodeId, OpCount }`. Also `SeriesBibleUpdated { SeriesId, UserId, Version, ChangedBy }` on PUT and on accept. `D13` keys are the audit keys, not these event names — no conflict.
+- Outbox: `SeriesBibleProposalCreated` (internal, new, consumed by nothing in P; written so the fact is observable and a future `SeriesBibleUpdated` notification is a one-line handler). Payload `{ SeriesId, UserId, Version, ProposedFromEpisodeId, OpCount }`. Also `SeriesBibleUpdated { SeriesId, UserId, Version, ChangedBy, OccurredAt }` (outbox type `series_bible_updated.v1`) on PUT and on accept. `D13` keys are the audit keys, not these event names — no conflict.
 - `StoryApproved` (consumed): `{ EpisodeId, SeriesId, UserId, StoryVersionId, ApprovalSource (user|autopilot), OccurredAt }` — owner: 02.3.2-T1 (CheckpointSimilarityPlan, confirmed by the TL ruling of 2026-09-24).
 
 ## 6. UI
@@ -265,6 +268,7 @@ Job steps (`src/NightTales.Application/Features/SeriesBible/Jobs/ProposeBibleUpd
    - `ApprovalSource == user` → `SetProposal(proposal, episodeId)` (no version bump) + outbox `SeriesBibleProposalCreated`. The user accepts/dismisses in 10.5.7.
    - `ApprovalSource == autopilot` (fiction only) → `ApplyProposal()` immediately (version +1, no pending proposal), audit `series.bible_proposal_accepted` with `actor_type = system`, `data = { seriesId, fromVersion, toVersion, applied, skipped, proposedFromEpisodeId }`; outbox `SeriesBibleUpdated`. This is the F27 fix: autopilot fiction does not drift waiting for the owner.
    - Pending proposal from another episode → **merge**: `ops = existing.ops ++ new.ops` deduped (§4 U4 semantics), `based_on_version` stays at the current content version, `proposed_from_episode_id` becomes the newest episode id. No second paid call is needed for the merge itself. [DECISION] Merging (not replacing) because both episodes' facts are true; a replace would silently lose the first episode's summary. One pending proposal at a time (00 §6 stores it on the row).
+   - *Superseded in part (Notes R2, S42):* the merge trims content ops first and never drops a summary; `proposed_from_episode_id` still becomes the newest episode, and `basedOnVersion`/`proposedAt` are kept from the pending proposal.
 8. Settle: `IUsageMeter.RecordAsync` already wrote one `usage_records` row per call (own transaction, D14) with `operation = bible_proposal`; `ICreditLedger.SettleAsync(reservationId, ct)`; `generation_runs.status = succeeded`, `stage = done`, `cost_usd`, `finished_at`.
 
 Retries: Hangfire retry **0** for this job (same policy as the story job, D7/F23); a run left `running` by a crash is closed by `StaleGenerationSweeperJob` (02.2.2-T3; confirmed by TL ruling #3 to cover every `generation_runs.kind`, not only `story`).
@@ -285,7 +289,7 @@ Cost: the proposal is one `gpt-6-luna` call with ~4–8k input tokens (bible + s
 |---|---|
 | Cross-tenant bible read/write | `IUserOwned` + `user_id` set from the parent series at insert; EF global filter; 404 (not 403) for another user's series (09.2.3); architecture test (§10) |
 | Lost-update / clobbering by a stale tab | `If-Match` required (428) + strong `sb-<version>` ETag (412) — D9 |
-| Prompt injection through the bible | The bible is untrusted data (D6): it is serialised into the **one** data object, never substituted into a template; the system prompt states that every string is material, never instructions. New injection fixtures `prompts/fixtures/injection/bible-*.json` (a summary/rule containing "ignore previous instructions") must still yield a schema-valid proposal that ignores it (02.2.3-T2 runs them; this plan adds the fixtures) |
+| Prompt injection through the bible | The bible is untrusted data (D6): it is serialised into the **one** data object, never substituted into a template; the system prompt states the two-tier rule (control keys are followed; material strings are never instructions — 02 T69). New injection fixtures `prompts/fixtures/injection/bible-*.json` (a summary/rule containing "ignore previous instructions") must still yield a schema-valid proposal that ignores it (02.2.3-T2 runs them; this plan adds the fixtures) |
 | Injection through the story body sent to the proposal model | Same data-object rule; the story body is our own model output, already moderated |
 | Model writes a real person/place into a fiction bible | The proposal prompt forbids real named individuals (true-crime rules 13 §5.3); the review's `real_world_claims[]` covers the story, not the bible → residual risk ⚠️: a hallucinated character name in the bible is echoed into later episodes. Mitigation: the bible is owner-editable and the fiction autopilot gate (02.8.2-T2) checks the narration for real-person signals; add a note to the 02.8.2 feature plan (cross-feature request, §10) |
 | Unbounded growth (DoS by storage) | Limits §3.2 cap the arrays; `episode_summaries` grows one row per approved episode, deleted with the series (D19); prompt cost is bounded by the 50-summary window and the 24,000-char budget, proven to converge against the T1 limits (T3) |
@@ -305,7 +309,7 @@ Unit (`tests/NightTales.Domain.UnitTests/Series/Bible/`):
 | `BibleContentValidator_SummaryOver200_ReturnsTooLongError` | 201-char summary → `episode_summaries[0].summary: too_long` |
 | `BibleContentValidator_DuplicateRuleAfterNormalization_ReturnsDuplicate` | "Không  nói  tên." vs "không nói tên" → `duplicate` |
 | `BibleContentValidator_AngleBracketInName_ReturnsError` | `<b>` rejected (F36 rule reused) |
-| `ApplyProposal_AddSummaryForExistingEpisode_SkipsAndKeepsFirst` | one summary per episode |
+| `ApplyProposal_AddSummaryForExistingEpisode_SkipsAndKeepsFirst` | one summary per episode *(superseded, Notes R2 S42: a different episode's summary is kept; only a same-episode summary replaces)* |
 | `ApplyProposal_AddCharacterWithExistingNormalizedName_Skips` | dedupe by `BibleOpNormalizer` |
 | `ApplyProposal_AtCharacterLimit_SkipsOpWithoutThrowing` | skipped, not failed; `applied`/`skipped` counts |
 | `ApplyProposal_AssignsSequentialIds_NeverReuses` | `ch3` after a manual delete of `ch2` |
@@ -313,7 +317,7 @@ Unit (`tests/NightTales.Domain.UnitTests/Series/Bible/`):
 | `ReplaceContent_BumpsVersion_AndKeepsProposal` | version +1, proposal intact |
 | `BibleProposal_Serialisation_RoundTrips` | `bible.v1` + `bible-proposal.v1` JSON round-trip, snake_case |
 
-Integration (`tests/NightTales.Api.IntegrationTests/SeriesBible/`, WebApplicationFactory + Testcontainers PostgreSQL):
+Integration (`tests/NightTales.Api.IntegrationTests/SeriesBible/`, WebApplicationFactory + real PostgreSQL 17 via `PostgresFixture`):
 
 | Test | Assert |
 |---|---|
@@ -363,5 +367,5 @@ Matches README §9 (02.6.3 bible: 1.0 → 1.5 d, "+0.5 for append-only proposals
 - **Migration order:** `AddSeriesBible` (create + backfill) ships with 02.6.3-T1, before T2/T3. Backward compatible for one release (expand only; no column dropped).
 - **Ship order:** T1 (entity + routes, verifiable with curl) → T3 (writer/review input; the bible starts influencing stories) → T2 (proposals). T2 last because it is the only paid path and the only writer of `proposed_content`.
 - **Monitoring:** `bible_proposal_ops_dropped_total{kind,reason}` (a rising drop rate means the prompt or the caps drifted), `bible_proposal_body_truncated_total`, `openai_tokens_total{operation="bible_proposal"}`, `openai_cost_usd_total{operation="bible_proposal"}`, `bible_content_bytes` (histogram; approaching 65,536 means the limits need revisiting), `generation_runs{kind="bible_proposal",status}`.
-- **Rollback:** set `Bible:Proposal:Enabled=false` (config, hot-reloadable through `DbSettingsProvider`, 09.10.3) → the outbox handler stops enqueuing; already-pending proposals stay visible and can be accepted/dismissed. Data rollback is not needed: the table is additive and the writer degrades to a bible-less prompt when the snapshot is absent.
-- **M2 note:** `MeteringOnlyCreditLedger` is replaced by the 12 ledger; the `bible_proposal` operation has no price (absorbed, 12.1.1), so the reserve→settle cycle records cost with no credit movement. If the SaaS decides to charge for proposals, only the price table changes.
+- **Rollback:** set `Bible:Proposal:Enabled=false` (config, hot-reloadable through `IOptionsMonitor`; the `DbSettingsProvider`/`system_settings` store, 09.10.3, was dropped by DEC 10.14) → the outbox handler stops enqueuing; already-pending proposals stay visible and can be accepted/dismissed. Data rollback is not needed: the table is additive and the writer degrades to a bible-less prompt when the snapshot is absent.
+- **Metering note:** the ledger stays metering-only (`MeteringOnlyCreditLedger`, DEC 10.14); the `bible_proposal` operation has no price at all, so the cycle records measured cost in `usage_records` with no credit movement.

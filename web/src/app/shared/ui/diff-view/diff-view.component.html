@@ -1,0 +1,32 @@
+<div class="diff" role="region" [attr.aria-label]="label()" tabindex="0" aria-live="off">
+  @if (diff().truncated) {
+    <p class="diff__notice">{{ truncatedNotice() }}</p>
+  } @else if (mode() === 'rows') {
+    <dl class="diff__rows">
+      @for (row of rows(); track $index) {
+        <div class="diff__row" [attr.data-kind]="row.kind">
+          <dt>{{ row.label }}</dt>
+          <dd>
+            @if (row.kind !== 'add') {
+              <del data-kind="delete"><span aria-hidden="true">− </span><span class="sr-only">{{ removedLabel() }}: </span>{{ row.before }}</del>
+            }
+            @if (row.kind !== 'remove') {
+              <ins data-kind="insert"><span aria-hidden="true">+ </span><span class="sr-only">{{ addedLabel() }}: </span>{{ row.after }}</ins>
+            }
+            @if (row.reason) {
+              <span class="diff__reason">{{ row.reason }}</span>
+            }
+          </dd>
+        </div>
+      }
+    </dl>
+  } @else {
+    @for (segment of diff().segments; track $index) {
+      @switch (segment.kind) {
+        @case ('insert') {<ins data-kind="insert"><span aria-hidden="true">+ </span><span class="sr-only">{{ addedLabel() }}: </span>{{ segment.text }}</ins>}
+        @case ('delete') {<del data-kind="delete"><span aria-hidden="true">− </span><span class="sr-only">{{ removedLabel() }}: </span>{{ segment.text }}</del>}
+        @default {<span data-kind="equal">{{ segment.text }}</span>}
+      }
+    }
+  }
+</div>

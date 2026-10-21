@@ -1,0 +1,7 @@
+Subject: Đăng nhập mới từ thiết bị lạ
+
+Xin chào {{displayName}},
+
+Tài khoản NightTales vừa được đăng nhập từ một thiết bị chưa từng thấy: {{device}}, địa chỉ IP {{ip}}, lúc {{at}}.
+
+Nếu không phải bạn, hãy đổi mật khẩu và thu hồi phiên tại {{securityUrl}}.

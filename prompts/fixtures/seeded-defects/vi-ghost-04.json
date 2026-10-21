@@ -1,0 +1,197 @@
+{
+  "id": "vi-ghost-04",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người bảo vệ ca đêm ở một khu khám bệnh đã đóng cửa nghe chuông gọi y tá rung một lần mỗi đêm ở khu hành lang bỏ trống. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Chuông gọi ở khu hành lang",
+    "hook": {
+      "text": "Chuông gọi y tá ở khu hành lang số ba vang lên một tiếng. Tiếng chuông đến đúng lúc tôi vừa khoá cổng.",
+      "keywords": [
+        "call button panel on a hospital corridor wall"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi nhận việc bảo vệ ca đêm. Khu khám bệnh đó đã đóng cửa từ lâu. Khu này có hai dãy hành lang và một khu hành chính. Ca của tôi bắt đầu lúc chín giờ tối. Tôi khoá cổng và đi một vòng rồi ngồi ở phòng trực. Phòng trực có một màn hình camera cũ. Hình trên màn hình mờ và nhiều vệt nhiễu. Đêm đầu tiên, mọi thứ đều yên. Tôi nhận một chùm chìa khoá và một cuốn sổ bàn giao.",
+        "keywords": [
+          "empty clinic corridor under fluorescent light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ hai, tôi nghe một tiếng chuông rất ngắn. Tiếng chuông phát ra từ khu hành lang số ba. Tôi đi theo tiếng chuông và đứng trước cửa khu đó. Cửa khoá, chìa khoá trong túi tôi. Tôi mở cửa và bật đèn hành lang. Trên tường có một bảng gọi y tá. Đèn trên bảng đã tắt từ lâu. Tôi đứng đó và nghe thêm một lúc.",
+        "keywords": [
+          "call bell panel on a bare corridor wall"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi kiểm tra bảng gọi y tá trong khu hành lang. Mặt bảng bằng nhựa, đã ố vàng. Nút bấm cứng, không nhúc nhích. Dây điện phía sau bảng đã bị cắt. Đầu dây còn lại nằm gọn trong ống nhựa. Tôi kéo thử đầu dây, nó không rời ra. Tôi ghi lại giờ nghe tiếng chuông. Tôi ghi vào cuốn sổ của mình. Tôi chụp lại mặt bảng bằng điện thoại.",
+        "keywords": [
+          "exposed wires behind a wall mounted call panel"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Ca sau, tôi để ý tới khu hành chính. Khu đó có một cửa sổ nhìn ra hành lang số ba. Trên cửa sổ có một tấm rèm cũ. Tôi kéo rèm lên rồi buông xuống. Bụi bay ra và bám vào tay tôi. Trong phòng có một cái bàn và một tủ hồ sơ. Tủ khoá, tay nắm bằng nhựa. Tôi nghe tiếng chuông vang sau lưng mình. Tôi đóng cửa sổ lại rồi đi tiếp.",
+        "keywords": [
+          "office window looking into a corridor"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Vào khoảng thời gian mà tôi đang nằm chờ cho tiếng chuông kia bắt đầu vang lên trong khu hành lang vắng, mặc dù trong lòng tôi lúc đó vô cùng sợ hãi và đầu óc tôi thì rối bời, tôi vẫn cố gắng giữ cho đôi mắt mình mở ra để có thể quan sát được bất cứ điều gì xảy ra trong căn phòng nhỏ hẹp đó. Đêm đó chuông vang đúng một tiếng.",
+        "keywords": [
+          "narrow clinic room in weak light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi xin bác tổ trưởng cuốn sổ bàn giao cũ. Trong sổ có ghi chú về khu hành lang số ba. Chú thích nói bảng gọi y tá đã ngắt từ lâu. Trang đó còn một dòng chữ viết tay. Dòng chữ ghi giờ kiểm tra cuối cùng. Giờ đó trùng với giờ tôi nghe tiếng chuông. Tôi chép lại dòng chữ vào sổ của mình. Bác tổ trưởng nói tôi đừng để ý chuyện cũ.",
+        "keywords": [
+          "old handover notebook on a desk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi bắt đầu đi kiểm tra khu hành lang số ba mỗi ca. Tôi mang theo một chiếc đèn pin lớn. Trần hành lang có mấy bóng đèn cháy. Tôi đếm được bảy phòng khám dọc hành lang. Cửa các phòng đều khoá và đóng kín. Trên cửa có ghi số phòng bằng sơn. Một cửa phòng bị xước ở tay nắm. Vết xước mới và sâu. Tôi mở từng cánh cửa và nhìn vào trong.",
+        "keywords": [
+          "long corridor with closed clinic room doors"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi tìm thấy một tủ đồ cá nhân ở cuối hành lang. Tủ có bốn ngăn, ba ngăn trống. Một ngăn còn treo một chiếc áo trắng. Trong ngăn có một cuốn lịch để bàn. Lịch còn vài tờ chưa xé. Tôi mở tờ lịch và xem các ghi chú. Một ô được khoanh bằng bút chì. Ô đó ghi một giờ rất lạ. Tôi không lấy gì trong tủ ra.",
+        "keywords": [
+          "white coat left in a staff locker"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Giờ được khoanh trên lịch trùng với giờ chuông vang. Tôi ngồi lại trong khu hành lang để đợi. Tôi đặt đèn pin lên sàn và tắt đèn hành lang. Tôi ngồi ở bậc thềm cuối hành lang. Đêm đó tiếng chuông đến muộn hơn mọi đêm. Tôi bật đèn ngay và nhìn lên bảng gọi. Trên bảng không có đèn nào sáng. Khu hành lang vẫn im như trước.",
+        "keywords": [
+          "dark clinic corridor seen by torch light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi mở tủ hồ sơ trong khu hành chính bằng chìa khoá phụ. Trong tủ có hồ sơ của các ca trực cũ. Một tập giấy ghi danh sách y tá của khu. Tên cuối cùng trong danh sách bị gạch bằng bút đỏ. Bên cạnh tên đó có ghi một chữ rất nhỏ. Chữ đó viết là ở lại. Tôi đọc lại danh sách thêm hai lần. Tôi không hiểu chữ đó nghĩa là gì. Tôi ghi lại tên những người trong danh sách.",
+        "keywords": [
+          "stacked paper files in a metal drawer"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi hỏi bác tổ trưởng về người y tá cuối cùng. Bác im một lúc rồi nói người đó nghỉ việc đột ngột. Bác không nói thêm lý do. Bác chỉ bảo tôi đừng mở khu hành lang số ba ban đêm. Tôi hỏi vì sao. Bác nói khu đó không còn ai làm việc. Bác còn nói ca trực đêm ở khu đó đã bị bỏ từ lâu. Tôi gật đầu và không hỏi nữa.",
+        "keywords": [
+          "night guard office with a wall calendar"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi kiểm tra đường dây của bảng gọi y tá lần nữa. Dây bị cắt ở cả hai đầu. Tôi đi theo ống nhựa tới phòng kỹ thuật. Phòng kỹ thuật khoá bằng một ổ khoá nhỏ. Tôi mở cửa và soi đèn vào trong. Trên tường có một bảng điện cũ. Một công tắc bị gãy, phần còn lại gạt được. Tôi không gạt công tắc đó. Tôi rút phích cắm của bảng điện ra.",
+        "keywords": [
+          "electrical panel in a small utility room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi ngồi trước bảng điện và nghe tiếng chuông. Chuông vang khi tay tôi không chạm gì. Tôi đưa đèn pin soi vào mặt bảng gọi. Trên bảng có một nút bị lún xuống. Nút đó nằm ở phòng số ba trong danh sách. Tôi mở sổ và đối chiếu số phòng. Số ba là phòng khám cuối hành lang. Cửa phòng đó bị xước ở tay nắm. Tôi đóng cửa phòng kỹ thuật và khoá lại.",
+        "keywords": [
+          "cracked call button on an old wall panel"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi kiểm tra lại từng phòng khám dọc hành lang. Cửa phòng số ba đóng nhưng không khoá. Tôi mở cửa và đứng ở ngưỡng. Trong phòng có mùi cồn đã bay hết. Sàn phòng sạch hơn các phòng khác. Trên bàn khám có một vết tròn như đáy cốc. Tôi đóng cửa lại và đi ra. Đêm đó chuông vang khi tôi còn ở trong hành lang.",
+        "keywords": [
+          "clinic room door ajar at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Tôi mở phòng khám cuối hành lang và bật đèn. Trong phòng có một bàn khám và một tủ thuốc. Trên giá có một chiếc cốc sứ còn nước. Tôi đứng ở giữa phòng và nghe tiếng chuông vang sau lưng. Tiếng chuông phát ra từ bảng gọi trên tường. Người y tá cuối cùng của khu vẫn làm ca đêm của mình. Bà ấy gọi vào phòng số ba mỗi đêm như trước. Đó là lý do chuông vang đúng một tiếng.",
+        "keywords": [
+          "empty examination room with a bare bed"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Bà y tá ấy vẫn đi ca đêm như ngày trước. Bà ấy chỉ vào phòng số ba. Bảng gọi y tá vẫn nhận tín hiệu của bà.",
+        "keywords": [
+          "faint light inside a closed examination room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Sáng ra tôi kể chuyện này cho bác tổ trưởng. Bác không tỏ vẻ ngạc nhiên. Bác chỉ nói khu đó vẫn cần một người trực đêm. Tôi giữ ca này thêm ba tháng nữa. Mỗi đêm tôi vẫn nghe chuông một tiếng. Tôi để nguyên chiếc cốc sứ trên giá thuốc. Tôi không dọn phòng số ba.",
+        "keywords": [
+          "cup on a shelf in a closed clinic room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi đổi sang ca ngày vào đầu mùa mưa. Người bảo vệ mới nhận ca đêm của tôi. Tôi đưa anh ấy cuốn sổ ghi giờ chuông. Anh ấy hỏi tôi có tin chuyện ma không. Tôi nói tôi chỉ ghi lại giờ. Tôi đi qua khu hành lang số ba một lần cuối. Bảng gọi y tá vẫn treo trên tường.",
+        "keywords": [
+          "handing over keys in daylight at a clinic gate"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Khu hành lang số ba bây giờ vẫn có người trực đêm. Chuông vẫn vang đúng một tiếng. Bạn đã từng nghe điều gì như vậy chưa?",
+      "keywords": [
+        "corridor light switched on in an empty clinic"
+      ],
+      "fact_refs": []
+    },
+    "description": "Người bảo vệ ca đêm ở một khu khám bệnh đã đóng cửa nghe chuông gọi y tá vang một tiếng mỗi đêm, dù dây điện của bảng gọi đã bị cắt từ lâu.",
+    "tags": [
+      "truyện ma",
+      "bệnh viện cũ",
+      "ca đêm",
+      "tiếng chuông"
+    ],
+    "content_warnings": [
+      "supernatural",
+      "death",
+      "disturbing"
+    ],
+    "structure": {
+      "sub_genre": "ma nơi làm việc",
+      "setting": "bệnh viện bỏ hoang",
+      "opening": "tìm lại đồ vật cũ",
+      "twist_type": "người đã chết vẫn còn sống",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "ear_rule_violation",
+      "segment": "p:4",
+      "note": "Cả đoạn là một câu dài nối bằng dấu phẩy, viết theo văn viết, gọi tên cảm xúc và giải thích điều người nghe tự hiểu được; không đọc lên được một lần là hiểu (E1, E5, E7, E8, Q5, Q6)."
+    }
+  ]
+}

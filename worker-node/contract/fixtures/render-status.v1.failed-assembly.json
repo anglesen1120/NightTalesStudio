@@ -1,0 +1,80 @@
+{
+  "schema": "render-status.v1",
+  "task_id": "0192f3c1-8a4b-7c2d-9e10-3f5a6b7c8d90",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "state": "failed",
+  "stage": "assembling",
+  "percent": 75,
+  "cancel_requested": false,
+  "submitted_at": "2026-09-26T15:11:20Z",
+  "started_at": "2026-09-26T15:11:23Z",
+  "finished_at": "2026-09-26T15:13:31Z",
+  "outcome": {
+    "code": "render_assembly_failed",
+    "detail": "video",
+    "message": "The node failed to assemble the video from the generated material."
+  },
+  "output": null,
+  "check": null,
+  "images": {
+    "schema": "images.v1",
+    "planned": 4,
+    "needed": 4,
+    "called": 4,
+    "succeeded": 4,
+    "failed": [],
+    "unattempted": 0,
+    "quality_sent": "medium",
+    "quality_echoed": [
+      "medium"
+    ],
+    "size": "1536x1024",
+    "model": "gpt-image-2",
+    "usage": [
+      {
+        "slot": 0,
+        "request_id": "req_fixture_0",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 1,
+        "request_id": "req_fixture_1",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 2,
+        "request_id": "req_fixture_2",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 3,
+        "request_id": "req_fixture_3",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      }
+    ],
+    "relay_rejections": {
+      "relay_prompt_unstyled": 0,
+      "relay_unknown_prompt": 0,
+      "relay_image_cap_reached": 0,
+      "relay_rate_limited": 0
+    }
+  },
+  "mpt": {
+    "state": -1,
+    "progress": 75,
+    "failed_stage": "video",
+    "warnings": []
+  }
+}

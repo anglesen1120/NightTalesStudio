@@ -1,0 +1,25 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "Fixture_Id!",
+      "file": "Fixture_Id!.mp3",
+      "title": "Fixture bad",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/bad",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "90563fd2a758813d3e6a48e4d5960a8ff3d7495f1e90396278db921008189662",
+      "active": true
+    }
+  ]
+}

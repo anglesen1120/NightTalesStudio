@@ -1,0 +1,47 @@
+<section class="segment-editor" role="group" [attr.aria-labelledby]="labelId()" [class.segment-editor--read-only]="viewModel().readOnly" [class.segment-editor--similarity-warn]="similarityLevel() === 'warn'" [class.segment-editor--similarity-block]="similarityLevel() === 'block'">
+  <div class="segment-editor__heading">
+    <label [id]="labelId()" [for]="controlId()">
+      {{ viewModel().labelKey | transloco }}@if (viewModel().labelIndex !== null) { {{ viewModel().labelIndex }} }
+    </label>
+    @if (viewModel().beat; as beat) {
+      <span class="segment-editor__beat"><span>{{ 'episodes.editor.beat' | transloco }}:</span> {{ beat }}</span>
+    }
+  </div>
+  @if (similarityLevel(); as level) {
+    <p class="segment-editor__similarity" [id]="similarityNoteId()">{{ (level === 'block' ? 'quality.similarity_blocked' : 'quality.similarity_warn') | transloco }}</p>
+  }
+
+  <textarea
+    [id]="controlId()"
+    [attr.data-segment]="viewModel().address"
+    [value]="viewModel().text"
+    [readOnly]="viewModel().readOnly"
+    [attr.aria-invalid]="viewModel().errorKeys.length > 0 ? 'true' : null"
+    [attr.aria-describedby]="describedBy()"
+    (input)="editText($event)"
+  ></textarea>
+  @for (annotation of annotations(); track annotation.id) {
+    <nts-inline-annotation [annotation]="annotation" (focusRequested)="openAnnotation($event)" />
+  }
+  <ng-content select="[segmentActions]" />
+
+  <p class="segment-editor__counter" [id]="counterId()">{{ 'episodes.editor.tokens' | transloco: { count: viewModel().tokens } }}</p>
+
+  @if (viewModel().errorKeys.length > 0) {
+    <ul class="segment-editor__errors" [id]="errorId()">
+      @for (errorKey of viewModel().errorKeys; track $index) { <li>{{ errorKey | transloco }}</li> }
+    </ul>
+  }
+
+  @if (showKeywords()) {
+    <nts-segment-chips
+      [keywords]="viewModel().keywords"
+      [readOnly]="viewModel().readOnly"
+      [limitHit]="limitHit()"
+      [flagged]="flaggedChips()"
+      (addKeyword)="addKeyword()"
+      (editKeyword)="updateKeyword($event)"
+      (removeKeyword)="removeKeyword($event)"
+    />
+  }
+</section>

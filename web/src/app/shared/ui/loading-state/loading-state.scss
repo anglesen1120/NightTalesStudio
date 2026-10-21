@@ -1,0 +1,6 @@
+:host { display: flex; flex-direction: column; gap: var(--nts-space-3); }
+.loading-state__label { margin: 0; color: var(--nts-color-on-surface-muted); }
+.loading-state__skeletons { display: flex; flex-direction: column; gap: var(--nts-space-3); }
+.loading-state__skeleton { display: block; height: 14px; border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); animation: nts-pulse 1.4s var(--nts-ease) infinite; }
+@keyframes nts-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .loading-state__skeleton { animation: none; } }

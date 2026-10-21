@@ -1,0 +1,123 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S2",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "note": "Auth matrix on the live mac-profile MPT (127.0.0.1:8080); the key is never recorded, only presence/absence/correctness.",
+ "rows": [
+  {
+   "route": "GET /api/v1/tasks",
+   "no_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "wrong_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "duplicate_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "right_key": {
+    "status": 200,
+    "body": ""
+   }
+  },
+  {
+   "route": "GET /tasks/x/final-1.mp4",
+   "no_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "wrong_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "duplicate_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "right_key": {
+    "status": 404,
+    "body": "{\"detail\":\"Not Found\"}"
+   }
+  },
+  {
+   "route": "GET /api/v1/download/x/final-1.mp4",
+   "no_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "wrong_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "duplicate_key": {
+    "status": 401,
+    "body": "{\"status\":401,\"message\":\"invalid API key\"}"
+   },
+   "right_key": {
+    "status": 404,
+    "body": "{\"status\":404,\"message\":\"fdcda559-f9b2-41b0-80ed-b46fcfc39073: invalid file path\"}"
+   }
+  },
+  {
+   "route": "GET /docs",
+   "no_key": {
+    "status": 200,
+    "body": ""
+   },
+   "wrong_key": {
+    "status": 200,
+    "body": ""
+   },
+   "duplicate_key": {
+    "status": 200,
+    "body": ""
+   },
+   "right_key": {
+    "status": 200,
+    "body": ""
+   }
+  },
+  {
+   "route": "GET /ping",
+   "no_key": {
+    "status": 200,
+    "body": ""
+   },
+   "wrong_key": {
+    "status": 200,
+    "body": ""
+   },
+   "duplicate_key": {
+    "status": 200,
+    "body": ""
+   },
+   "right_key": {
+    "status": 200,
+    "body": ""
+   }
+  },
+  {
+   "route": "GET /openapi.json",
+   "no_key": {
+    "status": 200,
+    "body": ""
+   },
+   "wrong_key": {
+    "status": 200,
+    "body": ""
+   },
+   "duplicate_key": {
+    "status": 200,
+    "body": ""
+   },
+   "right_key": {
+    "status": 200,
+    "body": ""
+   }
+  }
+ ]
+}

@@ -1,0 +1,57 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nts-space-2);
+}
+
+.audio-preview {
+  display: inline-grid;
+  place-items: center;
+  width: var(--nts-control-h-sm);
+  height: var(--nts-control-h-sm);
+  padding: 0;
+  color: var(--nts-color-on-surface-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--nts-color-outline);
+  border-radius: var(--nts-radius-pill);
+  transition:
+    color var(--nts-motion-fast) var(--nts-ease),
+    border-color var(--nts-motion-fast) var(--nts-ease),
+    background var(--nts-motion-fast) var(--nts-ease);
+}
+
+.audio-preview:hover:not(:disabled) {
+  color: var(--nts-color-primary);
+  border-color: var(--nts-color-primary);
+}
+
+.audio-preview:focus-visible {
+  outline: 2px solid var(--nts-color-focus);
+  outline-offset: 2px;
+}
+
+.audio-preview:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.audio-preview--playing {
+  color: var(--nts-color-on-primary);
+  background: var(--nts-color-primary);
+  border-color: var(--nts-color-primary);
+}
+
+.audio-preview__player {
+  display: none;
+}
+
+.audio-preview__status {
+  min-width: 0;
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+}
+
+.audio-preview__failure {
+  color: var(--nts-color-error);
+}

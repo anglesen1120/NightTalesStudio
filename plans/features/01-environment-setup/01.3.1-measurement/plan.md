@@ -30,7 +30,7 @@ Consumers of the numbers:
 | ✅ M3 | whisper runs inside the MPT process; logs `detected language: '<l>', probability: <p>` and `complete, elapsed: <s> s` | `subtitle_detected_language`; RAM attribution by window, not by process |
 | ✅ O6 | image `quality` default `auto`; response echoes resolved quality; `usage` = `input_tokens`, `input_tokens_details{text_tokens,image_tokens}`, `output_tokens`, `total_tokens`, optional `output_tokens_details`; **may be absent** | Tap copies `usage` as-is (numbers only); collector marks cost `n/a:usage-absent` if any successful image call lacks it |
 | ✅ O7 | Usage/Costs APIs need an Admin key; costs only 1-day buckets | Per-run numbers come from the tap (F02); dashboard used only for a next-day cross-check (`dashboard_cost_usd_check`) |
-| ✅ O8 | `gpt-image-2.5-flare`: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min. `gpt-6-luna`: $0.10 in / $0.50 out per 1M; cached $0.01 (OpenAiControlsFacts O8) | `trial/prices.json`; 429s expected on image bursts → `image_http_429_count` |
+| ✅ O8 | `gpt-image-2.5-flare`: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min. ⚠️ priced on `gpt-image-2.5-flare` (superseded by `gpt-image-2`, 01 DEC-11); relay price ✅ 184 VND/image flat (owner 2026-09-28, 02 CR-27; `trial/prices.json` `unit: per_image`), relay rate limit [OPEN]. `gpt-6-luna`: $0.10 in / $0.50 out per 1M; cached $0.01 (OpenAiControlsFacts O8) | `trial/prices.json`; 429s expected on image bursts → `image_http_429_count` |
 | ✅ M1 | `openai_base_url`, `openai_image_base_url` are `[app]` keys | MPT points both at `http://127.0.0.1:8002/v1` (D6, 01.2.2-T2; confirmed with MptPlan) |
 | ✅ M8/M11 | config at MPT root; empty `api_key` = auth off | Collector hashes the rendered config with secret values redacted; never copies it |
 | ✅ E1 | `/Volumes/Project` unencrypted, ownership disabled | Media, script text and raw samples stay in `$NTS_HOME/runs/<id>/` (D1); tracked run files hold numbers only |
@@ -39,18 +39,18 @@ Consumers of the numbers:
 
 Open ⚠️ (closed in T4 unless stated):
 
-| # | Item | Default until confirmed |
-|---|---|---|
-| Q1 | End-of-audio log line (in `app/services/voice.py`, not read) | Audio window ends at `## generating subtitle` |
-| Q2 | Final video, audio and script file names in `$NTS_HOME/src/mpt/storage/tasks/<task_id>/` | `final-1.mp4`, `audio.mp3`, `script.json` key `script` [INFERENCE]; overridable with `--output`, `--script` |
-| Q3 | Chat Completions usage field names for cached tokens (`usage.prompt_tokens_details.cached_tokens`) | Missing → `story_cached_input_tokens = 0` + issue `cached-tokens-field-absent` |
-| Q4 | Images response top-level `quality`/`size` echo present for flare | Missing → `image_quality_returned = n/a:not-echoed` |
-| Q5 | Non-200 image calls are not billed | [INFERENCE]; verified by the dashboard cross-check |
-| Q6 | `memory_pressure` output line `System-wide memory free percentage: NN%` and `sysctl -n kern.memorystatus_vm_pressure_level` (1/2/4) exist on macOS 27 without sudo | 01.3.2-T1 step 1 checks; absent → `n/a:pressure-unavailable` |
-| Q7 | `ps -o rss` unit is KiB on macOS | 01.3.2-T1 checks against Activity Monitor once |
-| Q8 | ✅ Resolved by 04: path `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log`, `ts` = request arrival, `status` = logical outcome (04 D7); no code change (04 CR-7) | Closed; fallback (ffprobe of the MPT task audio file) kept for a missing log |
-| Q9 | With `story_source = plan02` (script supplied as `video_script`) MPT skips the script LLM call and possibly the `## generating video script` marker; with `video_terms` omitted the terms call still runs (01.2.2-T6, agreed with MptPlan) | Story columns hold the terms call(s) only; 0 chat lines → `n/a:story-source-plan02`; every plan02 row gets issue `story-cost-terms-only`; missing script marker tolerated |
-| Q10 | Dashboard cost day boundary is UTC | [INFERENCE from O7 1-day buckets]; noted in `notes.md` |
+| # | Item | Default until confirmed | T4 outcome (2026-09-26, run `20260926-0818-en-landscape-01`) |
+|---|---|---|---|
+| Q1 | End-of-audio log line (in `app/services/voice.py`, not read) | Audio window ends at `## generating subtitle` | **changed / closed**: no provider-independent line exists (`voice.py:2212`, `voice.py:1357` are provider-specific and absent on `custom_audio_file`); `AUDIO_END_RE` stays `None`; window `## generating audio` → `## generating subtitle` = 6.0 s (01 CR-18) |
+| Q2 | ✅ Closed (01 CR-17): `final-{index}.mp4` (`task.py:968`), `audio.mp3` (`task.py:532`), `script.json` key `script` (`task.py:357`) at the pin | Defaults; overridable with `--output`, `--script` | ✅ **confirmed**: `final-1.mp4`, `audio.mp3`, `script.json`, `subtitle.srt`; the defaults worked with no `--output`/`--script` |
+| Q3 | Chat Completions usage field names for cached tokens (`usage.prompt_tokens_details.cached_tokens`) | Missing → `story_cached_input_tokens = 0` + issue `cached-tokens-field-absent` | ✅ **confirmed (field absent)**: chat usage = `{prompt_tokens 319, completion_tokens 35, total_tokens 354}` with no `prompt_tokens_details` anywhere → `story_cached_input_tokens = 0` + issue; no code change |
+| Q4 | Images response top-level `quality`/`size` echo present for flare | Missing → `image_quality_returned = n/a:not-echoed` | **changed**: echoed, but the relay forces quality `auto` **per call** (`low:3\|medium:2` in one run, `image_quality = low`), and one call echoed `1370x1148` ≠ requested `1536x1024` → `image_size = 1370x1148+1536x1024`; `n/a:not-echoed` does not apply (01 CR-19 → 03 CR-3) |
+| Q5 | Non-200 image calls are not billed | [INFERENCE]; verified by the dashboard cross-check | ⚠️ **unverifiable, stays [INFERENCE]**: 0 non-200 lines in both calibration runs (0×429, 0×5xx, 0 moderation); the dashboard cross-check is waived (01 DEC-12, no relay dashboard, DEC-9) |
+| Q6 | `memory_pressure` output line `System-wide memory free percentage: NN%` and `sysctl -n kern.memorystatus_vm_pressure_level` (1/2/4) exist on macOS 27 without sudo | 01.3.2-T1 step 1 checks; absent → `n/a:pressure-unavailable` | n/a here (01.3.2-T1): the sampler's sources worked — `pressure_level`/`free_pct` parsed, `memory_pressure_max = warn` |
+| Q7 | `ps -o rss` unit is KiB on macOS | 01.3.2-T1 checks against Activity Monitor once | n/a here (01.3.2-T1). ⚠️ **Numbering note:** `notes.md` / `.nts/wiring-calib.json` label the **SDK timeout** as Q7 instead — that one is **confirmed** (openai 2.24.0 read 600 s ≤ `TAP_UPSTREAM_TIMEOUT_S` 610, `llm.py:618`; T4 step 7) |
+| Q8 | ✅ Resolved by 04: path `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log`, `ts` = request arrival, `status` = logical outcome (04 D7); no code change (04 CR-7) | Closed; fallback (ffprobe of the MPT task audio file) kept for a missing log | ✅ **confirmed**: proxy line `01:19:00.398Z` (voice `Ngọc Huyền`, chars 557, audio_seconds 31.8, vieneu_ms 6001, ffmpeg_ms 4, status 200) inside the audio window → `sources.tts_seconds_audio = proxy-log`; no ffprobe fallback (01 CR-20) |
+| Q9 | With `story_source = plan02` (script supplied as `video_script`) MPT skips the script LLM call and possibly the `## generating video script` marker; with `video_terms` omitted the terms call still runs (01.2.2-T6, agreed with MptPlan) | Story columns hold the terms call(s) only; 0 chat lines → `n/a:story-source-plan02`; every plan02 row gets issue `story-cost-terms-only`; missing script marker tolerated | ✅ **confirmed**: `## generating video script` **is** logged (`task.py:293`) while its LLM call is skipped; the terms call runs (5 terms, `ast.literal_eval`) → 1 chat call, `story_wall_seconds = 3.0`, issue `story-cost-terms-only`; no missing-marker tolerance needed (01 CR-18) |
+| Q10 | Dashboard cost day boundary is UTC | [INFERENCE from O7 1-day buckets]; noted in `notes.md` | ⚠️ **unverifiable, stays [INFERENCE]**: the relay has no OpenAI dashboard (DEC-9) → `n/a:pending-dashboard`; cross-check waived (01 DEC-12) |
 
 ## 3. Domain and data
 
@@ -64,12 +64,12 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
 | `trial/runs/<run_id>/run.json` | ✅ | `run_manifest.py` (start), `finish_run.py` (finish fields) | Pins, heads, `env`, redacted config digest, run parameters, tap settings, sources used |
 | `trial/runs/<run_id>/openai_usage.jsonl` | ✅ | `usage_tap.py` | One line per upstream call, fields exactly D6 |
 | `trial/runs/<run_id>/stages.json` | ✅ | `finish_run.py` | Stage windows (UTC), counts parsed from the MPT log, marker set version |
-| `trial/runs/<run_id>/rss.csv` | ✅ | `rss_sampler.sh` (row `all`), `finish_run.py` (per-stage rows) | Peaks per stage and root |
+| `trial/runs/<run_id>/rss.csv` | ✅ | `rss_sampler.sh` (provisional `all` row on TERM); `finish_run.py` rewrites the whole file: task-window `all` + `stage:*` rows (01 CR-22) | Peaks per stage and root |
 | `trial/runs/<run_id>/ffprobe.json` | ✅ | `finish_run.py` | `ffprobe` JSON of the final video, `format.filename` reduced to basename |
 | `trial/runs/<run_id>/notes.md` | ✅ | operator | D11 conditions, anomalies, dashboard comparison |
 | `trial/runs/no-run/openai_usage.jsonl` | ❌ (git-ignored, agreed with 01.1.2-T1) | `usage_tap.py` | Calls made while no run is active |
 | `$NTS_HOME/current_run` | ❌ | `start_run.sh` writes, `finish_run.py` clears | One line: active `run_id` |
-| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "https://api.openai.com", "image_quality_injection": null\|"<q>", "timeout_s": 610}` — copied into `run.json.tap` |
+| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "<origin of OPENAI_BASE_URL>" (01 CR-15), "image_quality_injection": null\|"<q>", "image_api": "responses" (01 DEC-11), "timeout_s": 610}` — copied into `run.json.tap` |
 | `$NTS_HOME/runs/<run_id>/rss_raw.csv`, `rss_sampler.pid`, `rss_sampler.log` | ❌ | `rss_sampler.sh` | 1 s samples |
 | `$NTS_HOME/runs/<run_id>/final-1.mp4`, `script.txt` | ❌ | `finish_run.py` (copies) | Media and story text (content, not tracked) |
 | `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log` | ❌ | `start-tap.sh` (tee) | One line per request: ts, method, endpoint, status, latency; no bodies/headers |
@@ -91,9 +91,9 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
     "path": "$NTS_HOME/src/mpt/config.toml",
     "sha256_redacted": "…", "redacted_keys": ["app.api_key", "app.openai_api_key", "app.openai_image_api_keys", "kokoro.api_key"],
     "template_sha256": "…",
-    "settings": { "openai_base_url": "http://127.0.0.1:8002/v1", "openai_image_base_url": "http://127.0.0.1:8002/v1", "openai_model_name": "gpt-6-luna", "openai_image_model": "gpt-image-2.5-flare", "openai_image_size": "", "whisper.model_size": "large-v3-turbo", "whisper.device": "cpu", "whisper.compute_type": "int8", "max_concurrent_tasks": 1, "log_level": "INFO" }
+    "settings": { "openai_base_url": "http://127.0.0.1:8002/v1", "openai_image_base_url": "http://127.0.0.1:8002/v1", "openai_model_name": "gpt-6-luna", "openai_image_model": "gpt-image-2", "openai_image_size": "", "whisper.model_size": "large-v3-turbo", "whisper.device": "cpu", "whisper.compute_type": "int8", "max_concurrent_tasks": 1, "log_level": "INFO" }
   },
-  "tap": { "port": 8002, "image_quality_injection": null, "timeout_s": 610 },
+  "tap": { "port": 8002, "image_quality_injection": null, "image_api": "responses", "timeout_s": 610 },
   "vieneu": { "VIENEU_PRECISION": "fp32", "VIENEU_MAX_STREAMS": "1" },
   "sampler": { "interval_s": 1, "roots": { "vieneu": 8000, "proxy": 8001, "mpt": 8080, "webui": 8501 } },
   "mpt_task_id": null,
@@ -117,7 +117,7 @@ Invariants:
 | U1 | Start the tap (terminal of its own, D9) | `trial/tools/start-tap.sh` (env `TAP_IMAGE_QUALITY` unset) | Listens `127.0.0.1:8002`; writes `$NTS_HOME/tap.json` | exit 2 port busy / bad env |
 | U2 | Start a run | `trial/tools/start_run.sh <lang> <aspect> "<topic>" <target_minutes> [--status calibration\|trial] [--voice <name>] [--story-source mpt\|plan02] [--no-tap]` | Prints `run_id` on stdout; `run.json`; `current_run`; sampler running | exit 2 run active, service down, bad args; exit 1 head ≠ pin, or config base URLs not the tap (default) / still the tap (`--no-tap`) |
 | U3 | Render | 01.2.2-T6 / 05.5.2 submit to MPT API (`video_count = 1`) | MPT task id | — |
-| U4 | Finish a run | `uv run --no-project --python 3.12 trial/tools/finish_run.py <run_id> --task-id <mpt task id> [--mpt-log P] [--proxy-log P] [--script P] [--output P] [--issue "<text>"]… [--status failed] [--dry-run]` | `stages.json`, `ffprobe.json`, `rss.csv` stage rows, one CSV row, `current_run` cleared | exit 1 validation (no row written); exit 2 usage/env |
+| U4 | Finish a run | `uv run --no-project --python 3.12 trial/tools/finish_run.py <run_id> --task-id <mpt task id> [--mpt-log P] [--proxy-log P] [--script P] [--output P] [--issue "<text>"]… [--status failed] [--dry-run]` | `stages.json`, `ffprobe.json`, `rss.csv` rewritten (task-window `all` + `stage:*`, 01 CR-22), one CSV row, `current_run` cleared | exit 1 validation (no row written); exit 2 usage/env |
 | U5 | Abort a run (no row) | `… finish_run.py <run_id> --abort` | Sampler stopped, `current_run` cleared, `run.json.run_status = "failed"`, `notes.md` gets "aborted" | — |
 | U6 | Dashboard cross-check (next day) | `… finish_run.py <run_id> --dashboard-cost <usd> --dashboard-day <YYYY-MM-DD>` | Rewrites that one cell; prints tap-day total vs dashboard and delta % | exit 1 cell not pending / delta > 5 % (value still written, issue printed) |
 | U7 | Sampler self-test | `trial/tools/rss_sampler.sh --selftest 60` | Overhead report; raw file under `$NTS_HOME/runs/sampler-selftest-<ts>/` | — |
@@ -127,13 +127,14 @@ Authorization: local operator only; all listeners on `127.0.0.1` (D4). Idempoten
 
 ## 5. API and events
 
-Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6):
+Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6; 01 DEC-11/CR-16: with `OPENAI_IMAGE_API=responses` the tap translates `/v1/images/generations` into `POST /v1/responses` with an `image_generation` tool (host `OPENAI_IMAGE_HOST_MODEL`, `reasoning.effort = OPENAI_EFFORT_IMAGE_HOST`), maps the completed `image_generation_call.result` back to `data[0].b64_json`, answers 502 `tap_image_missing` when a 200 has no image, rejects `n > 1` with 400 `tap_image_n_unsupported`, and injects `OPENAI_EFFORT_CHAT` into chat/responses bodies lacking an effort field; requested model/size/quality advisory on the relay — echo `gpt-image-2-codex`/`auto`, codex#28723 ✅):
 
 | Request | Behaviour | Status |
 |---|---|---|
-| `POST /v1/*`, `GET /v1/*` | Forward to `https://api.openai.com/v1/*` with body and headers (minus hop-by-hop), `Authorization` passed through, `Accept-Encoding: identity` | Upstream status/body unchanged |
+| `POST /v1/*`, `GET /v1/*` | Forward to `$OPENAI_BASE_URL/*` (01 CR-15) with body and headers (minus hop-by-hop), `Authorization` passed through, `Accept-Encoding: identity` | Upstream status/body unchanged |
 | Other methods | Not forwarded | 405 `{"error":{"type":"tap_error","code":"tap_method_not_allowed"}}` |
 | Path not under `/v1/` | Not forwarded | 404 `…"code":"tap_path_not_allowed"` |
+| Image call with `n > 1` (`responses` mode) | Not forwarded | 400 `tap_image_n_unsupported` |
 | `Content-Length` > `TAP_MAX_BODY_BYTES` (1 MiB) or chunked request | Not forwarded | 413 `tap_body_too_large` / 411 `tap_length_required` |
 | Upstream connect/TLS/timeout error | Logged | 502 `tap_upstream_connect` / `tap_upstream_tls` / `tap_upstream_timeout` |
 | Upstream response > `TAP_MAX_RESPONSE_BYTES` (64 MiB) | Logged | 502 `tap_upstream_too_large` |
@@ -141,7 +142,7 @@ Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6):
 JSONL line (D6 fields exactly; example, synthetic numbers):
 
 ```json
-{"ts":"2026-09-25T03:31:02.114Z","run_id":"20260925-1030-vi-landscape-01","endpoint":"/images/generations","model":"gpt-image-2.5-flare","http_status":200,"error_code":null,"latency_ms":41230,"request":{"size":"1536x1024","quality":null,"moderation":null,"n":1},"response":{"quality":"medium","size":"1536x1024"},"usage":{"input_tokens":61,"input_tokens_details":{"text_tokens":61,"image_tokens":0},"output_tokens":1056,"total_tokens":1117}}
+{"ts":"2026-09-25T03:31:02.114Z","run_id":"20260925-1030-vi-landscape-01","endpoint":"/images/generations","model":"gpt-image-2","http_status":200,"error_code":null,"latency_ms":41230,"request":{"size":"1536x1024","quality":null,"moderation":null,"n":1,"reasoning_effort":"low"},"via":"responses","response":{"quality":"medium","size":"1536x1024"},"usage":{"input_tokens":61,"input_tokens_details":{"text_tokens":61,"image_tokens":0},"output_tokens":1056,"total_tokens":1117}}
 ```
 
 CLI contracts (D9 exit codes 0/1/2; `--help` on all): see §4 and task files. `start_run.sh` args agreed with MptPlan (01.2.2-T6). No events/outbox.
@@ -154,7 +155,7 @@ N/A — CLI and files only; no WebUI changes.
 
 | Integration | Direction | Timeouts / retries | Failure mapping |
 |---|---|---|---|
-| OpenAI via tap | MPT → tap → `api.openai.com` | Tap: connect 30 s, total read `TAP_UPSTREAM_TIMEOUT_S = 610` (≥ MPT image 300 s ✅ M4 and ≥ OpenAI SDK default ⚠️); **no retries in the tap** (MPT retries, M4/M5) | Upstream status returned unchanged; tap-side errors → 502 `tap_upstream_*` (MPT retries 502 for images, M4 — a timeout after the request reached OpenAI could double-bill; logged, visible in JSONL) |
+| OpenAI via tap | MPT → tap → `${OPENAI_BASE_URL%/v1}` from `pins.env` (today `https://api.aixingialaire.shop`, 01 CR-15) | Tap: connect 30 s, total read `TAP_UPSTREAM_TIMEOUT_S = 610` (≥ MPT image 300 s ✅ M4 and ≥ OpenAI SDK default ⚠️); **no retries in the tap** (MPT retries, M4/M5) | Upstream status returned unchanged; tap-side errors → 502 `tap_upstream_*` (MPT retries 502 for images, M4 — a timeout after the request reached OpenAI could double-bill; logged, visible in JSONL) |
 | MPT log | file → collector | — | Missing marker → stage `n/a:marker-missing`; missing end marker → exit 1 unless `--status failed` |
 | Proxy log (CR-1, 04) | file → collector | — | Missing/no `ts` → fallback ffprobe of the task audio; else `n/a:no-proxy-log` |
 | RSS sampler | background process started by `start_run.sh` | 1 s loop; lsof root refresh every 10 s; pressure every 5 s | Service down → zeros + `*_pid` empty; stopped by SIGTERM, by `current_run` change, or `--duration` |
@@ -166,9 +167,9 @@ N/A — CLI and files only; no WebUI changes.
 | Threat | Control |
 |---|---|
 | Tap sees API keys in transit | Keys pass through in the `Authorization` header only; the tap holds no key, never stores or logs headers; exceptions logged as type name only (no `repr` of request); no `set -x` in `start-tap.sh` |
-| Tap as an open proxy / SSRF | Bound to `127.0.0.1` only; upstream fixed to `https://api.openai.com`; `TAP_UPSTREAM` override accepted only for `http://127.0.0.1:<port>` (tests); only `/v1/` paths; no `CONNECT`; TLS verified with `ssl.create_default_context()` and **no** option to disable it |
+| Tap as an open proxy / SSRF | Bound to `127.0.0.1` only; upstream fixed to `${OPENAI_BASE_URL%/v1}` from `pins.env` (today `https://api.aixingialaire.shop`, 01 CR-15); `TAP_UPSTREAM` override accepted only for `http://127.0.0.1:<port>` (tests); only `/v1/` paths; no `CONNECT`; TLS verified with `ssl.create_default_context()` and **no** option to disable it |
 | Local process uses the tap | It must bring its own key; the tap adds no privilege [INFERENCE]; every call is logged to the active run |
-| Prompts/content leak into git | JSONL keeps only D6 fields; request parsing extracts `model, size, quality, moderation, n`; response parsing extracts `quality, size, usage` (numeric leaves only) and `error.code`; no prompt, messages, b64, URLs |
+| Prompts/content leak into git | JSONL keeps only D6 fields; request parsing extracts `model, size, quality, moderation, n, reasoning_effort`; response parsing extracts `quality, size, usage` (numeric leaves only) and `error.code`; no prompt, messages, b64, URLs |
 | Secrets in run manifest | `run_manifest.py` redacts values of keys matching `(^|_)(api_key|api_keys|key|secret|token|password)$` before hashing; stores key names only; config itself is never copied |
 | Story text / media on the unencrypted USB volume (E1) | Script text and video copies go to `$NTS_HOME/runs/<id>/` (FileVault disk); CSV holds the owner-entered `topic` only — owner keeps topics free of personal data (true-crime names) |
 | User name / paths in tracked files | Paths written with literal `$NTS_HOME`; `ffprobe.json` filename reduced to basename; `env` block contains no paths (BaseTooling contract) |
@@ -183,7 +184,7 @@ N/A — CLI and files only; no WebUI changes.
 | T-P2 | unit | Failure path: `task failed, task_id: X, stage: subtitle` → `run_status = failed`, later-stage columns `n/a:run-failed-at-subtitle` | fixture `mpt-api-failed.log` |
 | T-P3 | unit | Other task's lines before `started_at` and a second task after end are ignored; wrong task id → exit 1 | fixture |
 | T-P4 | unit | Image counts: 200s, 429s, `moderation_blocked`, `openai image generation failed` lines; usage absent on 1 of N → `image_cost_usd = n/a:usage-absent`, `image_count` still numeric | `fixtures/openai_usage-sample.jsonl` |
-| T-P5 | unit | Cost formulas vs hand-computed values (6 decimals), snapshot model name `gpt-image-2.5-flare-2026-09-08` matched by prefix; unknown model → `n/a:no-price` | `fixtures/prices-test.json` |
+| T-P5 | unit | Cost formulas vs hand-computed values (6 decimals), snapshot model name `gpt-image-2-2026-09-08` matched by prefix (the flare-era snapshot name superseded, 01 DEC-11); unknown model → `n/a:no-price` | `fixtures/prices-test.json` |
 | T-P6 | unit | Word count: vi `"Đêm ấy, trời mưa… rất to!"` → 6; en `"It's late—very late."` → 4 (`It's` one token, em dash splits); `"— 1990 —"` → 1 (digits count, dash-only tokens dropped); WPM = words / (seconds/60) | inline cases |
 | T-P7 | unit | Stage RAM attribution: window boundaries inclusive of start, exclusive of end; window with 0 samples → `n/a:no-samples-in-window` | `fixtures/rss_raw-sample.csv` |
 | T-P8 | unit | Row validation: blank cell, bad n/a reason, header drift → exit 1, CSV unchanged (byte-compare) | temp dir |
@@ -215,8 +216,8 @@ New files introduced (fit D1/D9): `trial/tools/usage_tap.py`, `trial/tools/start
 1. Day 2 (README §5): 01.3.1-T1, 01.3.2-T1 (self-test only).
 2. Day 3: 01.3.1-T2 (stub acceptance, then one real `GET /v1/models` through the tap); 01.3.1-T3 with fixtures green.
 3. 01.2.2-T2 template already points both base URLs at the tap; the tap must be running before any MPT render (otherwise MPT calls fail with connection refused — visible, not silent).
-4. 01.2.2-T6 wiring render inside `start_run.sh … --status calibration` → 01.3.1-T4 → gate **01-ready** (a complete calibration row; `dashboard_cost_usd_check` may still be `n/a:pending-dashboard`, but MUST be filled before 05.5.2 prices are used and before **01-closed**).
+4. 01.2.2-T6 wiring render inside `start_run.sh … --status calibration` → 01.3.1-T4 → gate **01-ready** (a complete calibration row; `dashboard_cost_usd_check` may still be `n/a:pending-dashboard`, but MUST be filled before 05.5.2 prices are used and before **01-closed**; while the relay has no dashboard (DEC-9), the owner-accepted tap cost stands in, 01 DEC-12).
 5. 05.5.2 trial rows (`--status trial`), one vi, one en → **01-closed** (D12).
 6. Monitoring during runs: `tail -f trial/runs/$(cat "$NTS_HOME/current_run")/openai_usage.jsonl`, tap terminal log, `$NTS_HOME/runs/<id>/rss_sampler.log`.
-7. Rollback: if the tap misbehaves, stop it, re-render the MPT config with both base URLs = `https://api.openai.com/v1` (template change in 01.2.2-T2), and fall back to the README §9 lean option (dashboard daily totals, one run per day per project); the collector then writes `n/a:no-tap` for token/cost columns — `start_run.sh` requires `--no-tap` to allow this [DECISION].
+7. Rollback: if the tap misbehaves, stop it, re-render the MPT config with both base URLs = `OPENAI_BASE_URL` (`start-mpt-api.sh --no-tap`, 01 CR-15), and fall back to the README §9 lean option (dashboard daily totals, one run per day per project); the collector then writes `n/a:no-tap` for token/cost columns — `start_run.sh` requires `--no-tap` to allow this [DECISION].
 8. Close: tap stopped and not carried to the worker (D6, CR-4); `CARRY-OVER.md` (01.3.3) records the measured numbers and that production metering is open.

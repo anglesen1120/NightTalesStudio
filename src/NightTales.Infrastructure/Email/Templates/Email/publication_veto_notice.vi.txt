@@ -1,0 +1,15 @@
+Subject: Xem lại trước khi đăng: {{videoTitle}}
+
+Xin chào {{displayName}},
+
+{{videoTitle}} sẽ được đăng lên kênh YouTube {{channelTitle}} khi hết thời gian phủ quyết. Trước đó bạn vẫn có thể sửa hoặc dừng video này.
+
+Mô tả: {{description}}
+Thẻ: {{tags}}
+Chế độ hiển thị: {{privacy}} {{privacyNote}}
+Thời gian đăng (UTC): {{scheduledAt}}
+Hạn phủ quyết (UTC): {{vetoEndsAt}}
+
+Nếu dòng thời gian để trống, video được tải lên ngay khi hết thời gian phủ quyết. Sửa tại {{publicationUrl}}.
+
+Huỷ tại {{cancelUrl}} — liên kết chỉ huỷ đúng video này và chỉ dùng được một lần.

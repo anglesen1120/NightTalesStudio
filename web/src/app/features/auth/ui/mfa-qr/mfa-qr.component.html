@@ -1,0 +1,13 @@
+@if (dataUrl(); as url) {
+  <img class="mfa-qr__img" [src]="url" [alt]="'auth.enrol.qrAlt' | transloco" width="208" height="208" />
+} @else if (failed()) {
+  <nts-error-state
+    bodyKey="auth.enrol.qrFailed"
+    retryLabelKey="errors.action.retry"
+    (retry)="retryRender()"
+  />
+} @else {
+  <div class="mfa-qr__loading" aria-busy="true">
+    <nts-loading-state [rows]="1" />
+  </div>
+}

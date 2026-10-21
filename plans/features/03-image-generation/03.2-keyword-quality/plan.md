@@ -32,7 +32,7 @@
 | K1 | MPT generates images in term order and stops when `successes × clip ≥ audio`; skipped terms are replaced by the next term; clips loop when short (I7, I8) | README §1 ✅ |
 | K2 | `video_clip_duration` default 5 (I13) → 12 images/min unless we set it | README §1 ✅ |
 | K3 | Story keywords: 1–2 per segment, English, 3–12 words; derived `keywords` = hook ++ paragraphs ++ ending in order; segment addresses `hook`, `p:<i>`, `ending` | 02 README D3, D22 ✅ |
-| K4 | D4 rates: vi 160, en 145 tokens/min (config `Story:Length:Rate:{lang}`); tiers short ≤ 1 min, standard 5–8, long 10–15 | 02 README D4 ✅ |
+| K4 | D4 per-language rates (02 T103): vi 260 syllables/min, en 200 words/min (en ⚠️ `[INFERENCE]`: measured with the vi voice, T103) (config `Story:Length:Rate:{lang}`); tiers short ≤ 1 min, standard 5–8, long 10–15 | 02 README D4 ✅ |
 | K5 | `KeywordRules.Check(string) → KeywordViolation` (word count, ASCII charset, name heuristic, gore list) in `Domain/Stories/Keywords/`; the validator reports `keyword_invalid` | 02.2.1-T1 ✅ |
 | K6 | `IStoryRenderInputProvider.GetAsync(storyVersionId) → StoryRenderInput(VideoSubject, VideoScript, Keywords)`; 09.6.1 calls it with `approved_story_version_id` | 02 README D21, T28 ✅ |
 | K7 | Fact sheets: `facts jsonb (id, statement, source_ids, confidence)`, one approved sheet per episode; `story_sources.title` for fetched url sources | 00 §6; 02 README CR-4, T54 ✅ |
@@ -52,8 +52,8 @@
 | `Domain/Rendering/Images/RenderImagePlan.cs` | `sealed record RenderImagePlan(IReadOnlyList<PlannedTerm> Terms, int ClipSeconds, int NeededImages, int MaxTerms, int TrimmedCount, IReadOnlyList<string> HintCodes)`; `PlannedTerm(int Slot, string Segment, string Keyword)` |
 | `Domain/Rendering/Images/RenderImagePlanner.cs` | `static RenderImagePlan Plan(RenderImagePlanInput input)` |
 | `Domain/Stories/Keywords/SegmentKeywords.cs` | `sealed record SegmentKeywords(string Segment, IReadOnlyList<string> Keywords)` |
-| `Domain/Stories/Keywords/NameCorpus.cs` | `sealed class NameCorpus { static NameCorpus From(IEnumerable<string> texts); static NameCorpus Empty; bool Matches(string keyword, out string matchedRun) }` |
-| `Domain/Stories/Keywords/RenderKeywordLinter.cs` | `static IReadOnlyList<ValidationIssue> Lint(IReadOnlyList<SegmentKeywords> segments, NameCorpus names)` |
+| `Domain/Stories/Keywords/NameCorpus.cs` | `sealed class NameCorpus { static NameCorpus From(IEnumerable<string> texts); static NameCorpus From(IEnumerable<string> titles, IEnumerable<string> statements); static NameCorpus Empty; bool Matches(string keyword); bool Matches(string keyword, out int matchedRunTokens) }` |
+| `Domain/Stories/Keywords/RenderKeywordLinter.cs` | `static IReadOnlyList<ValidationIssue> Lint(IReadOnlyList<SegmentKeywords> segments, NameCorpus names)`; `static bool TryGetKeywordIndex(ValidationIssue issue, out int index)` (CR-18b) |
 | `Application/Abstractions/Rendering/IImageCostEstimator.cs` | `CostBound WorstCase(Aspect aspect, int maxTerms, int priceVersion)` (implementation in Application, reads `IPriceCatalog`) |
 | `Application/Abstractions/Rendering/INameCorpusProvider.cs` | `ValueTask<NameCorpus> LoadAsync(Guid episodeId, CancellationToken ct)` |
 
@@ -124,7 +124,7 @@ No job or external call. `INameCorpusProvider` reads `story_sources` and the app
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 03.2.1-T1 | `RenderImagePlanner` + `IImageCostEstimator` | BE | **S (0.5)** | 03.1.1-T2, 02.2.1-T1, 02.2.4-T1 | 03.2.2-T2, 03.4.2-T1, 09.6.1-T1, 09.6.2-T1 |
-| 03.2.2-T1 | `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` | BE | **S (0.5)** | 02.2.1-T1, 02.5.3-T2 (fact sheets) | 03.2.2-T2 |
+| 03.2.2-T1 | `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` | BE | **S (0.5)** | 02.2.1-T1, 02.5.3-T2 (fact sheets) | 03.2.2-T2, 09.6.1-T1 (03 CR-17) |
 | 03.2.2-T2 | Wiring: quality checker, approve, render → `keywords_flagged` | BE | **XS (0.25)** | 03.2.1-T1, 03.2.2-T1, 02.3.2-T1, 02.3.4-T1, 09.6.1-T1 | 10.5 |
 
 Total **1.25 d** (high-level 1.5 d; README §9).

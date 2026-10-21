@@ -4,7 +4,7 @@
 > Contract: `../README.md` (D8, D10, D11, D19, D20, D21; F02, F13, F14, F15, F29; CR-1, CR-4).
 > Template: `../../../00-overview.md` §10.1 · Layout: `00-overview.md` §5.2, §6, §8.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-23. Nothing implemented yet.
+> Status: detailed plan, 2026-09-23. Implemented: 02.5.1-T1 (#119), 02.5.2-T1 (#121), 02.5.2-T2 (#131, develop `312db85`), 02.5.2-T3 (#136, develop `d35284e`), 02.5.2-T4 (#147, develop `d670978`; SSRF suite, contract rulings R1–R3 in its §Notes). The 02.5.2 story is complete. Next: 02.5.3-T1.
 
 ## 1. Scope
 
@@ -13,7 +13,7 @@
 | Story | High-level | This plan | Why |
 |---|---|---|---|
 | 02.5.1 Add sources | S | **M (1.0 d)** — 02.5.1-T1 | `story_sources` gains `normalized_url`, `registrable_domain`, `content_type`, `text_chars`, `note_text` (CR-4); the cap moves from "when a source is added" to a rolling-24 h count (F15); the fetch task row is inserted in the same transaction (D10) |
-| 02.5.2 Safe fetch | M + S spike + S isolation | **4.0 d** — T0 (0.5) + T1 (1.0) + T2 (1.0) + T3 (1.0) + T4 (0.5) | F02 (the Hangfire-in-the-fetcher contradiction) is resolved by D10, which is a **new host + new internal API + new table**, not a configuration change; F14 turns §5.7 into an 18-row threat table plus a 34-case suite |
+| 02.5.2 Safe fetch | M + S spike + S isolation | **4.0 d** — T0 (0.5) + T1 (1.0) + T2 (1.0) + T3 (1.0) + T4 (0.5) | F02 (the Hangfire-in-the-fetcher contradiction) is resolved by D10, which is a **new host + new internal API + new table**, not a configuration change; F14 turns §5.7 into a 19-row threat table plus a 37-case suite |
 
 **Out.** Fact-sheet generation and approval (02.5.3/02.5.4/02.5.5). Similarity (02.5.6). The source *finder* (02.7) — this plan only reserves the `find_sources` task kind and the result shape in the lease API (D10), and owns the allow-list mechanism 02.7.2-T1 populates. Rendering, publishing, the UI implementation (10). No OpenAI call happens in this feature: fetching is free, so no `ICreditLedger` reservation and no `usage_records` row (D1, D14).
 
@@ -148,7 +148,9 @@ public sealed class FetchTask : Entity<Guid>
 | `text_chars` | `int` NULL | **new** (CR-4); ≤ 300,000 |
 | `created_at`, `fetched_at` | `timestamptz` | |
 
-Indexes: `UNIQUE (episode_id, normalized_url) WHERE kind = 'url'` (→ 409 `source_duplicate`); `(user_id, created_at DESC) WHERE kind = 'url'` (the rolling-24 h cap); `(episode_id, status)`; `(episode_id, created_at)`.
+Indexes: `UNIQUE (episode_id, normalized_url) WHERE kind = 'url'` (→ 409 `source_duplicate`); `(episode_id, status)`; `(episode_id, created_at)`.
+
+`source_creations` (02 CR-31, F15): `id uuid` PK, `user_id uuid` NOT NULL (FK → users `RESTRICT`), `created_at timestamptz` NOT NULL; index `(user_id, created_at)` is the rolling-24 h cap query. Append-only, one row per url add and per retry, written in the command's transaction; no URL, note, episode or source reference (D13/D19), so deleting a source or an episode frees no quota. The 13.3.1 deletion engine deletes a user's rows by `user_id`.
 
 `fetch_tasks` (D10 + two additions, see [OPEN] 1 in §10):
 
@@ -181,10 +183,11 @@ Migration `20261005_SourcesAndFetchTasks` (single migration, both tables + index
 | `Sources:MaxPerEpisode` | `10` | hard cap → 409 `source_limit_reached` |
 | `Sources:MaxUrlSourcesPerUserPerDay` | `30` | rolling 24 h → 429 `source_fetch_limit_reached` |
 | `Sources:MaxNoteChars` | `3000` | `user_note` limit |
-| `Fetcher:BlockedDomains` | 20 entries from D11 | data, PR-reviewed |
+| `Fetcher:BlockedDomains` | the 19 entries from D11 (02.5.2-T4 corrected the stale "20") | data, PR-reviewed |
 | `Fetcher:UserAgent` | `NightTalesStudioBot/0.1.0 (+https://{PublicHost}/bot)` | `Fetcher:PublicHost` required |
 | `Fetcher:MaxDecompressedBytes` | `2097152` | counting stream, gzip/br |
 | `Fetcher:TotalTimeoutSeconds` / `RobotsTimeoutSeconds` | `10` / `5` | per page / per robots fetch |
+| `Fetcher:ExtractTimeoutSeconds` / `ExtractMaxElements` / `ExtractMaxDepth` | `5` / `50000` / `512` | T105 (SEC-0928-1): the SmartReader parse is synchronous and outside the request budget — a dedicated-worker watchdog bounds its time; the pre-parse guard (AngleSharp's non-recursive `HtmlParser` with an element/depth abort during the parse and an iterative tree walk (02.5.2-T1 review F1)) bounds elements and nesting depth → `source_too_large`; extract watchdog timeout → `source_no_text` (`extract_timeout`) |
 | `Fetcher:MaxRedirects` | `3` | manual |
 | `Fetcher:MaxTextChars` | `300000` | result validation; also the truncation point is a **failure**, not a truncation |
 | `Fetcher:RobotsCacheHours` | `24` | in-memory per host |
@@ -231,7 +234,7 @@ All of `FetcherOptions` is validated with `ValidateOnStart()`: a bad blocked-dom
 
 ### 5.2 Internal routes (Api `:8081`, bearer `FETCHER_API_TOKEN`, **not** in the public OpenAPI, no user JWT)
 
-Separate Kestrel endpoint (`ListenAnyIP(8081)`), a dedicated `FetcherTokenAuthenticationHandler`, constant-time comparison (`CryptographicOperations.FixedTimeEquals`), its own rate limiter (60 req/min per fetcher instance id), and a separate endpoint group that is never registered on the public listener. Missing/incorrect token → 401 with no body detail (never echo the token, never log it — D19).
+Separate Kestrel endpoint (port 8081 on `Fetcher:Internal:ListenAddress`, default `127.0.0.1`, `0.0.0.0` only in containers, 11 CR-16), a dedicated `FetcherTokenAuthenticationHandler`, constant-time comparison (`CryptographicOperations.FixedTimeEquals`), its own rate limiter (60 req/min per fetcher instance id), and a separate endpoint group that is never registered on the public listener. Missing/incorrect token → 401 with no body detail (never echo the token, never log it — D19).
 
 ```jsonc
 // POST /internal/fetcher/v1/tasks/lease      { "workerId": "fetcher-1", "max": 4 }
@@ -289,7 +292,7 @@ Job codes are **never** an HTTP response (D8) and never a `ProblemDetails`; the 
 
 ### 5.5 Events
 
-`SourceFetched { EpisodeId, SeriesId, UserId, SourceId, Status, ErrorCode, RegistrableDomain }` and `SourceRemoved { … }` (Domain `Research/`), raised by the Api handler, written to `outbox_messages` in the same transaction, dispatched to SignalR `EpisodeUpdated` (09.5.3, no new event type — CR-7 shape only carries `generation`). No OpenAI call, no `generation_runs` row, no credit reservation: fetching is free (D1/D14).
+`SourceFetched { SourceId, EpisodeId, UserId, OccurredAt }` (as built by 02.5.2-T2: the event keeps its four existing fields because consumers re-read the episode; see that task's §Notes [DECISION]) and `SourceRemoved { … }` (Domain `Research/`), raised by the Api handler (and by `FetchLeaseSweeperJob` when it fails a source), written to `outbox_messages` in the same transaction, dispatched to SignalR `EpisodeUpdated` (09.5.3, no new event type — CR-7 shape only carries `generation`). No OpenAI call, no `generation_runs` row, no credit reservation: fetching is free (D1/D14).
 
 ## 6. UI
 
@@ -322,7 +325,7 @@ Loop, per iteration (D11 + F15):
 1. `lease` with `max = 4` (the loop keeps its own in-flight count and requests `4 − inFlight`); empty → sleep 2 s (jittered).
 2. For each leased task, start a `Task` bounded by the semaphore of 4 and by `MaxLeasesPlatformWide` (server-authoritative — the client count is only an optimisation).
 3. `fetch_source`: validate the URL again locally (`SourceUrl.Parse` + blocklist) → robots → per-host rate limit (a `KeyedRateLimiter<string>` at 1 req/s on the registrable domain) → fetch with `SafeHttpSourceFetcher` → extract → post the result. `find_sources`: hand to `ISourceFinderRunner` (02.7.2-T3 owns it; the fetcher only routes the task and posts candidates) — if the finder is not wired (flag off, 02.7 not shipped), the task is failed `find_sources_generation_failed` and no such task is ever created before 02.7 lands.
-4. `heartbeat` every 60 s while a task runs (a `PeriodicTimer` per task), so a 10 s page never needs more than one beat but a future slow path does not lose the lease.
+4. `heartbeat` every 60 s while a task runs (a `PeriodicTimer` per task). T105 (SEC-0928-1): for `fetch_source` the heartbeat self-disposes after `TotalTimeoutSeconds + ExtractTimeoutSeconds` (~15 s) — the fetch+extract window cannot exceed it, so a hostile page must not pin one of the ≤ 4 lease slots by holding heartbeats; only a `find_sources` task heartbeats past the bound.
 5. On `409 fetch_lease_lost` at any point → abandon the work, drop the result, do not retry (the sweeper owns it).
 6. Shutdown: cancel in-flight work, stop leasing; leases expire in ≤ 90 s and the sweeper requeues. No draining protocol.
 
@@ -339,7 +342,7 @@ Loop, per iteration (D11 + F15):
 
 ### 7.4 Observability (D19)
 
-Metrics: `fetch_tasks_total{status,error_code}` (counter, incremented on every terminal transition), `fetch_duration_seconds` (histogram, per task, from lease to result), `fetch_leases_active` (gauge), `fetch_robots_cache_entries`, `fetch_blocked_total{reason}`. Logs (Serilog, structured): task id, source id, episode id, kind, attempt, status, error code, http status, duration, **registrable domain only**. Never the URL path, query, title or text. `FETCHER_API_TOKEN` is never logged; the internal API's request logging excludes the `Authorization` header. Alerts (08.2): `fetch_tasks_total{status="failed"}` rate > 30 % over 15 min, and `fetch_leases_active == 0` for 10 min while `fetch_tasks` has `queued` rows (a dead fetcher).
+Metrics: `fetch_tasks_total{status,error_code}` (counter, incremented on every terminal transition), `fetch_duration_seconds` (histogram, per task, from lease to result), `fetch_leases_active` (gauge), `fetch_robots_cache_entries`, `fetch_blocked_total{reason}`. Logs (Serilog, structured): task id, source id, episode id, kind, attempt, status, error code, http status, duration, **registrable domain only**, plus `extract_reason` when a `source_no_text`/`source_too_large` came from the extract phase (`extract_timeout` | `too_many_elements` | `too_deep`, T105). Never the URL path, query, title or text. `FETCHER_API_TOKEN` is never logged; the internal API's request logging excludes the `Authorization` header. Alerts (08.2): `fetch_tasks_total{status="failed"}` rate > 30 % over 15 min, and `fetch_leases_active == 0` for 10 min while `fetch_tasks` has `queued` rows (a dead fetcher).
 
 ## 8. Security and privacy
 
@@ -365,6 +368,7 @@ Threat model: the fetcher is the only component that makes outbound requests to 
 | 16 | Retention: source text outliving the episode | `story_sources` row and object deleted, text left in storage | FK `ON DELETE CASCADE` + 13.3's deletion sweep removes `research/{userId}/{episodeId}/…`; `content_sha256` in `usage_records`-style audit rows is not stored (this feature writes none) | 13.3.1-T1 (S, ⚠️ confirm the sweep includes the `research/` prefix) |
 | 17 | Token theft from the fetcher image | a compromised container reads its own env | the token grants **only** lease/heartbeat/result for tasks that are already queued; no read of episodes, users or other users' data; rotation is a redeploy of two containers (11.5.2) | design review + 02.5.2-T2 token tests |
 | 18 | DoS of the internal API by a rogue task | a huge `text` body or a huge `candidates` array | request body limit 1 MiB on the internal listener, `text ≤ 300,000` chars, `candidates ≤ 50`, per-instance rate limit | 02.5.2-T2 tests |
+| 19 | Parse-time resource exhaustion | a < 2 MiB page with 100k-deep nesting or > 50k elements pinning a lease slot (the parse is synchronous and outside the 10 s budget; T3's heartbeat would hold the lease) | T105 (SEC-0928-1): pre-parse guard on the decoded HTML (`ExtractMaxElements` 50,000 / `ExtractMaxDepth` 512, enforced during AngleSharp's non-recursive parse and by an iterative walk (02.5.2-T1 review F1) — a `StackOverflowException` is uncatchable) → `source_too_large`; `Extract` on a dedicated worker with a `ExtractTimeoutSeconds` = 5 watchdog → `source_no_text` (`extract_timeout`); the heartbeat self-disposes after `TotalTimeoutSeconds + ExtractTimeoutSeconds` so the lease is released | 02.5.2-T4 cases 23c/23d + T1 unit tests |
 
 Privacy summary (D19): stored per source — normalised URL, registrable domain, final URL, title, content type, sha256, text (object storage), text length, status, error code. Deleted with the episode. Never logged: URL path/query, title, text. Never sent to OpenAI except as part of the fact-sheet call's data object (02.5.3).
 
@@ -378,7 +382,7 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 - `StorySourceTests`: create/retry/state transitions, `CreateNote_WithUrl_Fails`, `MarkFetched_WithoutSha256_Fails`
 - `AddSourceHandlerTests`: `Add_BlockedDomain_ReturnsSourceDomainNotAllowed` · `Add_EleventhSource_ReturnsSourceLimitReached` · `Add_ThirtyFirstUrlSourceIn24h_Returns429` · `Add_DuplicateNormalisedUrl_Returns409` · `Add_NoteSource_DoesNotCreateFetchTask` · `Add_WhileStoryApproved_ReturnsEpisodeInvalidState` · `Add_CreatesSourceAndTaskInOneTransaction`
 
-**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, Testcontainers PostgreSQL + in-process Kestrel)**
+**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, real PostgreSQL 17 via `PostgresFixture` + in-process Kestrel)**
 - `AddSource_ThenFetch_EndToEnd`: add → lease → post a result → `GET sources` shows `fetched` with `contentSha256`/`textChars` and the object exists under `research/{userId}/{episodeId}/{sourceId}/{sha256}.txt`
 - `Lease_RespectsPlatformCapOfFour` · `Lease_SecondTaskSameRegistrableDomain_NotLeased` · `Lease_EmptyQueue_ReturnsEmptyArray`
 - `Heartbeat_ExtendsLease_AndOnlyOwnWorker` · `Heartbeat_AfterExpiry_Returns409FetchLeaseLost`
@@ -387,7 +391,7 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 - `InternalApi_WithoutToken_Returns401` · `InternalApi_Route_NotPresentOnPublicListener` (`GET localhost:8080/internal/fetcher/v1/tasks/lease` → 404) · `InternalApi_TokenComparison_IsConstantTime` (design assertion via the handler test double)
 - `FindSourcesTask_Lease_ReturnsFinderRequestShape` · `FindSourcesResult_Candidates_StoredAsCandidates` (02.7 not shipped → the task kind is exercised against a stub runner)
 
-**The SSRF/abuse suite is 02.5.2-T4** (its own task, S) and covers all 34 cases listed in the task file, including the loopback test server reached **only** through the test-only `IAddressValidator` (D20) and the `FakeDnsResolver` rebinding case. It is the acceptance evidence for the `02-M1-research` gate ("the SSRF suite is green", README §7).
+**The SSRF/abuse suite is 02.5.2-T4** (its own task, S) and covers all 37 cases (34 + 23b + 23c + 23d, 02 T104/T105) listed in the task file, including the loopback test server reached **only** through the test-only `IAddressValidator` (D20) and the `FakeDnsResolver` rebinding case. It is the acceptance evidence for the `02-M1-research` gate ("the SSRF suite is green", README §7).
 
 **Architecture test**: `ProductionComposition_DoesNotRegisterLoopbackAllowingAddressValidator` — asserts `IAddressValidator` resolves to `GlobalUnicastAddressValidator` in the Api/Worker/Fetcher DI graphs, so the test-only validator cannot leak into production (D20).
 
@@ -417,7 +421,7 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 5. **F13's "≥ 2 distinct `content_sha256`" needs `content_sha256` on `story_sources`** — CR-4 already adds it; this note exists so 02.5.4-T1 does not re-derive the hash from the stored text. (Informational, no action.)
 6. ✅ **Resolved (T43).** The fetcher gets **no** storage egress: the Api writes the extracted-text object, never the fetcher. 11.2.2-T2's "internal write API wiring" means `api:8081` only.
 7. ✅ **Resolved (T43).** Robots `Crawl-delay` **is** honoured: the per-host interval is `max(1 s, crawlDelay)`, capped at **10 s**; a `crawl-delay` above 10 s → `source_blocked_by_robots` (we will not wait longer than our own page budget). `Sitemap` stays ignored. 02.5.2-T0's spec and 02.5.2-T1's limiter implement `max(1 s, crawlDelay)`.
-8. **`source_no_text` threshold (~200 chars) is a guess** ⚠️ — 02.5.2-T0's 20-page corpus is the calibration input and 02.5.2-T4 pins the boundary. (Open until T0 runs.)
+8. ~~**`source_no_text` threshold (~200 chars) is a guess**~~ **Closed 2026-09-28 (02 T104):** `Fetcher:MinTextChars` = **1,275** from the 02.5.2-T0 corpus (60 % of the 2,125-char shortest clean article under SmartReader 0.11.1; failure shapes 0 / 252 / 1,226 chars fall below). 02.5.2-T4 pins the boundary.
 9. ✅ **Resolved (T38).** `fetch_tasks.episode_id` is NOT NULL, so every task (including `find_sources`) is deleted with its episode by the FK cascade — the "task with no episode" retention gap is gone. Still to confirm with 13.3: that 13.3.1-T1's deletion sweep covers the `research/` storage prefix (the Api writes those objects).
 10. ✅ **Resolved (T42).** The lease statement takes a `pg_advisory_xact_lock` on a constant for the duration of the claim, so the platform cap and the per-domain cap are exact rather than best-effort; the unlocked-read disclosure for both `leased_now` and `domain_busy` is documented in 02.5.2-T2 as the reason the lock exists.
 11. ✅ **Resolved (T43).** `fetch_lease_lost` and `fetch_task_not_found` stay as internal-only codes on the `:8081` routes; they never appear in D8 or in `story_sources.error_code`.
@@ -430,4 +434,4 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 - **Config defaults.** Every cap ships at the D11 value. Lowering `Fetcher:MaxLeasesPlatformWide` below 4 is allowed; raising it above 4 needs the TL's sign-off because FR-02-8's number is a decision, not a tuning knob. `Fetcher:CrawlDelayMaxSeconds = 10` ships with the robots `Crawl-delay` rule (T43).
 - **Token rotation (11.5.2).** `FETCHER_API_TOKEN` is a runtime secret read by both the Api (verify) and the fetcher (send). Rotation = write the new value to the secret manager, restart the Api (accepts only the new value), then restart the fetcher. A window where the fetcher still holds the old token fails every lease with 401, which the fetcher treats as fatal after 5 consecutive 401s (log + exit 1 → the supervisor restarts it). No dual-token grace period in P [DECISION: a second accepted token is a second credential to leak for no benefit].
 - **Rollback.** The migration is additive (two new tables + new nullable columns on `story_sources`), so a rollback of the code leaves the tables unused. Rolling back T3 alone (stop the container) is safe: leases expire in ≤ 90 s and the sweeper requeues. Rolling back T2 (the internal API) with the container still running produces 404s on the lease route → the fetcher logs and retries; no data loss.
-- **Gate evidence for `02-M1-research`.** T4's suite green (all 34 cases), the 11.2.2-T2 egress test green, and the manual 10-page extraction record from T0 kept in the spike report. No OpenAI spend, so no budget or metering change is needed for this feature.
+- **Gate evidence for `02-M1-research`.** T4's suite green (all 37 cases), the 11.2.2-T2 egress test green, and the manual 10-page extraction record from T0 kept in the spike report. No OpenAI spend, so no budget or metering change is needed for this feature.

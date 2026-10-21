@@ -1,19 +1,19 @@
-# 13 — Compliance: Legal Pages, Data Rights, Verification and Audits (M1–M3)
+# 13 — Compliance: Legal Pages, Deletion Duties, Audits (M1–M3)
 
 > Contracts: `00-overview.md` §6 (`user_consents`, `data_deletion_requests`, `audit_logs`), §11 (privacy NFR). Platform duties: 06 (YouTube), 07 (TikTok). Facts: `../DECISIONS.md` §6, §10.6, §10.7 and the official pages cited (✅).
-> This plan is **not legal advice**. Every legal text must be reviewed by a qualified lawyer before launch.
+> This plan is **not legal advice**. A qualified lawyer should review every legal text before the tool is used by anyone other than the owner (DEC 10.14: the lawyer-review tasks themselves are dropped with phase S).
 > Level: **high-level plan — not the final plan.** It fixes scope, contracts, key decisions, risks and rough estimates only. Every feature in it will still get (1) a review of the relevant sections and (2) its own **detailed feature plan** in `plans/features/`, reviewed again before implementation (process and template: `00-overview.md` §10.1). Details and estimates here may change in that step.
-> Delivery phase (personal-first, `00-overview.md` §4.1): S (after Gate 2) except the P slice needed for the YouTube audit: 13.1.1-T1 / 13.1.2-T1 (privacy policy and terms drafts, Developer Policies III.A; personal version covers the owner's tool, lawyer review before any other user at M2), 13.2.1-T1 (versioned acceptance, shown before the owner first connects YouTube or enables autopilot, III.A.2), 13.3.1-T1 (deletion engine for the 7/30-day duties, III.D.2) and 13.4.2 YouTube audit submission, filed in the personal phase as soon as 06 upload works and the pages are live. Where this plan says M1 for an S item, read M2.
+> Delivery phase (personal-only, `00-overview.md` §4.1, DEC 10.14): all P. What stays is what the owner's own tool must satisfy: the privacy policy and terms drafts (13.1.1-T1 / 13.1.2-T1, YouTube Developer Policies III.A), the delivered versioned-acceptance slice (13.2.1-T1; `13.2.1-T2` and `13.2.2-T1` were never shipped and are deleted by DEC 10.14), the deletion engine (13.3.1-T1, III.D.2), the YouTube audit submission (13.4.2-T1) and the TikTok audit submission (13.4.3-T1, now P). Everything public-facing — content policy, cookie notice, DSAR export, self-service account deletion, report form, OAuth verification, evidence pack, compliance calendar and the Vietnamese-data-protection memo — is dropped with phase S.
 
 Sources: [YouTube API Services Developer Policies](https://developers.google.com/youtube/terms/developer-policies) · [YouTube API audit form](https://support.google.com/youtube/contact/yt_api_form) · [TikTok Content Sharing Guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines).
 
 ## 1. Purpose and scope
 
-**Goal:** the platform can legally process users' data, publish to their channels, and pass Google and TikTok reviews — with deadlines enforced by code, not memory.
+**Goal:** the owner's tool can process data and publish to its own channels within the platform rules, and pass Google's and TikTok's API reviews — with deadlines enforced by code, not memory.
 
-**In scope:** privacy policy, terms of service, acceptable-use/content policy, cookie notice; consent capture; data export; deletion workflows with SLA timers; Google OAuth verification; YouTube API audit + quota extension; TikTok audit (R2); AI-content labelling; evidence packs; compliance calendar; Vietnamese personal-data law review ⚠️.
+**In scope:** privacy policy and terms drafts; consent capture and versioned acceptance; deletion engine with SLA timers; YouTube API audit + quota extension; TikTok audit; AI-content labelling.
 
-**Out of scope:** tax/e-invoice (12, accountant); trademark registration (Could).
+**Out of scope:** billing/tax/e-invoice (dropped, DEC 10.14); public-user data rights (export, self-service deletion, report form), cookie notice, content policy, Google OAuth verification for third-party users, evidence packs, compliance calendar and the Vietnamese-data-protection memo (all dropped with phase S); trademark registration (Could).
 
 ## 2. BA review of this part
 
@@ -23,104 +23,78 @@ Sources: [YouTube API Services Developer Policies](https://developers.google.com
 | C2 | Deletion deadlines differ by trigger (7 days in-app revoke/user request/account delete; 30 days Google-page revoke; 30-day max for stored Authorized Data) ✅ | `data_deletion_requests.due_at` per reason; alerting |
 | C3 | Uploads need the user's prior specific and express consent ✅ | Per-video consent (06.2.2) — documented in the policy |
 | C4 | Users' channels risk demonetisation under the mass-produced content policy ✅ (DECISIONS §6) | ToS: no monetisation guarantee; product enforces review checkpoints |
-| C5 | True crime → defamation/privacy of real people | Content policy + attestation (02.3.3) + takedown process |
-| C6 | Vietnam's Law 91/2025/QH15 (Personal Data Protection Law) + Decree 356/2025/ND-CP apply to us (13 CR-9); exact obligations under them not yet mapped ⚠️ | Lawyer review task 13.6.1 (memo + backlog); do not cite an obligation until confirmed |
-| C7 | Google OAuth verification timeline for `youtube.upload` unknown ⚠️ | SaaS only: file at mid-M2 once multi-user connect runs and the lawyer-reviewed pages are live (00 §4); the owner's app runs unverified in production |
-| C8 | Audits need screencasts of flows that must already exist | Build 10.7/06 flows first, then record |
+| C5 | True crime → defamation/privacy of real people | Attestation (02.3.3) + the owner's editorial check before approval; a public content policy and report form are dropped (DEC 10.14) |
+| C6 | Vietnam's Law 91/2025/QH15 (Personal Data Protection Law) + Decree 356/2025/ND-CP apply to us (13 CR-9); exact obligations not mapped ⚠️ | Owner's own diligence; do not cite an obligation until confirmed (the lawyer-memo task was dropped with phase S) |
+| C7 | Google OAuth verification is not needed for the owner's own channel ⚠️ | The app runs unverified for its own account; no verification task (dropped with phase S) |
+| C8 | Audits need screencasts of flows that must already exist | Build the 06 publish flow first, then record |
 
 ## 3. Requirements
 
-- **FR-13-1** Public, versioned Privacy Policy, Terms of Service, Content Policy in vi and en; each version has an id and effective date.
-- **FR-13-2** Registration records acceptance of current ToS + Privacy versions (`user_consents`); material changes require re-acceptance at next login.
-- **FR-13-3** Data export: user receives a machine-readable archive (JSON + their media links) within 7 days [DECISION: same as deletion window].
-- **FR-13-4** Deletion workflows for account, channel disconnect and user requests, with `due_at` per C2 and completion evidence.
-- **FR-13-5** Takedown/report channel (e-mail + form) with response target 72 h [DECISION].
-- **FR-13-6** Audit/verification submissions filed with evidence packs and tracked in a compliance calendar.
-- **FR-13-7** AI disclosure: YouTube `containsSyntheticMedia = true` ✅ (06); TikTok `is_aigc = true` ✅ (07); ToS requires users to keep disclosures on.
+- **FR-13-1** Privacy Policy and Terms of Service at `/privacy` and `/terms`, vi and en, versioned with an id and effective date (public pages required by the YouTube and TikTok developer policies).
+- **FR-13-2** The owner's acceptance of the current ToS + Privacy versions is recorded (`user_consents`); a material change requires re-acceptance at the next login.
+- **FR-13-4** Deletion workflows for channel disconnect and owner request, with `due_at` per C2 and completion evidence; since only the owner's own channels exist, the owner is the only person who can request deletion.
+- **FR-13-6** Audit submissions filed for YouTube (C7) and TikTok, tracked by the 08 runbook.
+- **FR-13-7** AI disclosure: YouTube `containsSyntheticMedia = true` ✅ (06); TikTok `is_aigc = true` ✅ (07).
 - **NFR-13-1** 100 % of deletion requests completed before `due_at`; alert at `due_at − 24 h`.
-- **NFR-13-2** Legal pages live before any external beta user (M2).
+- **NFR-13-2** Legal pages live before the first YouTube upload and before the TikTok audit filing.
 
 ## 4. Epics and user stories
 
 ### Epic 13.1 — Legal documents
 
-**13.1.1 Privacy Policy** — *As a user I want to know what happens to my data so that I can trust the platform.* Must · M
-- Given the checklist §5.1, When the draft is written and lawyer-reviewed, Then every item is covered in both languages and published at `/privacy` with version and date.
+**13.1.1 Privacy Policy** — *As the owner I want a privacy page that describes what the tool does with my data so that Google and TikTok reviews pass.* Must · M (delivered work kept; the lawyer-review and publish tasks were phase S and are dropped by DEC 10.14)
+- Given the checklist §5.1, When the draft is written, Then every item is covered in both languages and published at `/privacy` with version and date.
 
-**13.1.2 Terms of Service** — *As the owner I want clear terms so that liability and rules are defined.* Must · M
-- Given §5.2, Then the ToS covers account rules, credits/refunds (link to 12), AI-generated content ownership and disclosure, no monetisation guarantee, user responsibility for published content and platform rules, limitation of liability, termination, governing law ⚠️ (lawyer).
+**13.1.2 Terms of Service** — *As the owner I want clear terms so that the tool's rules are defined.* Must · M
+- Given §5.2, Then the ToS covers the tool's use, AI-generated content ownership and disclosure, no monetisation guarantee, the owner's responsibility for published content and platform rules, limitation of liability, termination and governing law ⚠️ (owner's own diligence; a lawyer review is optional for personal use and dropped with phase S).
 
-**13.1.3 Content Policy** — *As the platform I want explicit content rules so that moderation decisions are consistent.* Must · S
-- Given §5.3, Then prohibited and restricted content is listed with examples (e.g. realistic depiction of real victims, accusations beyond sources, sexual content, content involving minors in harm, hate, copyrighted material).
-
-**13.1.4 Cookie notice** — *As a visitor I want to know about cookies so that I can choose.* Should · S
-- Given only essential cookies (auth refresh, CSRF, language) in MVP, Then a notice (not a consent wall) lists them; if analytics is added later, a consent banner becomes Must.
+The former **13.1.3 Content Policy** and **13.1.4 Cookie notice** stories are dropped (DEC 10.14): there are no third-party users, no forms and only essential cookies.
 
 ### Epic 13.2 — Consent and versioning
 
-**13.2.1 Policy versions and re-acceptance** — *As the owner I want proof of what each user accepted so that disputes are resolvable.* Must · S
-- Given a new material version, When a user logs in, Then a blocking dialog shows the change summary and requires acceptance; `user_consents` stores version, time, IP.
+**13.2.1 Policy versions and re-acceptance** — *As the owner I want proof of what I accepted so that a platform dispute is resolvable.* Must · M (delivered: 13.2.1-T1; the blocking re-acceptance dialog `13.2.1-T2` and the legal-document registry `13.2.2-T1` were never shipped and are deleted by DEC 10.14)
+- Given a new material version, When the owner accepts it (explicit acceptance before the first YouTube connect or autopilot enable, `13 CR-4`), Then `user_consents` stores version, time, IP. There is no all-user blocking login dialog (`13.2.1-T2` is deleted); the 18+ registration gate was phase S and is dropped.
 
-### Epic 13.3 — Data rights workflows
+### Epic 13.3 — Deletion workflows
 
-**13.3.1 Deletion requests engine** — *As the platform I want deletions tracked with deadlines so that we never miss a legal window.* Must · M
-- Given a trigger (account delete, in-app channel revoke, Google-page revoke detected, user request), Then a `data_deletion_requests` row with `reason` and `due_at` (7 or 30 days ✅) is created; `DataDeletionJob` (hourly) executes scoped deletions; completion writes `completed_at` and an audit entry; alert at `due_at − 24 h`. 02 CR-22: an episode-scope deletion also deletes the extracted-text objects under `research/{userId}/{episodeId}/` (DB rows of `story_sources`, `fetch_tasks`, `source_candidates`, `generation_runs`, `fact_sheets`, `story_versions` cascade with the episode; storage objects do not).
+**13.3.1 Deletion requests engine** — *As the owner I want deletions tracked with deadlines so that no platform deadline is missed.* Must · M
+- Given a trigger (in-app channel revoke, Google-page revoke detected, owner's deletion request), Then a `data_deletion_requests` row with `reason` and `due_at` (7 or 30 days ✅) is created; `DataDeletionJob` (hourly) executes scoped deletions; completion writes `completed_at` and an audit entry; alert at `due_at − 24 h`. 02 CR-22: an episode-scope deletion also deletes the extracted-text objects under `research/{userId}/{episodeId}/` (DB rows of `story_sources`, `fetch_tasks`, `source_candidates`, `generation_runs`, `fact_sheets`, `story_versions` cascade with the episode; storage objects do not).
 
-| 13.3.1-T1 | Deletion requests engine | BE | M | 09.2 |
+The former **13.3.2 Account deletion**, **13.3.3 export** and **13.3.4 takedown/report** stories are dropped (DEC 10.14): the owner is the only account holder and the only person who can request deletion, the deletion engine above covers it, there is no cohort to export for and no third party to file a report.
 
-|**13.3.2 Account deletion** — *As a user I want to delete my account so that my data is gone.* Must · M
-- Given `POST /me/delete` (with password re-auth), Then sessions revoked, channels disconnected (tokens revoked), publications cancelled, media and extracted source texts (every object under `research/{userId}/`, 02 CR-22) deleted from storage, personal fields anonymised; ledger/payments kept only as legally required ⚠️ (accountant) with the user reference pseudonymised.
-
-Given database and storage backups, Then deleted data is not removed from existing backups but ages out within the backup retention window ([DECISION] 30 days, 11.6.1); a restore from backup re-runs every `data_deletion_requests` row completed after the backup date before the service reopens, and the confirmation e-mail states the 30-day backup window.
-
-**13.3.4 Takedown/report handling** — *As a third party I want to report harmful content so that it is removed.* Must · S
-- Given `/report` form or e-mail, Then an admin ticket is created; admin can suspend an episode/user; outcome logged.
-
-### Epic 13.4 — Platform verification and audits
-
-**13.4.1 Google OAuth verification** — *As the owner I want the OAuth app verified so that any user can connect YouTube.* Must · M
-- Given the production consent screen (06.1.1), When verification is requested ⚠️ (requirements per Google's current process), Then the submission includes domain ownership, privacy policy URL, scope justification per scope, demo video; status tracked in the calendar.
+### Epic 13.4 — Platform audits
 
 **13.4.2 YouTube API Compliance Audit + quota extension** — *As the owner I want the audit passed so that uploads can be public and quota can grow.* Must · M
-- Given the 06.5.1 evidence pack, When filed via the audit form ✅, Then answers match actual behaviour (consent, retention, deletion windows ✅); requested quota is justified from the owner's autopilot cadence and daily cap at the M1 filing, and from beta data (uploads/user/day × users) at the M2 re-filing.
+- Given the 06.5.1 evidence, When filed via the audit form ✅, Then answers match actual behaviour (consent, retention, deletion windows ✅); the requested quota is justified from the owner's autopilot cadence and daily cap (one channel, 3 videos/week at M1).
 
-**13.4.3 TikTok audit (R2)** — *As the owner I want TikTok's audit passed so that posts can be public.* Must (R2) · S
-- Given 07.4.1, Then the submission argues intended use (public creators, not an internal tool ✅) and shows every required UX item ✅.
+**13.4.3 TikTok audit** — *As the owner I want TikTok's audit passed so that posts can be public.* Must · S (phase P after DEC 10.14: TikTok is kept)
+- Given 07.4.1, Then the submission states the intended use honestly (a single-owner publishing tool ⚠️, see 07 §10 K2) and shows every required UX item ✅.
 
-### Epic 13.5 — Evidence and calendar
-
-**13.5.1 Evidence pack** — *As the owner I want reusable evidence so that re-audits are quick.* Must · S
-- Given staging, Then screenshots/screencasts of: registration consent, connect, publish form, per-video consent, disconnect + revoke explanation, deletion request, export; stored with dates and app version.
-
-**13.5.2 Compliance calendar** — *As the owner I want deadlines tracked so that nothing lapses.* Must · XS
-- Given a calendar (table in `docs/compliance-calendar.md`), Then entries: audit submissions/renewals (YouTube re-audit cadence ⚠️), policy review every 6 months, restore drill monthly (11), key rotation, deletion SLA monthly report.
-
-### Epic 13.6 — Local law
-
-**13.6.1 Vietnamese data-protection review** — *As the owner I want local obligations confirmed so that we operate lawfully in Vietnam.* Must · S (+ external lawyer time)
-- Given a lawyer consultation on Law 91/2025/QH15 + Decree 356/2025/ND-CP (13 CR-9), Then a memo lists applicable obligations (e.g. consent form, notices, data-processing records, cross-border transfer rules, breach notification), and required product changes; items become backlog stories (memo + backlog, no direct code task here). Until then all such claims stay ⚠️.
+### Epic 13.5 — Evidence and local law
+The former **13.4.1 Google OAuth verification**, **13.5.1 Evidence pack**, **13.5.2 Compliance calendar** and **13.6.1 Vietnamese data-protection review** stories are dropped (DEC 10.14) with no replacement task: the owner's app runs unverified for its own channel, audit evidence is captured ad hoc at submission time by 13.4.2-T1 / 13.4.3-T1, no deadline calendar is maintained, and local-law obligations stay ⚠️ on the owner's own diligence.
 
 ## 5. Technical design and content checklists
 
 ### 5.1 Privacy Policy checklist (✅ items are from YouTube developer policies)
 
 - Who we are, contact for privacy questions/complaints ✅.
-- Data collected: account data, content created, channel connection data (YouTube/TikTok ids, names, tokens), usage/billing data, logs.
+- Data collected: account data, content created, channel connection data (YouTube/TikTok ids, names, tokens), usage/cost data, logs.
 - Data from YouTube API Services: what is accessed, stored, shared, and how it is used ✅; statement that we use YouTube API Services and link to YouTube Terms and Google Privacy Policy ⚠️ (confirm exact required links in the policy text).
 - How users revoke access: in-app disconnect and https://security.google.com/settings/security/permissions ✅.
-- Retention and deletion: 7-day and 30-day windows by trigger; 30-day refresh/delete of stored Authorized Data ✅; backups are kept [DECISION] 30 days, so deleted data (including encrypted channel tokens) disappears from backups within 30 days of deletion and is never restored into the live service.
+- Retention and deletion: 7-day and 30-day windows by trigger; 30-day refresh/delete of stored Authorized Data ✅; backups are kept [DECISION] 30 days, so deleted data (including encrypted channel tokens) ages out of the backups within that window, and a restore re-applies every deletion completed after the backup date before the service reopens.
 - Upload consent: every upload has its own consent record — given by the user, or for autopilot series derived from the owner's versioned series authorization after a veto window in which the owner is notified and can edit or cancel (06.2.2).
 - We never ask for YouTube passwords ✅.
-- Sub-processors: OpenAI (story/image generation), hosting, storage, payment provider, e-mail provider.
-- Staff access: admins see account, billing and session data for support and abuse handling; story text, sources and videos only inside a moderation or report case; every such view is logged (09.10.5); no impersonation; security alerts about staff and account actions (role changes, MFA resets, settings changes, 08 §5.2) go only to internal owners/on-call and are not shared with third parties.
-- International transfers, security measures, user rights (access, correction, deletion, export), children (service not for under-18 [DECISION] ⚠️ lawyer), changes to the policy.
+- Sub-processors: OpenAI (story/image generation), hosting, storage, e-mail provider.
+- Access: there is exactly one account holder (the owner) and no staff or admin surface (DEC 10.14); nobody else can view story text, sources or videos. Security alerts about the account (MFA reset, recovery-code use, new-device login, re-auth failures, 08 §5.2) go only to the owner's mailbox.
+- International transfers, security measures, rights on the owner's own data (access, correction, deletion), and changes to the policy. Children: the tool is used only by its owner, so there is no age gate (dropped with phase S).
 
 ### 5.2 Terms of Service checklist
 
-Eligibility (18+), account security, credits (non-cash, expiry per 12.6.2 [DECISION] 12 months ⚠️ lawyer, refunds per 12.7.5 incl. the spent-bonus deduction), acceptable use (link Content Policy), ownership (user owns outputs subject to provider terms ⚠️ check OpenAI terms on output ownership), AI disclosure duty, no monetisation guarantee, user is the publisher of record on their channels, platform rules compliance (YouTube/TikTok), takedown and suspension, service availability, liability limits, governing law/disputes ⚠️.
+Eligibility and account security, ownership (the owner owns the outputs subject to provider terms ⚠️ check OpenAI terms on output ownership), AI disclosure duty, no monetisation guarantee, the owner is the publisher of record on their channels, platform rules compliance (YouTube/TikTok), service availability, liability limits, governing law/disputes ⚠️. There are no credits, refunds or acceptable-use policy to link (dropped with phase S).
 
-### 5.3 Content Policy checklist
+### 5.3 Content Policy checklist (dropped with phase S, DEC 10.14)
 
+The list below is kept only as the owner's own editorial guidance; there is no published Content Policy page.
 Prohibited: realistic images of identifiable real people; accusations not supported by cited sources; content sexualising anyone; harm to minors; glorifying violence or self-harm; hate/harassment; copyrighted text/music/footage; impersonation. Restricted (allowed with care): real historical cases with sources and respectful tone; religious/spiritual content without targeting groups.
 
 ### 5.4 Deletion scopes
@@ -128,73 +102,56 @@ Prohibited: realistic images of identifiable real people; accusations not suppor
 | Scope | Deleted | Kept (pseudonymised) |
 |---|---|---|
 | Channel (in-app revoke / Google revoke) | tokens, channel metadata, platform payloads, external ids | publication rows without external ids |
-| Account | profile, series, episodes, story versions, assets, channels, sessions, user-visible activity rows | ledger/payments ⚠️ (legal retention), security and staff-action audit rows with user id hashed, `user_consents` (13 CR-9: retained as proof of what was accepted, user id hashed) |
-| Episode (user delete) | story versions, assets | usage_records (cost accounting) |
+| Account (owner request) | profile, series, episodes, story versions, assets, channels, sessions, audit rows | security audit rows with the user id hashed; `user_consents` (13 CR-9: retained as proof of what was accepted, user id hashed) |
+| Episode (owner delete) | story versions, assets | usage_records (cost metering) |
 | Backups (all scopes above) | ageing out: deleted rows and objects leave database and storage backups within the [DECISION] 30-day backup retention; no backup is kept longer | nothing beyond the Kept column of the live scope |
 
 ## 6. Task breakdown
 
 | Task ID | Task | Area | Size | Depends on |
 |---|---|---|---|---|
-| 13.1.1-T1 | Draft privacy policy (vi/en) from checklist | Legal/BA | M | — |
-| 13.1.1-T2 | Lawyer review + publish (privacy) — half of the shared 0.5 d engagement with 13.1.2-T2 (13 CR-9) | Legal | XS (+ external) | 13.1.1-T1 |
-| 13.1.2-T1 | Draft ToS (vi/en), incl. the YouTube Terms clause (III.A.1) | Legal/BA | M | — (credit/refund sections from 12 added before M2) |
-| 13.1.2-T2 | Lawyer review + publish (terms) — half of the shared 0.5 d engagement with 13.1.1-T2 (13 CR-9) | Legal | XS (+ external) | 13.1.2-T1 |
-| 13.1.3-T1 | Draft Content Policy | BA | S | 02, 03 rules |
-| 13.1.4-T1 | Cookie notice | FE | S | 10.3.1 |
-| 13.2.1-T1 | Policy versions + acceptance endpoint/gate + owner acceptance dialog (P: owner accepts before first YouTube connect / autopilot; 13 CR-4) | BE/FE | M | 09.3.1-T1, 13.1.1-T1, 13.1.2-T1 |
-| 13.2.1-T2 | All-user blocking re-acceptance at login after a material change (S; 13 CR-4) | BE/FE | XS | 13.2.1-T1 |
-| 13.2.2-T1 | `legal_documents` registry + `nts-worker legal publish` verb + startup/CI equality check (13 CR-9, new id) | BE/Ops | M | 13.1.1-T2 (soft), 13.1.2-T2 (soft), 13.6.1-T1 (soft), 09.2.2 |
-| 13.2.3-T1 | 18+ age gate: attestation record, `age_attestation_required` 400, `LegalDocument.Age18` enum/config key, copy (13 CR-9, new id) | BE/FE | XS | 10.3.1-T0, 13.2.2-T1 (soft), 09.3.1-T1 |
+| 13.1.1-T1 | Draft privacy policy (vi/en) from checklist, incl. the YouTube/TikTok data clauses | Legal/BA | M | — |
+| 13.1.2-T1 | Draft ToS (vi/en), incl. the YouTube Terms clause (III.A.1) | Legal/BA | M | — |
+| 13.2.1-T1 | Policy versions + acceptance endpoint/gate + owner acceptance dialog (owner accepts before first YouTube connect / autopilot; 13 CR-4) | BE/FE | M | 09.3.1-T1, 13.1.1-T1, 13.1.2-T1 |
 | 13.3.1-T1 | Deletion engine + job + alerts | BE | M | 09.2 |
-| 13.3.2-T1 | Account deletion flow | BE | M | 13.3.1, 06.4.1 |
-| 13.3.2-T2 | Backup-window check: retention config = 30 days, restore runbook re-applies completed deletions, e-mail and policy text match | BE/Ops | XS | 13.3.2-T1, 11.6.1 |
-| 13.3.3-T1 | Export job | BE | M | 09.7 |
-| 13.3.4-T1 | Report form + admin ticket | BE/FE | S | 09.9.1 |
-| 13.4.1-T1 | OAuth verification submission | BA | M | 06.1.1, 13.1 |
 | 13.4.2-T1 | YouTube audit submission | BA | M | 06.5.1-T1 |
-| 13.4.3-T1 | TikTok audit submission (R2) | BA | S | 07.4.1 |
-| 13.5.1-T1 | Evidence pack capture | BA | S | 10.7, 13.3 |
-| 13.5.2-T1 | Compliance calendar | BA | XS | — |
-| 13.6.1-T1 | Lawyer consultation + memo → backlog | Legal | S (+ external) | 13.1 drafts |
+| 13.4.3-T1 | TikTok audit submission | BA | S | 07.4.1-T1 |
+
+Lawyer review/publish of the legal texts, the content policy, the cookie notice, the 18+ gate, account-deletion flow and backup-window check, export, report form, OAuth verification, evidence pack, compliance calendar, the local-law memo, the legal-document registry (`13.2.2-T1`) and the blocking all-user re-acceptance at login (`13.2.1-T2`) are dropped with phase S (DEC 10.14) and have no rows here.
 
 ## 7. Test plan
 
-- **Integration:** each deletion trigger creates the right `due_at`; job deletes the right scope; alert fires at T−24 h (clock fake); account deletion leaves no personal data (query checklist).
-- **Manual:** full deletion on staging, then verify storage objects gone and Google permissions page no longer lists the app; list backup snapshots and confirm none is older than 30 days; restore an older staging backup and confirm deletions completed after it are re-applied before reopening.
+- **Integration:** each deletion trigger creates the right `due_at`; job deletes the right scope; alert fires at T−24 h (clock fake) (13.3.1-T1).
+- **Manual (owner's own account):** delete one channel in-app and once from the Google permissions page, then verify tokens and metadata are gone, the objects are removed from storage and Google's permissions page no longer lists the app (`https://security.google.com/settings/security/permissions`).
 - **Review:** policy text vs actual behaviour walkthrough before each audit submission.
 
 ## 8. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Policy says one thing, code does another | Behaviour walkthrough before filing; tests for deletion windows; backup retention checked against the stated 30 days (13.3.2-T2) |
-| Verification/audit delays | YouTube audit filed in M1 as soon as upload works (13.4.2), pre-audit mode meanwhile, appeal/re-file on rejection; OAuth verification mid-M2 (SaaS only) |
-| Local-law gaps | Lawyer memo in M1; backlog items before M3 |
-| Defamation claim from true-crime content | Sources + attestation + takedown within 72 h + suspension tools |
+| Policy says one thing, code does another | Behaviour walkthrough before filing; tests for deletion windows; backup retention checked against the stated 30 days in the restore drill (11.6.1) |
+| Verification/audit delays | YouTube audit filed as soon as upload works and the policy pages are public (13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public); pre-audit mode meanwhile; appeal/re-file on rejection. TikTok audit follows 07.4.1 and may be refused for a single-owner use (07 §10 K2) |
+| Local-law gaps | Owner's own diligence; obligations stay ⚠️ (the lawyer memo was dropped with phase S) |
+| Defamation claim from true-crime content | Sources + attestation (02.3.3) + the owner's editorial check before approval; no content policy or takedown form is shipped (DEC 10.14) |
 
 ## 9. Exit criteria
 
-- **M1:** drafts ready; YouTube connect + private publish + consent flows on staging (evidence can be recorded); deletion engine live on staging.
-- **M2:** legal pages lawyer-reviewed; OAuth verification filed (mid-M2) and the YouTube audit re-filed/extended for the SaaS use case; re-acceptance, export, account deletion working; evidence pack complete.
-- **M3:** YouTube audit approved; lawyer memo items closed.
+- **M1:** drafts ready; YouTube connect + private publish + consent flows on staging; deletion engine live on staging.
+- **M2 (no longer applies):** the SaaS checklist (lawyer-reviewed pages, OAuth verification, re-acceptance for third-party users, export, account deletion, evidence pack) is dropped with phase S.
+- **M3:** YouTube audit approved and TikTok audit filed or approved.
 
 ## 10. Open questions and contract change requests
 
-- ⚠️ Law 91/2025/QH15 (Personal Data Protection Law) + Decree 356/2025/ND-CP apply (13 CR-9); exact obligations under them still unconfirmed (lawyer).
 - ⚠️ OpenAI terms on output ownership and on depicting real people.
-- ⚠️ Credit expiry (12 months, 12.6.2) and the 14-day refund window — lawyer check (13.6).
-- **Contract changes (applied to 00):** add `legal_documents(id, kind, version, locale, effective_at, content_url)` and `reports(id, reporter_email, target_type, target_id, reason, status, resolved_at)` to 00 §6; add `POST /reports` to 00 §8.
+- **Contract change reversed (00 §6 is correct as written):** no `legal_documents` table is added — the legal texts are repo files with `manifest.json` versions (`13 CR-1`) and the API serves the file matching the deployed environment (`13 CR-7`, `13 CR-12`, `13 CR-26`; `00-overview.md:308`). The `reports` table and `POST /reports` are dropped with phase S (DEC 10.14).
 - **Contract changes (applied to 00):** 00 §11 Data NFR states 30-day backup retention and that deleted data ages out of backups within that window; the restore procedure re-applies deletions completed after the backup date (11.6.1).
 
 ## 11. Estimate summary
 
 | Epic | Days |
 |---|---|
-| 13.1 Legal documents | 3.5 |
-| 13.2 Consent/versioning (13 CR-9: +1.0 `13.2.2-T1` +0.25 `13.2.3-T1`) | 2.5 |
-| 13.3 Data rights | 3.75 |
-| 13.4 Verification + audits | 2.5 |
-| 13.5 Evidence + calendar | 0.75 |
-| 13.6 Local law | 0.5 |
-| **Total** | **13.5** → with 20 % buffer **16.2** person-days (13 CR-4: was 11.5 / 13.8; 13 CR-9: S 7.25 → 8.5, total 12.25 → 13.5; P 5.0, S 8.5) (+ external lawyer time; of which R2: 0.5 raw / 0.6 with buffer) |
+| 13.1 Legal documents (privacy + ToS drafts; the lawyer reviews are dropped) | 2.0 |
+| 13.2 Consent/versioning (one task: `13.2.1-T1`; the 18+ gate and the legal-document registry `13.2.2-T1` are deleted) | 1.0 |
+| 13.3 Deletion engine (one task: `13.3.1-T1`; account deletion, export and report form dropped) | 1.0 |
+| 13.4 Audits (YouTube submission + TikTok submission) | 1.5 |
+| **Total** | **5.5** → with 20 % buffer **6.6** person-days (the sum of the six remaining task files: 13.1.1-T1 1.0, 13.1.2-T1 1.0, 13.2.1-T1 1.0, 13.3.1-T1 1.0, 13.4.2-T1 1.0, 13.4.3-T1 0.5 — matching `features/13-compliance/README.md` §9; was 13.5 / 16.2 before DEC 10.14: evidence pack, calendar, local-law memo, OAuth verification and the public data-rights flows are gone) |

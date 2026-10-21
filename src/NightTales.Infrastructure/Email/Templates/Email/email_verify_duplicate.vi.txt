@@ -1,0 +1,7 @@
+Subject: Có người thử đăng ký bằng địa chỉ e-mail của bạn
+
+Xin chào {{displayName}},
+
+Lúc {{occurredAt}}, có người thử tạo tài khoản NightTales bằng địa chỉ e-mail này. Vì địa chỉ đã thuộc về bạn nên chúng tôi không tạo tài khoản mới.
+
+Nếu đó là bạn, hãy đăng nhập bằng tài khoản hiện có. Nếu không, bạn không cần làm gì.

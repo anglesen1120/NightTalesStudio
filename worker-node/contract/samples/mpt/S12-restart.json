@@ -1,0 +1,11 @@
+{"schema":"mpt-sample.v1","scenario":"S12-restart-mid-task","date":"2026-09-26",
+ "mpt_commit":"3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "task_id":"02c90883-e314-4e30-b754-d5c8441b8523",
+ "setup":"task killed at progress 40 (images) by SIGKILL on the MPT process; wrapper freed :18080 and exited",
+ "findings":{
+   "get_after_restart":{"http":404,"body":{"status":404,"message":"<random-x-task-id>: task not found"},
+     "note":"memory state (enable_redis=false): the task record is gone, not 'interrupted'. 404-not-500 is the adapter's render_lost signal (F06). The 404 echoes a RANDOM request_id because no x-task-id was sent on the poll."},
+   "orphan_task_dir":"storage/tasks/02c90883-*/ still on disk with audio.mp3, subtitle.srt, 4x openai-image-*.png(+mp4), script.json - MPT never garbage-collects a task dir (C13); the adapter must sweep orphans.",
+   "ffmpeg_leftover":"none. The in-flight ffmpeg (encoding a png->mp4 clip) was a child of the killed process and died with it; pgrep -f 'ffmpeg.*<task_id>' empty.",
+   "resume":"none. There is no task-resume; a killed task is unrecoverable (re-submit required)."}
+}

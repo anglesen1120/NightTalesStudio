@@ -2,11 +2,19 @@
 config.toml
 *.env
 .env*
+!.env.example
+# Runtime state: $NTS_HOME = <repo>/.nts (01 CR-11, DEC-5): clones, venvs, weights, logs, media, rendered config
+.nts/
 
 # Generated media and model files
 output/
 storage/
 models/
+# 09.7.2-T1 (09 README BD10): C# namespaces named Storage/ are source, not generated media. The
+# `storage/` pattern above targets the runtime output dir (11 D14 keeps dev runtime state in .nts/);
+# develop already tracks storage-named source dirs, so keep the code ones addable.
+!src/**/Storage/
+!tests/**/Storage/
 *.mp3
 *.wav
 *.mp4
@@ -15,3 +23,81 @@ models/
 .venv/
 __pycache__/
 .DS_Store
+
+# --- 01.1.2-T1 (README F16, D1) ---
+# Env files: real ones are ignored above (*.env, .env*); templates are env.example, except the root .env.example (09 W3 CR-36)
+# Images
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.heic
+# 05.2.3-T1: rectangle-only Shorts overlay mock (no third-party content)
+!trial/fixtures/shorts-overlay-1080x1920.png
+# Other audio / video
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+*.wma
+*.mov
+*.webm
+*.mkv
+# Model weights and archives
+*.onnx
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.gguf
+*.npz
+*.tar
+*.tar.gz
+*.zip
+# Logs and runtime state
+*.log
+logs/
+current_run
+# Music: only the licence register is tracked
+worker-node/music/*
+!worker-node/music/LICENSES.csv
+!worker-node/music/tools/
+# pins.env is tracked (D2) but matches *.env above (01 CR-11 note, found at implementation 2026-09-25)
+!worker-node/pins.env
+# Trial runs: keep metadata (run.json, *.jsonl, *.csv, stages.json, ffprobe.json, notes.md), never media
+trial/runs/no-run/
+trial/runs/*/media/
+# M0 story harness raw cells (02.1.3-T0, plan §3.6 / QA-02D-6): provider output, regenerable, untracked
+trial/stories/
+# 02.6.1-T2 live review reports: acceptance-<model>-<stamp>.json carries numbers and ids only (D19/T25), regenerable, untracked
+trial/review/
+# 02.5.2-T0 research corpus: the fetched third-party HTML is a regenerable cache (7.8 MiB, over the
+# task file's 5 MiB snapshot budget), so only the manifest, sha256 and derived metrics are committed.
+# Rebuild: see plans/features/02-story-writing/02.5.1-sources-fetcher/spike-report.md §4.
+trial/research/corpus/html/
+# Python / tooling
+.ruff_cache/
+.pytest_cache/
+*.pyc
+
+# --- 09.1.1-T1: .NET build output (.env is covered by .env* above) ---
+bin/
+obj/
+*.user
+TestResults/
+docker-compose.override.yml
+# --- 09.1.5-T1: the OpenAPI document is generated at build (09 README D14) ---
+# `dotnet build src/NightTales.Api` writes it; the CI job uploads it as the `openapi` artifact.
+src/NightTales.Api/openapi.json
+# --- 09.2.2-T2: the migration bundle is a build artifact, never committed ---
+# `dotnet ef migrations bundle -o artifacts/nts-migrate` (~70 MB); 11.5.1 builds it in the pipeline.
+artifacts/
+# --- 09.4.2-T1: the catalog URL builder needs a `Storage` class-library folder ---
+# `storage/` (media scratch, above) is matched case-insensitively on macOS (`core.ignorecase`), so it
+# also hid `src/**/Storage/` and `tests/**/Storage/`. Re-include those trees: no generated media ever
+# lives under `src/` or `tests/`, while 09.7.2-T1's blob store needs the same folder next.
+!src/**/Storage/
+!tests/**/Storage/

@@ -1,0 +1,9 @@
+Subject: Security alert: a session was reused
+
+Hello {{displayName}},
+
+A login session was reused at {{occurredAt}} from {{device}}. To be safe, every session of the account was revoked and you have to sign in again.
+
+Review your sessions at {{sessionsLink}}.
+
+If this was not you, change your password now.

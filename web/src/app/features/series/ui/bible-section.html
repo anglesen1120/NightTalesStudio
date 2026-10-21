@@ -1,0 +1,55 @@
+<fieldset [disabled]="disabled()" [attr.data-revision]="revision()">
+  <legend>{{ ('series.bible.' + kind()) | transloco }} <span class="count">{{ rows().length }}</span></legend>
+  @for (row of rows().controls; track rowKey(row); let index = $index) {
+    <div class="entry" [formGroup]="row">
+      <div class="entry__header">
+        <span class="entry__number">{{ index + 1 }}</span>
+        <button mat-button type="button" [disabled]="disabled()" [attr.aria-label]="('series.bible.remove' | transloco) + ': ' + rowName(row, index)" (click)="remove.emit(index)">{{ 'series.bible.remove' | transloco }}</button>
+      </div>
+      @if (kind() === 'characters' || kind() === 'places') {
+        @let name = field(row, 'name');
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'series.bible.entry.name' | transloco }}</mat-label>
+          <input matInput [formControl]="name" [maxlength]="nameLimit()" [attr.aria-describedby]="kind() + '-' + index + '-name-count'" />
+          <mat-hint><nts-char-counter [id]="kind() + '-' + index + '-name-count'" [value]="name.value.length" [max]="nameLimit()" /></mat-hint>
+          @if (errorKey(name); as key) { <mat-error>{{ key | transloco }}</mat-error> }
+        </mat-form-field>
+        @let description = field(row, 'description');
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'series.bible.entry.description' | transloco }}</mat-label>
+          <textarea matInput [formControl]="description" [maxlength]="limits.description" rows="3" [attr.aria-describedby]="kind() + '-' + index + '-description-count'"></textarea>
+          <mat-hint><nts-char-counter [id]="kind() + '-' + index + '-description-count'" [value]="description.value.length" [max]="limits.description" /></mat-hint>
+          @if (errorKey(description); as key) { <mat-error>{{ key | transloco }}</mat-error> }
+        </mat-form-field>
+        @if (row.controls.firstEpisodeId?.value; as episode) { <p class="provenance">{{ 'series.bible.character.firstEpisode' | transloco }}: {{ episode }}</p> }
+      } @else if (kind() === 'rules') {
+        @let text = field(row, 'text');
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'series.bible.rule.text' | transloco }}</mat-label>
+          <textarea matInput [formControl]="text" [maxlength]="limits.ruleText" rows="3" [attr.aria-describedby]="'rule-' + index + '-count'"></textarea>
+          <mat-hint><nts-char-counter [id]="'rule-' + index + '-count'" [value]="text.value.length" [max]="limits.ruleText" /></mat-hint>
+          @if (errorKey(text); as key) { <mat-error>{{ key | transloco }}</mat-error> }
+        </mat-form-field>
+      } @else {
+        @let title = field(row, 'title');
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'series.bible.summary.title' | transloco }}</mat-label>
+          <input matInput [formControl]="title" [maxlength]="limits.summaryTitle" [attr.aria-describedby]="'summary-' + index + '-title-count'" />
+          <mat-hint><nts-char-counter [id]="'summary-' + index + '-title-count'" [value]="title.value.length" [max]="limits.summaryTitle" /></mat-hint>
+          @if (errorKey(title); as key) { <mat-error>{{ key | transloco }}</mat-error> }
+        </mat-form-field>
+        @let summary = field(row, 'summary');
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'series.bible.summary.body' | transloco }}</mat-label>
+          <textarea matInput [formControl]="summary" [maxlength]="limits.summaryBody" rows="3" [attr.aria-describedby]="'summary-' + index + '-count'"></textarea>
+          <mat-hint><nts-char-counter [id]="'summary-' + index + '-count'" [value]="summary.value.length" [max]="limits.summaryBody" /></mat-hint>
+          @if (errorKey(summary); as key) { <mat-error>{{ key | transloco }}</mat-error> }
+        </mat-form-field>
+      }
+    </div>
+  } @empty { <p class="empty-hint">{{ 'series.bible.sectionEmpty' | transloco }}</p> }
+  @if (kind() !== 'summaries') {
+    <button mat-stroked-button type="button" [disabled]="disabled() || rows().length >= entryLimit()" (click)="add.emit()">{{ addKey() | transloco }}</button>
+    @if (rows().length >= entryLimit()) { <p class="empty-hint" role="status">{{ 'series.bible.limitReached' | transloco }}</p> }
+  }
+</fieldset>

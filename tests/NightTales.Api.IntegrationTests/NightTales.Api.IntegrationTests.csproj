@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
+    <!--
+      09.9.2-T2: the Worker's `flags` verb is asserted from here (`FeatureFlagCliTests`), and this project
+      already sees `NightTales.Worker` transitively through TestKit (WorkerCompositionTests,
+      OutboxCleanupJobTests and others use that namespace), so the reference is declared explicitly rather
+      than relying on the transitive flow. It is deliberately NOT aliased: the alias belongs to TestKit's
+      own compilation, where `Program` must stay unambiguous.
+    -->
+    <ProjectReference Include="..\..\src\NightTales.Worker\NightTales.Worker.csproj" />
+    <!-- 02.5.2-T3: the fetcher host is run in-process by FetcherHostEndToEndTests (AddFetcherHost + the real internal API). -->
+    <ProjectReference Include="..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MimeKit" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

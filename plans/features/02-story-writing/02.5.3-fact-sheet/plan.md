@@ -34,7 +34,7 @@
 | 6 | `generation_runs.kind = fact_sheet`; partial unique `(episode_id, kind) WHERE episode_id IS NOT NULL AND status IN ('queued','running')` → 409 `fact_sheet_generation_in_progress`; `StaleGenerationSweeperJob` covers every kind ✅ | README D2 |
 | 7 | Fact-sheet ETag = `"fs-<fact_sheets.id>"`; `If-Match` required on `PUT /episodes/{id}/fact-sheet` and `POST …/fact-sheet/approve`; missing → 428 `if_match_required`; stale → 412 `fact_sheet_conflict` ✅ | README D9, D8 |
 | 8 | `IFactSheetGuard.EnsureApprovedAsync(Guid episodeId, Topic topic, ct) → ErrorOr<ApprovedFactSheet>`; `ApprovedFactSheet(Guid? FactSheetId, int? Version, IReadOnlyList<FactForWriter> Facts, IReadOnlyDictionary<string, Guid> AliasToSourceId)` with `ApprovedFactSheet.None` ✅ | README D21 |
-| 9 | F13: approve needs ≥ 2 distinct `fetched` url sources **each cited by ≥ 1 kept fact**, with distinct `content_sha256`; else 409 `story_sources_required` / `fact_sheet_sources_insufficient` ✅ | README F13, D8 |
+| 9 | F13: approve needs ≥ 5 facts and ≥ 2 distinct `fetched` url sources **each cited by ≥ 1 kept fact**, with distinct `content_sha256`; fewer than 5 facts → 409 `fact_sheet_sources_insufficient`, fewer than 2 distinct such sources → 409 `story_sources_required` ✅ | README F13, D8 |
 | 10 | F18: score each **fact statement** against its sources (same language); exclude `user_note` from the corpus; NFC + per-language `n` ✅ | README F18 |
 | 11 | F12: stories store `fact_sheet_id`; approve checks it is the current approved sheet (`story_fact_sheet_outdated`); fact ids stable, never reused. F26: editing allowed only in `draft`/`story_review`, never while `rendering` ✅ | README F12, F26, D8 |
 | 12 | D13 action keys: `episode.fact_sheet_generation_requested`, `episode.fact_sheet_saved`, `episode.fact_sheet_approved`; `[Audited(action, Category.Episodes, Visibility.User)]` in P. D19: never log source text/statements ✅ | README D13, D19 |
@@ -99,7 +99,7 @@ All commands are MediatR `IRequest<ErrorOr<T>>` in Application `Features/Researc
 
 **4.2 `UpdateFactSheetCommand(Guid EpisodeId, string IfMatch, FactSheetContentDto Content)`** — `IfMatch` missing → 428 `if_match_required`; ≠ current `fs-<id>` → 412 `fact_sheet_conflict` (D9). Episode status must be `draft`/`story_review`; `story_approved` or `rendering` → 409 `episode_invalid_state` (F26). Items with an existing `id` keep it and their order; `null` → next `MaxFactId + 1`, never reused; added facts MUST have ≥ 1 `sourceIds` (a `user_note` source is allowed); invalid body → 400 `fact_sheet_invalid_content` (T51).
 
-**4.3 `ApproveFactSheetCommand(Guid EpisodeId, string IfMatch)`** — same ETag rules; current version must be `Draft`; ≥ 2 distinct cited `fetched` url sources with distinct `content_sha256` else 409 `story_sources_required` (F13); no facts → 409 `fact_sheet_sources_insufficient`. Sets `status = Approved`, `approved_by/at`, raises `FactSheetApproved` + outbox `EpisodeUpdated`.
+**4.3 `ApproveFactSheetCommand(Guid EpisodeId, string IfMatch)`** — same ETag rules; current version must be `Draft`; fewer than 5 facts → 409 `fact_sheet_sources_insufficient`; ≥ 2 distinct cited `fetched` url sources with distinct `content_sha256` else 409 `story_sources_required` (F13). Sets `status = Approved`, `approved_by/at`, raises `FactSheetApproved` + outbox `EpisodeUpdated`.
 
 **4.4 `GetFactSheetQuery(Guid EpisodeId)`** — current (draft or approved) version with `etag`, `facts` (resolved source title/url/alias), `maxFactId`.
 
@@ -123,7 +123,7 @@ public sealed record FactItemInputDto(string? Id, string Statement, IReadOnlyLis
 | `PUT` | `/episodes/{id}/fact-sheet` | `If-Match: "fs-<id>"`, `FactSheetContentDto` | 200 `FactSheetSummaryDto` + new `ETag` | 428 `if_match_required`, 412 `fact_sheet_conflict`, 409 `episode_invalid_state`, 400 validation |
 | `POST` | `/episodes/{id}/fact-sheet/approve` | `If-Match` | 200 `FactSheetSummaryDto` | 428, 412, 409 `episode_invalid_state`, 409 `story_sources_required`, 409 `fact_sheet_sources_insufficient` |
 
-Outbox/SignalR: `EpisodeUpdated { episodeId, seriesId, change = "factSheet", factSheetId, status, version }` on generate-complete, edit and approve (D24/09.5.3 shape). Domain events: `FactSheetGenerated`, `FactSheetSaved`, `FactSheetApproved`. No new event type (F24 spirit).
+Outbox/SignalR: `EpisodeUpdated` with **ids only** — `{ episodeId, seriesId }` (NOTIFY body `{ userId, event: "episode_updated", ids, data: null }`) — on generate-complete, edit and approve; the sheet id, status and version travel in the fact-sheet DTO the client refetches (09 README BD11/WT54). Domain events: `FactSheetGenerated`, `FactSheetSaved`, `FactSheetApproved`. No new event type (F24 spirit).
 
 OpenAPI note — every D9 route documents `If-Match` as required and the `fs-` ETag as opaque.
 
@@ -158,11 +158,11 @@ Unit (Domain/Application, `FakeTextClient`, `FakeClock`, `FakeBudgetGuard` — D
 
 - `FactSheetValidator_{DropsFactWithUnknownAlias,DropsFactWithNoAlias,KeepsKnownAliasesOnly_WhenPartiallyUnknown,DropsStatementEmptyOrOver600Chars,DedupesIdenticalStatements_FirstWins,DropsVerbatimCopyAboveOverlapThreshold,AssignsSequentialIds_FromMaxFactIdPlusOne,NeverReusesId_AcrossVersions,CapsFacts_AtMaxFacts,ContentSha256_IsStableForSameFacts}`
 - `FactInputBudget_{AssignsAliasesS1ToS10_InCreatedOrder,ExcludesSources_AboveMaxSources,TruncatesPerSource_HeadAndTail_WhenOverCharCap,ReducesTotal_WhenOverTokenBudget_NeverExceedsCap,KeepsUserNoteUntruncated}`
-- `OpenAiFactExtractor_{NeverSerialisesSourceId_OrUrl,UsesSchemaNameFactsV1_AndStepFacts,MapsInvalidOutputToInvalidOutput,MapsRefusalToModerated}`, `FactsInjectionFixture_ProducesSchemaValidOutput_IgnoringInstruction`
+- `OpenAiFactExtractor_{NeverSerialisesSourceId_OrUrl,UsesSchemaNameFactsV1_AndStepFacts,MapsInvalidOutputToInvalidOutput,MapsRefusalToModerated}`, `FactsInjectionFixture_KeepsHostileTextInsideTheDataObjectStringValue`
 - `GenerateFactSheet_{NoFetchedSources_409SourcesInsufficient,ActiveRunExists_409GenerationInProgress,BudgetExceeded_429SpendCapReached}`, `UpdateFactSheet_{NewFactGetsNextId_ExistingIdsPreserved,DeletedFactId_IsNeverReusedInLaterVersion}`, `ApproveFactSheet_{RequiresTwoDistinctCitedFetchedSources,RejectsStaleEtag_412,RejectsWhenEpisodeStoryApproved_409,SupersedesPreviousApprovedRow_OnlyOneApprovedPerEpisode}`
 - `IFactSheetGuard_{ReturnsNone_WhenNoApprovedSheet,ReturnsApprovedSheet_WithAliasMap}`, `FactSourcesBuilder_{BuildsFromStorySources_NeverFromModelOutput,UnknownFactRef_ReportedNotBuilt}`
 
-Integration (Testcontainers, `OPENAI_LIVE_TESTS` off): `PostFactSheetGenerate_Returns202_AndCreatesDraftVersion`; `PutFactSheet_MissingIfMatch_Returns428`; `PutFactSheet_StaleEtag_Returns412FactSheetConflict`; `PostFactSheetApprove_ThenGenerateStory_UsesApprovedFacts`; `GenerateStoryJob_StaleFactSheetId_FailsRunNotCounted`.
+Integration (`PostgresFixture`, `OPENAI_LIVE_TESTS` off): `PostFactSheetGenerate_Returns202_AndCreatesDraftVersion`; `PutFactSheet_MissingIfMatch_Returns428`; `PutFactSheet_StaleEtag_Returns412FactSheetConflict`; `PostFactSheetApprove_ThenGenerateStory_UsesApprovedFacts`; `GenerateStoryJob_StaleFactSheetId_FailsRunNotCounted`.
 
 E2E (02 §7): sources → fact sheet → approve → story with backend `fact_sources`; the injection fixture leaks no instruction.
 

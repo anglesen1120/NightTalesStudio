@@ -9,7 +9,7 @@
 
 **In scope (5 tasks, 4.0 d raw / 4.8 d buffered).**
 
-1. `10.4.1-T1` — Dashboard overview: "needs your review" / "in progress" / "ready to publish" cards over `GET /episodes?status=`, no credit UI in P (D14).
+1. `10.4.1-T1` — Dashboard overview: ruled "needs your review" / "in progress" / "ready to publish" rows over five scalar-status `GET /episodes` calls; no credit UI in P (D14).
 2. `10.4.2-T2` — Voice picker with optional preview audio (`GET /voices?language=`), tags as `voices.tag.<tag>` i18n keys, no speed control (04 CR-11).
 3. `10.4.2-T1` — Series list (cursor, archive) + 4-step create/edit editor + visual-style grid (`GET /style-templates?topic=`, 03 CR-7), true-crime notice and topic-lock behaviour.
 4. `10.4.3-T1` — Autopilot tab: settings form, on/off with versioned authorization dialog, re-auth, pause/resume, topic lock, next-slots preview, pause banner.
@@ -27,7 +27,7 @@ Legend: ✅ = read with citation; ⚠️ = unverified; [DECISION]/[OPEN]/[INFERE
 
 | # | Fact | Source |
 |---|---|---|
-| F1 | Angular 22.2.x, standalone, `strict` + `strictTemplates` + `noUncheckedIndexedAccess`, SCSS, zoneless, `@angular/build:application`, `outputMode: 'static'`, Node 24 LTS, path aliases `@core/*` `@shared/*` `@features/*`. | ✅ `../README.md:102` |
+| F1 | Angular 22.2.x, standalone, `strict` + `strictTemplates` + `noUncheckedIndexedAccess`, SCSS, zoneless, `@angular/build:application`, `outputMode: 'static'`, Node 26.10.0 (10 CR-43), path aliases `@core/*` `@shared/*` `@features/*`. | ✅ `../README.md:102` |
 | F2 | Feature tree `features/<name>/{domain,data-access,application,ui,feature}` + `<name>.routes.ts` + `index.ts`; wave-1 features `public, auth, dashboard, series, episodes`; lint bans `domain` → Angular/rxjs, `ui` → store/repository/HttpClient, non-`data-access` → `@shared/api`, cross-feature import other than through `index.ts`, `any`, non-`OnPush`, `subscribe()` in components, `[innerHTML]`, `localStorage`. | ✅ `../README.md:109` |
 | F3 | Only `features/*/data-access/**` and `core/**/data-access` import `@shared/api`; repositories return `Promise<T>`; `withIfMatch(etag)`/`readEtag(response)` in `core/http/`; `IdempotencyKeys` (10.2.3-T1); `shared/util/cursor-page.ts` + `core/state/cursor-list.ts` for every list (both owned by **10.2.6-T1**, WR4). | ✅ `../README.md:133` |
 | F4 | `AppErrorMapper` → `AppError { code, status, fieldErrors, retryAfterSec?, traceId?, problem }`; every code used by wave-1 screens has `errors.<code>` in vi + en; `detail` never shown raw; 412 → `ConflictDialog`; 429 → `RetryCountdown`; 428 is a client bug. | ✅ `../README.md:159` |
@@ -60,7 +60,7 @@ Legend: ✅ = read with citation; ⚠️ = unverified; [DECISION]/[OPEN]/[INFERE
 | B12 | Accept: `textVersion` + `textHash` must match exactly; mismatch → 409 `autopilot_authorization_required` with `errors["textHash"] = "stale_text"`. `PATCH /series/{id}` with a topic change while enabled → 409 `autopilot_topic_locked`; archive while enabled disables + revokes. | ✅ `02.8.3-T2:79`, `:89-90` |
 | B13 | `AutopilotEtag` is returned as the `ETag` header **and** in the body so the UI needs no second GET (⚠️ [INFERENCE] in the backend task; the UI treats the body value as authoritative and falls back to the header). | ✅ `02.8.3-T2:182` |
 | B14 | Copy keys supplied by 02.8.3 §6 (verbatim for this UI): `autopilot.settings.cadence_days`, `.publish_time`, `.time_zone`, `.daily_cap`, `.buffer_days`, `.privacy`, `.veto_window`, `.pre_audit_mode`; `autopilot.authorization.required`, `.accepted_version`, `.stale_text`; `autopilot.topic_locked`; `autopilot.pause.banner`, `autopilot.resume.blocked`; `autopilot.next_slots.title`. Cadence weekday chips are a `fieldset`/`role="group"`; the time-zone select is searchable and labelled; the authorization dialog traps focus, shows the full text in a scrollable region with a heading, and only the accept button is enabled after the text has been scrolled to the end (10.4.3-T1 owns the markup). | ✅ `02.8.3/plan.md §6` |
-| B15 | Pause reasons (`AutopilotPauseReason`, 15 values): `gate_failed_streak, spend_cap_reached, run_cost_cap_reached, provider_funds_exhausted, channel_not_active, oauth_client_incident, youtube_quota_exhausted, upload_failed, video_rejected, veto_notice_undelivered, repeated_run_failures, slot_missed, pre_audit_private_limit, content_reported, owner_paused`; copy keys `autopilot.pause.*`. Resume re-checks every trigger and refuses with 409 `autopilot_pause_reason_active` + `errors.reasons = [...]` while a reason still holds ([OPEN] new code, plan §10 item 4). Pause is idempotent; the manual pause sends no e-mail. | ✅ `02.8.3-T4:39`, `:100`, `:200` |
+| B15 | Pause reasons (`AutopilotPauseReason`, 14 values): `gate_failed_streak, spend_cap_reached, run_cost_cap_reached, provider_funds_exhausted, channel_not_active, oauth_client_incident, youtube_quota_exhausted, upload_failed, video_rejected, veto_notice_undelivered, repeated_run_failures, slot_missed, pre_audit_private_limit, owner_paused`; copy keys `autopilot.pause.*`. Resume re-checks every trigger and refuses with 409 `autopilot_pause_reason_active` + `errors.reasons = [...]` while a reason still holds ([OPEN] new code, plan §10 item 4). Pause is idempotent; the manual pause sends no e-mail. | ✅ `02.8.3-T4:38`, `:99`, `:200` |
 | B16 | Run-log states (02.8.2 plan §6): `planned · producing · waiting_owner (amber) · gate_failed (red) · published (green) · published_private_locked (grey + lock) · cancelled_by_owner · paused · failed`; `autopilot_runs.outcome` per 00 §6. Gate verdict detail from `gate_results` (`gates.v1`): per check `id`, `value`, `threshold`, `pass`, with a `dry_run` badge when `mode = dry_run`, failing checks first. Copy keys `autopilot.run.state.*`, `autopilot.gate.failed.<checkId>`. | ✅ `02.8.2/plan.md:237-248`; `00-overview.md:277` |
 | B17 | Idea rows: picked idea `{ title, logline, hook, structure{…}, score, similarity, status }`; `otherIdeas[]` `{ title, score, similarity, rejectedReason }`; copy keys `autopilot.ideas.picked`, `.rejected ({n})`, `.reason.noveltyLexical|noveltyJudge|bannedTheme|moderated|templateRepeat|tripleRepeat|notBest|invalid`, `.none`, `.requiresResearch`, `.similarity`; the run row is a `<table>` with a caption, reasons are text never colour-only, `similarity` is a percentage with the raw value in `title`. | ✅ `02.8.1/plan.md:250-274` |
 | B18 | Calibration: `GET …/autopilot/runs` adds an optional `calibrationReport: GateCalibrationReportDto` when the series has ≥ 1 `mode = dry_run` verdict; the report has `checkStats`, `reviewScoreHistogram`, `similarityHistogram`, `falseBlockRate`, `potentialFalseApproveRate`, `noOwnerVerdictCount`, `recommendationLines`, `evaluated`/`target`/`ready`; `gatesDryRun` + `gatesDryRunRemaining` drive a banner; the field never carries story text/titles/descriptions/source URLs; if the ground-truth query fails the field is omitted (the list still returns) → the UI shows "calibration data unavailable". | ✅ `02.8.2-T3:94`, `:113-116`, `:164-168`, `:203` |
@@ -114,7 +114,7 @@ export type AutopilotPauseReason = 'gate_failed_streak' | 'spend_cap_reached'
   | 'run_cost_cap_reached' | 'provider_funds_exhausted' | 'channel_not_active'
   | 'oauth_client_incident' | 'youtube_quota_exhausted' | 'upload_failed' | 'video_rejected'
   | 'veto_notice_undelivered' | 'repeated_run_failures' | 'slot_missed'
-  | 'pre_audit_private_limit' | 'content_reported' | 'owner_paused';
+  | 'pre_audit_private_limit' | 'owner_paused';
 
 export interface Cadence { daysOfWeek: readonly string[]; publishTime: string; timeZone: string }
 export interface AutopilotSettings {
@@ -192,7 +192,7 @@ export abstract class PublicationRepository {
   abstract cancel(id: string, ifMatch: string): Promise<void>;                                            // 06 D7 (10 CR-20)
 }
 ```
-`features/dashboard/domain/` re-uses `EpisodeSummary` + `EpisodeRepository` **from `@features/episodes`** (`features/episodes/index.ts` is the only import path — D2). The dashboard adds no repository of its own.
+`features/dashboard/dashboard.model.ts` (feature root: the D2 lint rule bars `domain/` from importing another feature) re-uses `EpisodeListItem` + `EpisodesRepository` (as-built names of `EpisodeSummary`/`EpisodeRepository`) **from `@features/episodes`** (`features/episodes/index.ts` is the only import path — D2). The dashboard adds no repository of its own.
 
 ### 3.3 Stores (signal stores, `@Injectable()` per routed page unless noted)
 
@@ -238,7 +238,7 @@ Each use case states trigger → API → states → errors. All errors go throug
 
 | Method | Route | Used by | Notes |
 |---|---|---|---|
-| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per dashboard group (see below) |
+| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per scalar status; five parallel calls cover the five P statuses below |
 | `GET` | `/api/v1/series?cursor=&limit=&includeArchived=` | 10.4.2-T1 | `{ items, nextCursor }`, limit ≤ 100 (B1) |
 | `POST` | `/api/v1/series` | 10.4.2-T1 | 201 + `Location` + `ETag` (B1) |
 | `GET` `PATCH` `DELETE` | `/api/v1/series/{id}` | 10.4.2-T1 | `PATCH` needs `If-Match: "se-<xmin>"` (B1/B2) |
@@ -254,11 +254,11 @@ Each use case states trigger → API → states → errors. All errors go throug
 | `POST` | `/api/v1/auth/reauth` | 10.4.3-T1 | through `ReauthDialog` (10.3.3-T3) |
 | `GET` | `/api/v1/me` | flags | `features[]` → `hasFeature('youtube_publish')` (B21) |
 
-**Request discipline (no N+1).** Dashboard: exactly 3 calls in `Promise.all` — `status=story_review&limit=10`, `status=video_review,story_generating,rendering&limit=20` [OPEN-2: the multi-status filter form must be confirmed with 10.5.1-T1; if the API accepts one status only, the 10.4.1-T1 implementation issues at most 4 parallel calls and merges by `updatedAt`]. Veto hydration: one `GET …/publications` **per episode in the veto window only** (bounded by `daily_cap` × veto window ≤ a handful) executed in `Promise.all`; a series-level query is requested as [OPEN-1]. Run log: one call per page.
+**Request discipline (no N+1).** The present API accepts one scalar `status`, not a comma-separated set. Dashboard therefore issues exactly five bounded calls in one `Promise.all`: `story_review`, `video_review`, `story_generating`, `rendering`, and `ready`; it merges the two review and two in-progress result sets by id and sorts each group by `updatedAt`. No multi-status request or capability guess is allowed. Veto hydration remains one `GET …/publications` **per episode in the veto window only** (bounded by `daily_cap` × veto window), executed in `Promise.all`; a series-level query is requested as [OPEN-1]. Run log remains one call per page.
 
 **[OPEN-1]** `GET /api/v1/series/{id}/publications?status=awaiting_consent` does not exist (00 §8 lists only `/episodes/{id}/publications` and the per-publication consent/PATCH/DELETE routes, `00-overview.md:362`; 02.8.3/plan.md:344 adds no list route either). Request: **CR to 00 §8** to add a series-scoped publications read (cursor). Until then the veto list is derived from the run log — `AutopilotRunDto` carries `EpisodeId`/`PublicationId` (`02.8.3-T2:49-52`) — and hydrates per episode, with at most 20 rows (`autopilot.veto.maxRows`, §6).
 
-**[OPEN-2]** Multi-value `status` on `GET /episodes` (10.5.1-T1 owns the filter contract) — the dashboard assumes `status=a,b` or falls back to parallel single-status calls.
+**[RESOLVED-2]** Source snapshot `00e7d5d` exposes a scalar episode `status` filter. The dashboard uses the five-call contract above; no comma-separated fallback remains.
 
 **Events (D8).** Consumed: `EpisodeUpdated` (per-episode subscription via `RealtimeService.subscribeEpisode(episodeId, handler)`, WR7) → the run-log row refetches its episode/publication cell and, coalesced within 250 ms, the whole page once; `resync` after a (re)connect/visibility → the same coalesced refetch, but only if the tab has a live subscription. No `AutopilotRunUpdated` in P (B18/[OPEN] in 02.8.1 §5) → polling (§7). The hub token never appears in a URL and the ticket is never logged (D8).
 
@@ -273,7 +273,7 @@ Each use case states trigger → API → states → errors. All errors go throug
 | `/dashboard` | `features/dashboard/feature/dashboard-page.ts` | 10.4.1-T1 |
 | `/series` | `features/series/feature/series-list-page.ts` | 10.4.2-T1 |
 | `/series/new` | `features/series/feature/series-editor-page.ts` (`mode: 'create'`) | 10.4.2-T1 |
-| `/series/:id` | `features/series/feature/series-detail-page.ts` (tabs: `overview` \| `autopilot`) | 10.4.3-T1/T2 |
+| `/series/:id` | `features/series/feature/series-detail-page.ts`: overview shell (`loaded`, archived, 404) | 10.4.2-T1; `10.4.3-T1/T2` own only the Autopilot tab body |
 | `/series/:id/edit` | `features/series/feature/series-editor-page.ts` (`mode: 'edit'`) | 10.4.2-T1 |
 
 Lazy per route (`loadComponent`), `authGuard` on all five (D6). Tab state in the URL (`?tab=autopilot`) so the pause e-mail deep link (`/series/<id>?tab=autopilot`, `02.8.3-T4:90`) lands on the right tab.
@@ -292,7 +292,7 @@ Components (all `OnPush`, inputs/outputs only in `ui/`, no store injection):
 | `GateBadges` | `features/series/ui/gate-badges.ts` | `@Input() gates: GateSummary \| null`; renders failing checks first + `dry_run` badge; text + icon, never colour only |
 | `CalibrationPanel` | `features/series/ui/calibration-panel.ts` | `@Input() report: CalibrationReport \| null`, `@Input() unavailable: boolean`; histograms behind `@defer (on viewport)` |
 | `VetoRow` / `VetoList` | `features/series/ui/veto-list.ts` | `@Input() rows: readonly VetoRow[]`, `@Input() timeZone`, `@Input() busyIds`; `@Output() edit`, `@Output() cancel`, `@Output() approveNow`; actions projected through `ConfirmDialog`'s `cost-line` slot (left empty in P, D14) |
-| `SeriesCard` | `features/series/ui/series-card.ts` | `@Input() series: SeriesListItem`; `@Output() open`, `@Output() archive` |
+| `SeriesRow` | `features/series/ui/series-row.ts` | `@Input() series: SeriesListItem`; `@Output() open`, `@Output() archive`; semantic ruled `<li>`, not a Material-card surface |
 
 Shared components reused verbatim (D11): `PageHeader`, `EmptyState`, `ErrorState`, `LoadingState`, `StatusChip`, `ConfirmDialog`, `ConflictDialog`, `RetryCountdown`, `CharCounter` (series title 1–120), `Stepper` (the 4 steps), `ReauthDialog` (10.3.3-T3). The copyable-id affordance in the veto/publication rows uses `CopyableCode` (owned by 10.1.3-T1, WR4) and the record id shown to the user for support.
 
@@ -357,8 +357,8 @@ Cross-plan keys used verbatim (do not re-author): 02.8.3 §6 settings/authorizat
 
 ### 6.3 A11y (D16, per screen)
 
-- Dashboard: the three groups are `<section>`s with headings; counts are text; `aria-live="polite"` on the group counts after a refresh; card action = link (`ready`) or a labelled button (`needs review` → open episode).
-- Series list: cards are a `<ul>`; the archive button has an accessible name including the title; `aria-live` region announces "archived".
+- Dashboard: the three groups are `<section>`s with headings; counts are text; `aria-live="polite"` on refresh; each ruled row action is a link (`ready`) or labelled button (`needs review`).
+- Series list: ruled rows are a `<ul>`/`<li>` ledger (not Material cards); the archive button has an accessible name including the title; `aria-live` announces "archived".
 - Editor: every step's controls labelled; the `Stepper` marks the current step with `aria-current="step"`; invalid controls carry `aria-describedby` to their error; focus moves to the first invalid control on a failed submit; `CharCounter` announced via `aria-live="polite"`.
 - Voice picker: radio group (`fieldset`+`legend`); tag chips are text (`Chip` is decorative); the play button toggles `aria-pressed` and stops other audio; controls ≥ 24 px; 360 px layout stacks the list.
 - Style grid: radio group; `<img>` `alt` = the template label; selected card has a visible border **and** a check icon; true-crime notice is a `role="note"`.
@@ -367,7 +367,24 @@ Cross-plan keys used verbatim (do not re-author): 02.8.3 §6 settings/authorizat
 - Calibration panel: histograms have text alternatives (a `<table class="visually-hidden">` per histogram or a text summary); `ready` is a chip with text.
 - Veto list: countdowns use `aria-live="off"` (a per-second announcement would be hostile); the time-left value is also a `<time datetime>`; `prefers-reduced-motion` disables the countdown animation.
 
-**Design (owner rule 2026-09-25).** `10.4.1-T0` is the folder's design gate (D19): wireframes + hi-fi mockups for `/dashboard`, `/series`, `/series/new`, `/series/:id` (overview + autopilot tabs), `/series/:id/edit` and the 11 folder components, at 360/768/1280, dark + light, vi + en, with focus order/keyboard path/`aria-live` annotations. Design link + owner approval record: ⚠️ [OPEN] (`10.4.1-T0-ui-design.md` §Outputs). Every task below lists `10.4.1-T0` as a hard `Depends on`.
+**Design (owner rule 2026-09-25).** `10.4.1-T0` is the folder's design gate (D19): wireframes + hi-fi mockups for `/dashboard`, `/series`, `/series/new`, `/series/:id` (overview + autopilot tabs), `/series/:id/edit` and the 11 folder components, at 360/768/1280, dark + light, vi + en, with focus order/keyboard path/`aria-live` annotations. **Design link (recorded 2026-10-02):** review deck [`design/ui/index.html`](../../../../design/ui/index.html) → screen 03 [`screens/03-dashboard-series.html`](../../../../design/ui/screens/03-dashboard-series.html): dashboard [`#f-dash-loading`](../../../../design/ui/screens/03-dashboard-series.html#f-dash-loading) · [`#f-dash-data`](../../../../design/ui/screens/03-dashboard-series.html#f-dash-data) · [`#f-dash-empty`](../../../../design/ui/screens/03-dashboard-series.html#f-dash-empty) · [`#f-dash-error`](../../../../design/ui/screens/03-dashboard-series.html#f-dash-error); series [`#f-series-list`](../../../../design/ui/screens/03-dashboard-series.html#f-series-list) · [`#f-series-archived`](../../../../design/ui/screens/03-dashboard-series.html#f-series-archived) · [`#f-series-archive`](../../../../design/ui/screens/03-dashboard-series.html#f-series-archive); `/series/new` [`#f-new-step1`](../../../../design/ui/screens/03-dashboard-series.html#f-new-step1) · [`#f-new-step2`](../../../../design/ui/screens/03-dashboard-series.html#f-new-step2) · [`#f-new-step3`](../../../../design/ui/screens/03-dashboard-series.html#f-new-step3) · [`#f-new-step4`](../../../../design/ui/screens/03-dashboard-series.html#f-new-step4) · [`#f-new-errors`](../../../../design/ui/screens/03-dashboard-series.html#f-new-errors); detail/edit [`#f-detail`](../../../../design/ui/screens/03-dashboard-series.html#f-detail) · [`#f-edit`](../../../../design/ui/screens/03-dashboard-series.html#f-edit) · [`#f-conflict`](../../../../design/ui/screens/03-dashboard-series.html#f-conflict) · [`#f-unsaved`](../../../../design/ui/screens/03-dashboard-series.html#f-unsaved); autopilot [`#f-ap-off`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-off) · [`#f-ap-active`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-active) · [`#f-ap-paused`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-paused) · [`#f-ap-auth-gate`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-auth-gate) · [`#f-ap-reauth`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-reauth) · [`#f-ap-legal`](../../../../design/ui/screens/03-dashboard-series.html#f-ap-legal); run log/calibration/veto [`#f-log-rows`](../../../../design/ui/screens/03-dashboard-series.html#f-log-rows) · [`#f-cal-ready`](../../../../design/ui/screens/03-dashboard-series.html#f-cal-ready) · [`#f-veto-rows`](../../../../design/ui/screens/03-dashboard-series.html#f-veto-rows). Full state → frame matrix: `10.4.1-T0-ui-design.md` §Outputs. **Owner approval: approved by the owner 2026-10-02** (deck v2 "Phòng thu", commit `192cc73`). Every task below lists `10.4.1-T0` as a hard `Depends on`.
+
+### 6.4 Implementation seams and post-approval reconciliation notes (2026-10-02)
+
+The visual source is the approved [`03-dashboard-series.html`](../../../../design/ui/screens/03-dashboard-series.html). These frames are static evidence only. Every screen-03 top-bar balance is an **S-only reference**: P renders the shell with `[header-end]` empty and no credit amount, balance, quote or buy action.
+
+| Existing task | Observed frame ids | Coverage boundary / implementation note |
+|---|---|---|
+| `10.4.1-T1` | `f-dash-loading`, `f-dash-data`, `f-dash-group-empty`, `f-dash-empty`, `f-dash-error` | Base loading/data/empty/error visuals are observed. Rate-limit, focus-refresh and stale-result rejection reuse approved shared controls and are runtime acceptance. |
+| `10.4.2-T1` | `f-series-loading`, `f-series-list`, `f-series-empty`, `f-series-archived`, `f-series-archive`, `f-series-error`; `f-new-step1`, `f-new-step2`, `f-new-step3`, `f-new-step3-empty`, `f-new-step4`, `f-new-step4-truecrime`, `f-new-errors`; `f-edit`, `f-conflict`, `f-unsaved`; `f-detail`, `f-detail-archived`, `f-detail-404` | The ruled list/wizard/edit/detail states are observed. This task owns the detail overview shell and its three states; Autopilot tasks own only the tab body. |
+| `10.4.2-T2` | `f-new-step3`, `f-new-step3-empty`, `f-new-errors` | Picker/list/empty/error are observed. A playing preview and preview-load failure follow the locked contract; audio semantics remain runtime acceptance. The locked contract wins over mockup captions; flag to the owner only if a new visual state is needed (this does not reopen the approval or block the task). |
+| `10.4.3-T1` | `f-ap-off`, `f-ap-enabling`, `f-ap-active`, `f-ap-paused`, `f-ap-auth-gate`, `f-ap-auth-fits`, `f-ap-auth-stale`, `f-ap-reauth`, `f-ap-legal` | Base Autopilot states are observed. `f-ap-legal` is future `13.2.1-T1` reference, not authority to implement a P legal-acceptance flow before its owner/API/dependency is ready. |
+| `10.4.3-T2` | `f-log-loading`, `f-log-rows`, `f-log-empty`, `f-log-poll`, `f-cal-ready`, `f-cal-unavailable`, `f-veto-rows`, `f-veto-empty`, `f-veto-error`, `f-veto-edit` | Base log/calibration/veto states are observed; polling, countdown, event coalescing, permissions and mutations need browser + real-backend proof. |
+| `10.4.1-T0` | All ids above | Voice-playing/preview-failed states and S-only balance/legal-reference frames are implementation reconciliation notes; P/S scope and backend capability stay unchanged. The locked contract wins over mockup captions; flag to the owner only if a new visual state is needed (this does not reopen the approval or block the task). |
+
+Containers in `feature/` own routing, route-scoped stores and server coordination; presentational `ui/` consumes immutable view models and emits typed intent unions. Dashboard/series use semantic ruled rows (`NextActionRow`, `SeriesRow`) matching the artifact, not generic Material cards. Existing shared owners remain [implementation-roadmap.md §2](../implementation-roadmap.md); no new shared component is proposed. Typed forms bridge async control/error changes into zoneless notification and clean up through `DestroyRef`; all stores reject results from an old route id or session generation, and audio/poll/realtime/header registrations stop on route/session destruction.
+
+Readiness follows [integration-readiness.md](../integration-readiness.md): series CRUD, scalar-status episode list and unpaged `{items}` voice/style catalogs are present; series `PATCH` returns only `{etag}` plus `ETag`, so adapters never fabricate a full series. Autopilot/story/publication extensions and legal acceptance wait for their named 02/06/13 owners. Static frames cannot close those prerequisites.
 
 ## 7. Jobs and integrations
 
@@ -406,7 +423,7 @@ Cross-plan keys used verbatim (do not re-author): 02.8.3 §6 settings/authorizat
 | `AutopilotStore` | `GET` → form populated, dirty/saved transitions | `autopilot_settings_invalid` JSON-path → `bindFieldErrors`; `stale_text` → reload | 412 keeps the form | — | — | enable → `reauthPending` then `authorizationDialogOpen`; covered-field change → `requiredAuthorization` banner; pause reason list rendering |
 | `RunLogStore` | page + `calibrationReport`; omitted report → `unavailable` | 404 `feature_disabled` → `hidden` | — | — | `EpisodeUpdated` coalesces to one refetch in 250 ms; `resync` refetches once | poll: runs only when visible + active (fake `document`/activity), pauses otherwise, single in-flight |
 | `VetoListStore` | rows built from the run list + hydration, `remainingMs` decreases on tick | 409 state code → refetch; 429 → countdown | 412 → `ConflictDialog` state | cancel removes the row, failure restores it | — | actions disabled while `busyIds` |
-| `DashboardStore` | 3 groups merged, empty group flag | `network_error` → `ErrorState` | — | — | refresh on window focus without a request storm | ≤ 3–4 requests per load (asserted with the fake's call log) |
+| `DashboardStore` | five scalar-status result sets merged into 3 groups, empty group flag | `network_error` → `ErrorState` | — | — | refresh on window focus without a request storm | exactly 5 requests per load (asserted with the fake's call log) |
 | `VoicePicker` (component) | renders tags as translated keys, no play button when `previewUrl === null`, play pauses the previous audio, `disabled` blocks selection | — | — | — | — | keyboard: radio arrows change selection; `aria-pressed` on the play button |
 | `StyleGrid` (component) | radio semantics, `alt` = label, true-crime notice only for `true_crime` | — | — | — | — | topic change re-filters and clears an incompatible selection |
 | `AuthorizationDialog` (component) | accept disabled until scroll-to-end, then emits `{textVersion, textHash}` | — | — | — | — | Esc cancels; focus trapped; the text is not parsed as HTML |

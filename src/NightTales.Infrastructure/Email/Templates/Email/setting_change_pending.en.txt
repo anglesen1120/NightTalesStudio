@@ -1,0 +1,7 @@
+Subject: A configuration change is waiting
+
+The {{integration}} integration configuration changed these keys: {{changedKeys}}.
+
+The change applies at {{applyAfter}}.
+
+Approve at {{approveUrl}} or cancel at {{cancelUrl}}.

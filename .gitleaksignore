@@ -1,0 +1,17 @@
+# plans/00-overview.md:412 false positive: generic-api-key matched the prose "outbox/SignalR events" (no secret) 2026-09-25 TL-agent
+2870dbc7e8b6219d017d81622731e1238bde7ad0:plans/00-overview.md:generic-api-key:412
+plans/00-overview.md:generic-api-key:412
+# trial/tools/aggregate_scores.py:212 false positive: generic-api-key matched the CSV column name "latency_p50_ms" (no secret) 2026-09-26 M0-wave-1
+trial/tools/aggregate_scores.py:generic-api-key:212
+# tests/NightTales.RenderNode.Tests: synthetic render-node API keys of the 11.3.5-T1 auth tests (random hex, matched against no Keychain secret) 2026-10-02 Session 2
+tests/NightTales.RenderNode.Tests/AuthFailureThrottleTests.cs:generic-api-key:21
+tests/NightTales.RenderNode.Tests/Fakes/RenderNodeTestHost.cs:generic-api-key:26
+tests/NightTales.RenderNode.Tests/ApiKeyMiddlewareTests.cs:generic-api-key:22
+tests/NightTales.RenderNode.Tests/ApiKeyMiddlewareTests.cs:generic-api-key:23
+tests/NightTales.RenderNode.Tests/QaWireTests.cs:generic-api-key:23
+# tests/NightTales.Infrastructure.UnitTests/Security/Base32Tests.cs:21 false positive: generic-api-key matched the published RFC 6238 Appendix B test secret (RFC 4648 base32 of ASCII "12345678901234567890", public) 2026-10-02 09.10.4-T1
+tests/NightTales.Infrastructure.UnitTests/Security/Base32Tests.cs:generic-api-key:21
+# tests/NightTales.MptAdapter.Tests/Fakes/AdapterHarness.cs:25 false positive: generic-api-key matched the in-process test harness's fixed 32-byte fake adapter key (never a real credential) 2026-10-02 11.3.5-T2
+tests/NightTales.MptAdapter.Tests/Fakes/AdapterHarness.cs:generic-api-key:25
+# tests/NightTales.MockMpt.Tests/TestHost/MockMptTestHost.cs:27 false positive: generic-api-key matched the in-process test host's fixed 32-byte fake adapter key (never a real credential) 2026-10-02 11.1.2-T1
+tests/NightTales.MockMpt.Tests/TestHost/MockMptTestHost.cs:generic-api-key:27

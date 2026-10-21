@@ -29,7 +29,7 @@
 | S7 | D21 fixes the signatures and makes the generation-time score **advisory**: the block happens at approve | README D21 ✅ |
 | S8 | 02.2.2-T3: a corpus failure degrades to `similarityScore = null` + a `similarity_unavailable` local advisory issue, never a failed run | `02.2.2-generate-story-job/plan.md` ✅ |
 | S9 | 02.8.2 needs `GetPastEpisodesAsync(seriesId, excludeEpisodeId, max, ct)`, max 50; 02.8.1-T2 consumes `Normalize`/`Hash`/`ShingleSet`/`NFor` | `02.8.2-*`, `02.8.1-*` ✅ |
-| S10 | Peer contract **CheckpointSimilarityPlan** (2026-09-24) froze the names: `SimilarityOptions(Language, N, WarnAbove, BlockAbove, MinTokens)`, `SimilarityResult(double Score, int N, string Corpus, IReadOnlyList<SegmentOverlap> Segments)`, `CorpusText(Guid SourceId, string Text)`, `ScoreFact(...) → double`, config `Similarity:WarnAbove/BlockAbove/MinTokens/N:vi/N:en`, `Research:FactSheet:CopiedFactThreshold` (0.5, owned here) | `local://CheckpointSimilarityPlan` ✅ |
+| S10 | Peer contract **CheckpointSimilarityPlan** (2026-09-24) froze the names: `SimilarityOptions(Language, N, WarnAbove, BlockAbove, MinTokens)`, `SimilarityResult(double Score, int N, string Corpus, IReadOnlyList<SegmentOverlap> Segments)`, `CorpusText(Guid SourceId, string Text)`, `ScoreFact(...) → double`, config `Similarity:WarnAbove/BlockAbove/MinTokens/N:vi/N:en`, `Research:FactSheet:CopiedFactThreshold` (0.5 when frozen, owned here; calibrated to 0.05 by 02.5.6-T2 and dead since 02.5.3-T2, the live key is `Similarity:FactOverlapBlock`) | `local://CheckpointSimilarityPlan` ✅ |
 | S11 | Corpus text comes from object storage via `ISourceTextStore.ReadAsync(extractedTextKey, ct)` (02.5.2-T2); source texts are capped at 300,000 chars | README D10 ✅ |
 | S12 | `story_versions.similarity_score numeric(5,4)` exists; `similarityScore` is in `currentStory` | 02 §6 · README CR-7 ✅ |
 | S13 | No provider call, no cost, no metering: `usage_records` untouched (D14). `System.IO.Hashing` `XxHash64` is MIT/net10.0 ⚠️ verify package + licence at T1 step 1 | README D14 ✅ |
@@ -66,12 +66,12 @@
 ```jsonc
 {
   "Similarity": {
-    "WarnAbove": 0.05, "BlockAbove": 0.15, "MinTokens": 50,
-    "N": { "vi": 10, "en": 8 },
+    "WarnAbove": 0.02, "BlockAbove": 0.45, "FactOverlapBlock": 0.05, "MinTokens": 50,   // calibrated by 02.5.6-T2 (CR-10, 2026-10-17; BlockAbove by the amended rule 3, owner 2026-10-17); the S1 defaults 0.05 / 0.15 / 10 / 8 / 500 were guesses
+    "N": { "vi": 14, "en": 14 },
     "Corpus": { "MaxSourceTexts": 10, "MaxSourceTextChars": 300000, "MaxPastEpisodes": 50 },
-    "Perf": { "BudgetMs": 500 }            // ⚠️ placeholder; T2 records the measured value
+    "Perf": { "BudgetMs": 163 }            // ceil(2 × 81.375 ms): median of the p95 of 10 runs at n = 14, load sensitive; report: tests/NightTales.Domain.UnitTests/Stories/Similarity/Calibration/similarity-calibration-report.json
   },
-  "Research": { "FactSheet": { "CopiedFactThreshold": 0.5 } }
+  "Research": { "FactSheet": { "CopiedFactThreshold": 0.05 } }   // dead key (no code consumer); the live key is Similarity:FactOverlapBlock, both 0.05 (STATUS CAL-S50-2)
 }
 ```
 
@@ -169,13 +169,13 @@ Total **0.75 d** — matches README §9 ("0.5 → 0.75, per-language shingles + 
 
 ### Open items for the TL
 
-- **[OPEN] Perf budget.** `Similarity:Perf:BudgetMs = 500` and the `10 × 300,000` char corpus shape are proposals; T2 records the measurement. The shape itself is fixed by D10 and S9.
+- **[DONE → STATUS `CAL-S50-3`] Perf budget.** `Similarity:Perf:BudgetMs = 500` was a placeholder; 02.5.6-T2 recorded 163 (`ceil(2 × 81.375 ms)`, the median p95 of 10 runs at n = 14, load sensitive). The `10 × 300,000` char corpus shape is fixed by D10 and S9.
 - **[DECISION] `Q-SIM-02` scope resolved: source-scoped.** §5.9's "only true-crime **and** sourced episodes are checked" is ambiguous (union vs conjunction); the landed reading is **sourced** — any topic with url sources is checked (02.3.2-T1 step 5, 02.3.3-T1 3d, 02.3.4-T1 `Q-SIM-02`). 0 sources → skip, `null` (S8).
 - **[OPEN] Human-path past-episode score.** UC1 scores only the **sources** corpus (D21 stage 6); past-episode similarity is evaluated only by the autopilot gate (02.8.2-T1). Storing a human-path past-episode score is a second corpus read in stage 6 ≈ +0.1 d — not included.
 - **[OPEN] Dilution.** The score is a share of the whole story, so one copied paragraph inside a long story can fall under `BlockAbove`. Per-segment shares are stored (D22) and T2 reports the dilution; a per-segment **block** rule would extend the frozen `SimilarityOptions`/guard contract (S10) and is a TL decision.
-- **[OPEN] `ScoreFact` severity.** This feature owns the threshold (0.5); 02.5.3-T2 owns whether the resulting issue is advisory or blocking, and the fact-sheet UX.
+- **[OPEN] `ScoreFact` severity.** This feature owns the threshold (0.05 after 02.5.6-T2, live key `Similarity:FactOverlapBlock`; 0.5 when frozen); 02.5.3-T2 owns whether the resulting issue is advisory or blocking, and the fact-sheet UX.
 - **[OPEN] `meta` not scored.** D22 lists `meta` as addressable; the scorer deliberately excludes `description`/`tags` (FR-02-10 is about prose overlap). Say so before T1 freezes `StoryText.From` if it should change.
-- **[OPEN] `similarity_unavailable_total{reason}` label set.** S8 names the issue; a closed reason set (`storage_error`, `db_error`, `timeout`) is owned by 02.2.2-T3.
+- **[OPEN] `similarity_unavailable_total{reason}` label set.** S8 names the issue; a closed reason set (`storage_error`, `db_error`, `timeout`) is owned by 02.5.6-T1 (moved from 02.2.2-T3, which ships without a corpus provider).
 - **[OPEN] `plans/features/README.md` index row** for `02.5.6-similarity/` may be expected by the folder convention; it is outside this feature folder and was not edited.
 
 ## 11. Rollout
@@ -183,7 +183,7 @@ Total **0.75 d** — matches README §9 ("0.5 → 0.75, per-language shingles + 
 - **Flag:** none — no route and no job, so nothing to gate; it ships active with the writer (02.2.2).
 - **Order:** 02.5.6-T1 → 02.5.6-T2 → 02.2.2-T3 stage 6 → 02.3.1-T1 / 02.3.2-T1 → 02.8.2-T1 → 02.5.3-T2.
 - **Migration order:** none (§3.4).
-- **Fail-open by design:** a missing score never blocks; only a computed score `> BlockAbove` does. A false block therefore requires a real lexical overlap above 15 %.
+- **Fail-open by design:** a missing score never blocks; only a computed score `> BlockAbove` does. A false block therefore requires a real lexical overlap above `BlockAbove` (0.45 after 02.5.6-T2, amended rule 3, owner 2026-10-17; it was 15 %), so partial copying between `WarnAbove` 0.02 and 0.45 only warns (task 02.5.6-T2 Delivery notes, STATUS `CAL-S50-1`).
 - **Monitoring (D19):** `similarity_score{corpus}` histogram, `similarity_unavailable_total{reason}`; alert when the latter rises — it silently degrades FR-02-10.
 - **Rollback:** `Similarity:BlockAbove = 1.0` (warn-only) via config, no deploy; the score is still stored and the gate still reads it.
 - **Calibration gate:** T2's report must show the sample-set separation before the thresholds are called final; the values live in config, so re-calibration is a config change (or a `DECISIONS.md` §3 entry when material, D15 precedent).

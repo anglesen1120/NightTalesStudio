@@ -1,0 +1,32 @@
+<section class="proposal" role="status" aria-live="polite" aria-atomic="false">
+  <div class="proposal__heading">
+    <div>
+      <h2>{{ heading() }}</h2>
+      <p>{{ 'series.bible.proposal.intro' | transloco }}</p>
+    </div>
+    <nts-status-chip statusKey="story_review" appearance="warn" />
+  </div>
+  <dl class="proposal__counts">
+    <div><dt>{{ 'series.bible.characters' | transloco }}</dt><dd>{{ proposal().preview.characters }}</dd></div>
+    <div><dt>{{ 'series.bible.places' | transloco }}</dt><dd>{{ proposal().preview.places }}</dd></div>
+    <div><dt>{{ 'series.bible.rules' | transloco }}</dt><dd>{{ proposal().preview.rules }}</dd></div>
+  </dl>
+  @if (proposal().basedOnVersion !== version()) {
+    <p class="proposal__base">{{ 'series.bible.proposal.baseVersion' | transloco: { base: proposal().basedOnVersion, current: version() } }}</p>
+  }
+  <div class="proposal__diff">
+    @defer (on viewport) {
+      <nts-diff-view mode="rows" [rows]="rows()" [label]="'series.bible.proposal.diffLabel' | transloco" [addedLabel]="'series.bible.proposal.added' | transloco" [removedLabel]="'series.bible.proposal.removed' | transloco" />
+    } @placeholder {
+      <div class="proposal__placeholder"><nts-loading-state [labelKey]="'series.bible.proposal.loading'" /></div>
+    } @loading {
+      <div class="proposal__placeholder"><nts-loading-state [labelKey]="'series.bible.proposal.loading'" /></div>
+    } @error {
+      <nts-error-state bodyKey="series.bible.proposal.diffError" />
+    }
+  </div>
+  <div class="proposal__actions">
+    <button mat-flat-button type="button" [disabled]="pending()" (click)="accept.emit()">{{ 'series.bible.proposal.accept' | transloco }}</button>
+    <button mat-button type="button" [disabled]="pending()" (click)="confirmDismiss()">{{ 'series.bible.proposal.dismiss' | transloco }}</button>
+  </div>
+</section>

@@ -12,16 +12,16 @@ Wave 2 (**P**) platform slice of epic 09.9: the feature-flag **read** service, t
 - `09.9.3-T1` (BD12, WF09): Serilog compact JSON to stdout + `Serilog.Sinks.OpenTelemetry` (W4); OpenTelemetry traces/metrics AspNetCore + HttpClient (W2) + `Npgsql.OpenTelemetry` (W3) and **no** EF Core instrumentation (WF09); Hangfire job spans; OTLP export to the collector owned by 11 D17; `/health/live`, `/health/ready` (BD12); the five custom metrics frozen for 11.6.2-T1.
 - `09.9.3-T2`: redaction of `access_token`, `ticket`, `token`, `code`, `state` in logs **and** spans (`url.query`/`url.full`), plus a capture test (09 §4 09.9.3 second bullet; `plans/09-backend-api.md:233`).
 - `09.9.4-T1` (BD12, WF15, W1): security headers, CORS = `App:PublicOrigin` only, request-size limits, the Data Protection key ring persisted in PostgreSQL and encrypted with the `DP_KEK` certificate, `ITokenProtector` (purpose `tokens.v1/{connectionId}`), NuGet audit + a `dotnet list package --vulnerable` CI step (W10).
-- `09.9.5-T1` (BD12, D14, W11): the `oasdiff breaking` gate in `.github/workflows/backend.yml` against `main`, the versioning rule for accepted breaking changes, and the `ProblemDetails` schema component in the generated document.
+- `09.9.5-T1` (BD12, D14, W11): the `oasdiff breaking` gate in `.github/workflows/backend.yml` against the PR base (`develop` today; BD12 says `main`), the versioning rule for accepted breaking changes, and the `ProblemDetails` schema component in the generated document.
 
 **Out of scope (owned elsewhere — do not duplicate).**
 - 09.9.1 admin endpoints and the flag **write** API, plus `/internal/jobs` (Hangfire dashboard) hosting: `09.9.1` is **S** (W17); the dashboard itself is `09.2.6` (wave 1, signed). This folder only adds the job-span filter and the dashboard's access-log line.
-- `SecretString` log masking policy and `system_settings` purposes: `09.10.1-T1` (S). `09.9.3-T2` adds the query/property redaction set only.
+- `SecretString` log masking policy and `system_settings` purposes belonged to the phase-S settings store (dropped by DEC 10.14). `09.9.3-T2` adds the query/property redaction set only.
 - Rate limiting policies `auth`/`paid`/`hub`: `09.3.5-T1` (BD14).
 - The Angular client and its generator: plan 10 (`09.9.5-T1` publishes the spec and the gate; `10.1.4` regenerates).
-- The second *test table* for cross-tenant checks: `09.2.3-T2` (S) — it consumes the gate, it does not own it.
+- The second *test table* for cross-tenant checks was `09.2.3-T2` (phase S, dropped by DEC 10.14) — it consumed the gate, it did not own it.
 
-**Consumers that make this folder hard-gated:** 02.7 / 02.8.3 (`feature_disabled`), 06 (flags), 11.6.2-T1 (metrics, traces, alerts), `09.10.4-T1` (DP key ring; the TOTP store uses `IDataProtectionProvider.CreateProtector("identity.totp.v1")` directly, **not** `ITokenProtector` **[RULED — README §B10 WT43]**), `09.2.3-T2` + `10.1.4` (spec diff).
+**Consumers that make this folder hard-gated:** 02.7 / 02.8.3 (`feature_disabled`), 06 (flags), 11.6.2-T1 (metrics, traces, alerts), `09.10.4-T1` (DP key ring; the TOTP store uses `IDataProtectionProvider.CreateProtector("identity.totp.v1")` directly, **not** `ITokenProtector` **[RULED — README §B10 WT43]**), the deleted S `09.2.3-T2` + `10.1.4` (spec diff).
 
 ## 2. Confirmed facts
 
@@ -42,7 +42,7 @@ Wave 2 (**P**) platform slice of epic 09.9: the feature-flag **read** service, t
 | BD13 | `IFeatureFlags.IsEnabledAsync(string key, ct)`, cache 30 s, `FeatureFlagsChanged` evicts; `RequireFeature("youtube_publish")` → 404 `feature_disabled`; `nts-worker flags set <key> on|off` + audit (`support`, `internal`) |
 | BD16 | No secret/token/e-mail/IP in logs; health endpoints read caches only; no N+1; bounded work |
 | D11 | `outbox_lag_seconds` and `outbox_dead_letters_total` belong to the outbox dispatcher; `trace_parent` is copied onto every outbox row |
-| D13 | Harness: `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `InlineJobScheduler`, `FakeClock`, `PostgresFixture` (Testcontainers `postgres:17-alpine`); no mocking library — hand-written fakes |
+| D13 | Harness: `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `InlineJobScheduler`, `FakeClock`, `PostgresFixture` (real PostgreSQL 17 on `NTS_TEST_PG`; 09 W3 CR-35); no mocking library — hand-written fakes |
 | D14 | The OpenAPI document is generated at build to `src/NightTales.Api/openapi.json`; `09.9.5` owns the contract diff |
 | N12 | `Serilog.AspNetCore` **10.0.0** is already in the `NightTales.Api` package list — `09.9.3-T1` adds sinks/formatters and the OTel packages, it does not re-add Serilog |
 | 00 §6:306 | `feature_flags(key, enabled, rules jsonb)` — created by the `09.2.2` `InitialCore` migration, seeded by `09.2.5-T1` |
@@ -171,13 +171,13 @@ HTTP server metrics for latency/5xx come from the AspNetCore instrumentation (no
 
 | Event | Outbox type | Payload | Raised by | Handled by |
 |---|---|---|---|---|
-| `FeatureFlagsChanged` | `feature_flags_changed.v1` **[RULED — README §B10 WT13]** | `{ Key, Enabled, OccurredAt }` | the flag write path (CLI verb here; 09.9.1-T1 in S) | cache eviction (Worker handler + Api `LISTEN` invalidator) |
+| `FeatureFlagsChanged` | `feature_flags_changed.v1` **[RULED — README §B10 WT13]** | `{ Key, Enabled, OccurredAt }` | the flag write path (CLI verb here; the phase-S admin write path is dropped by DEC 10.14) | cache eviction (Worker handler + Api `LISTEN` invalidator) |
 
 Platform events carry no `user_id` (D11 `[PlatformEvent]`); the audit row is written by the writer, not by a handler.
 
 ### 5.5 Contract gate (09.9.5-T1)
 
-- `.github/workflows/backend.yml` gains a `contract` job: `needs: build-test`, `if: github.event_name == 'pull_request'`, `permissions: { contents: read }`. It downloads the `openapi` artifact of the **same run** (`actions/download-artifact`, path `src/NightTales.Api/openapi.json`), checks out `main` into `base/`, builds it and generates the base spec with the 09.1.5-T1 generation step (`--generate-openapi` fallback, `09.1.5-T1-backend-ci-workflow.md:63`), then runs the pinned oasdiff binary (W11; version **and** SHA-256 pinned as workflow constants at implementation) with `oasdiff breaking --fail-on ERR base/openapi.json openapi.json`.
+- `.github/workflows/backend.yml` gains a `contract` job: `needs: build-test`, `if: github.event_name == 'pull_request'`, `permissions: { contents: read }`. It downloads the `openapi` artifact of the **same run** (`actions/download-artifact`, resolved under `head/`), checks out the **PR base** (`github.event.pull_request.base.sha` — `develop` today; BD12's "main" is stale, `main` is frozen at the initial commit) into `base/`, builds it — which writes the base spec through the 09.1.5-T1 build-time generation target to `base/src/NightTales.Api/openapi.json` — then runs the pinned oasdiff binary (W11; version **and** SHA-256 pinned in `tools/ci/install-oasdiff.sh`) as `oasdiff breaking --format json base/src/NightTales.Api/openapi.json head/openapi.json`, and hands the findings to `tools/ci/check-version-rule.py`. `--fail-on ERR` is deliberately **not** used: the rule, not the tool, decides whether a breaking finding is acceptable (a versioned breaking change has to pass the job).
 - Versioning rule: within `/api/v1` only **additive** changes are allowed. A breaking finding fails the job unless the head spec introduces a new top-level prefix (`/api/v2/...`) while keeping `/api/v1` intact — the job then fails only if `info.version`'s major did not change with it.
 - `ProblemDetails` must exist as `components.schemas.ProblemDetails` with `code`, `status`, `title`, `type`, `traceId`, so generated clients (`10.1.4`) have a typed error model; enforced by a unit test (`OpenApiDocumentTests`) and a `jq -e '.components.schemas.ProblemDetails'` step in the `contract` job.
 
@@ -242,7 +242,7 @@ xUnit (`tests/NightTales.Api.Tests`, `.../Infrastructure.Tests`, `.../TestKit` �
 | `TokenProtectorTests` | round-trip per purpose; `Unprotect` with a different purpose fails; null/empty inputs rejected; no plaintext in logs (assertion via the capture sink) |
 | `VulnerabilityAuditTests` | `dotnet list package --vulnerable` output has no High/Critical entry (enforced in CI; the test is a local guard) |
 | `OpenApiDocumentTests` | `components.schemas.ProblemDetails` exists with the five required properties; every catalogued error code has a documented response; `info.version` present |
-| `ContractDiffTests` (job-level, `09.9.5-T1`) | the `contract` job is skipped on `push`; a deliberately breaking fixture spec fails the `oasdiff breaking --fail-on ERR` invocation; an additive fixture passes |
+| `ContractDiffTests` (job-level, `09.9.5-T1`) | the `contract` job is skipped on `push`; a deliberately breaking fixture spec fails `tools/ci/check-version-rule.py` (oasdiff runs without `--fail-on`, so the rule is what fails the job); an additive fixture and a versioned breaking fixture pass |
 
 Integration tests never sleep (D13): cache expiry and health transitions are driven by `FakeClock` and direct service calls; the collector is a hand-written fake OTLP receiver in-process for the export assertions.
 
@@ -250,16 +250,16 @@ Integration tests never sleep (D13): cache expiry and health transitions are dri
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 09.9.2-T2 | (P) Feature-flag read service + `RequireFeature` + `nts-worker flags` (09 W2 CR-3) | BE | S (0.5) | 09.2.5-T1 | 02.8.3-T2 soft, 06.1.2-T1 (06 CR-8), 09.9.2-T1 (09 W3 CR-17), 06.5.2-T1, 13.4.1-T1 |
-| 09.9.3-T1 | Serilog + OpenTelemetry (Npgsql instrumentation, no EF instrumentation) + health + custom metrics (09 W2 CR-3) | BE | M (1.0) | 09.1.1-T1, 09.2.6-T1 | 09.9.3-T2, 11.6.2-T1, 08.2.1-T1, 08.1.1-T1 |
+| 09.9.2-T2 | (P) Feature-flag read service + `RequireFeature` + `nts-worker flags` (09 W2 CR-3) | BE | S (0.5) | 09.2.5-T1 | 02.8.3-T2 soft, 06.1.2-T1 (06 CR-8) |
+| 09.9.3-T1 | Serilog + OpenTelemetry (Npgsql instrumentation, no EF instrumentation) + health + custom metrics (09 W2 CR-3) | BE | M (1.0) | 09.1.1-T1, 09.2.6-T1 | 09.9.3-T2, 11.6.2-T1 |
 | 09.9.3-T2 | Query-string redaction (`access_token`, `ticket`, `token`, `code`, `state`) in logs/spans + capture test | BE | S (0.5) | 09.9.3-T1, 09.8.1-T2 | — |
-| 09.9.4-T1 | Security headers, CORS, Data Protection keys, vuln scan | BE | M (1.0) | 09.2.1-T1 | 09.10.4-T1, 06.1.2-T1 (06 CR-8), 09.10.1-T1 (09 W3 CR-17), 07.1.2-T1 |
-| 09.9.5-T1 | OpenAPI doc + contract diff check | Ops | S (0.5) | 09.1.5-T1 | 09.2.3-T2 |
+| 09.9.4-T1 | Security headers, CORS, Data Protection keys, vuln scan | BE | M (1.0) | 09.2.1-T1 | 09.10.4-T1, 06.1.2-T1 (06 CR-8), 07.1.2-T1 |
+| 09.9.5-T1 | OpenAPI doc + contract diff check | Ops | S (0.5) | 09.1.5-T1 | — (phase S, dropped by DEC 10.14) |
 
 Folder total **3.5 d raw**, matching B9 ("09.9 (P part) … 3.5"). Dependency cells are copied verbatim from README B8.1 (the `Title` column matches the `09 §6` task table, `plans/09-backend-api.md:538–542`); B8.1 additionally records `Phase = P · M1` for all five tasks.
 
 **Open items**
-- **[RESOLVED — README §B10 WT13]** `feature_flags.rules jsonb` (00 §6:306) is **unused in P**: this plan reads `enabled` only, and a seeded non-empty `rules` must not affect P behaviour (rule evaluation is `06.5.2`, S).
+- **[RESOLVED — README §B10 WT13]** `feature_flags.rules jsonb` (00 §6:306) is **unused in P**: this plan reads `enabled` only, and a seeded non-empty `rules` must not affect P behaviour (rule evaluation was `06.5.2`, dropped by DEC 10.14).
 - **[RESOLVED — README §B10 WT13]** the eviction outbox type string is fixed as `feature_flags_changed.v1` (the event type name `FeatureFlagsChanged` is per BD13).
 - **[RESOLVED — README §B10 WT13]** cross-instance eviction uses a PostgreSQL `NOTIFY feature_flags_changed` + a `FeatureFlagsCacheInvalidator` `LISTEN` service (mirroring BD11's LISTEN pattern) with the 30 s TTL as backstop (only the invalidator type name remains `[INFERENCE]`).
 - `09.9.3-T1` introduces the shared metrics holder (`Application/Telemetry/NightTalesMetrics.cs`, `Meter` = `NightTales`) so 02/03/06/09.6.3 can record without touching the SDK — new cross-plan type names **[INFERENCE]**; names in 11.6.2-T1 stay frozen.
@@ -283,3 +283,76 @@ Folder total **3.5 d raw**, matching B9 ("09.9 (P part) … 3.5"). Dependency ce
 **Monitoring.** 11.6.2-T1 alerts on `outbox_lag_seconds` > 30 s, `render_duration_seconds` failure share, `openai_cost_usd_total` vs the budget line and `youtube_quota_used` > 80 %; the API board uses the AspNetCore HTTP metrics. Add a log-based alert for `code = feature_disabled` volume spikes only if the operator asks (not part of the alert file).
 
 **Rollback.** Telemetry can be turned off with `Otlp:Enabled=false` without a redeploy of code; the redaction pipeline must never be disabled in production (it is the control that keeps tokens out of the collector). The flag guard is removed by deleting the `.RequireFeature(...)` call on a route (additive, no migration). Rolling back `09.9.4-T1` means restoring the previous app image — the `data_protection_keys` table stays (dropping it would destroy the ability to unprotect existing `refresh_tokens`/`user_action_tokens` values). Rolling back `09.9.5-T1` is making the `contract` job non-required in branch protection; the workflow file itself stays.
+
+## 12. Flag lifecycle as implemented (09.9.2-T2)
+
+Written after the task landed, so the mechanism has one description instead of one per file. It changes no
+decision above: §5.1, §5.4 and the `[RULED — README §B10 WT13]` rows stay as written.
+
+**Read path.** `IFeatureFlags.IsEnabledAsync(key, ct)` → `CachedFeatureFlags(IFeatureFlagReader, IMemoryCache, IClock, IOptions<FeatureFlagsOptions>)`
+→ `FeatureFlagReader` (one indexed primary-key lookup on `feature_flags`, `AsNoTracking`, one column). The
+table is platform data and **not** `IUserOwned`, so the 09 README D10 tenant filter never applies and no
+caller needs `IgnoreQueryFilters`. `rules` is never selected (P answers from `enabled` only).
+
+- The 30 s window is measured **against `IClock`**: the entry stores `LoadedAt` and is re-read once
+  `now − LoadedAt ≥ FeatureFlags:CacheSeconds`. The cache entry's own absolute expiry is only a memory
+  bound, so a test moves a `FakeClock` instead of sleeping and the window has one definition.
+- **Fail-closed, never throwing.** An invalid key answers `false` with no lookup; a key no row has is
+  cached as `false` for the window; a **failed read answers `false` and is not cached**, so a database that
+  recovers is believed on the next call rather than serving a fabricated value for the rest of the window.
+  A missing row and a failed read each log one warning per key per minute (the key only, the failure's
+  *type* only — never a message that could carry the connection string).
+
+**Eviction — two paths, both bounded by the window.**
+
+| Path | Producer | Consumer | Scope |
+|---|---|---|---|
+| `NOTIFY feature_flags_changed` (payload = the key) **in the writer's transaction**, delivered at commit | the CLI verb (the phase-S `PATCH` write path is dropped by DEC 10.14) through `IFeatureFlagChangeNotifier` | `FeatureFlagsCacheInvalidator` — one `LISTEN` session per instance, in the **Api and the Worker** | every instance |
+| outbox `feature_flags_changed.v1` (`FeatureFlagsChanged`, `[PlatformEvent]`) | the write path, through `IFeatureFlagChangeNotifier` | `FeatureFlagsChangedHandler` (`IOutboxHandler`, evict-only, idempotent), registered in the Worker's composition root | the Worker |
+
+The 30 s window is the **hard bound** when a notification is lost; a dropped `LISTEN` session or a failed
+delivery is therefore never fatal. The invalidator's loop never escapes with an exception (a database down
+at start is a reconnect attempt, not a stopped host) and restarts its schedule from the first entry only
+after a wait has returned — the same policy as BD11's realtime listener. In P the CLI writer feeds **both**
+paths from one `IFeatureFlagChangeNotifier` call: the `NOTIFY`, the audit row and the
+`feature_flags_changed.v1` outbox row all ride the writer's transaction, so a rolled-back `flags set`
+announces nothing and queues nothing. The row is queued by that notifier rather than by a raised domain
+event, because the write goes through `ExecuteUpdateAsync` and `FeatureFlag` is not an `AggregateRoot`, so
+`OutboxSaveChangesInterceptor` never sees an event; it is built to that interceptor's own `ToRow` contract
+(stable `type` through `OutboxEventRegistry`, `OutboxJson` payload, `user_id` null for the
+`[PlatformEvent]`, `occurred_at` and `next_attempt_at` from the scope's clock, the current activity as
+`trace_parent`).
+
+**Operator CLI** (`nts-worker flags list` / `flags set <key> on|off`, in the 11.3.3-T1 verb host): the
+Worker has no web listener, `Program` branches before any route is mapped, and the argv the host's
+configuration provider sees is filtered to switches and `key=value` pairs. Exit codes: `0` success
+(including a set that changed nothing), `1` validation (bad key shape, unknown key, malformed command
+line), `2` database/transport failure — never a stack trace or a connection string. A real transition
+writes exactly one `audit_logs` row (`actor_type = system`, `category = support`, `visibility = internal`,
+`data.actor = "system:operator"`, action `feature_flag_changed` **[INFERENCE]**) in the **same**
+transaction as the update, so a failed audit rolls the change back; a set to the current value writes
+nothing.
+
+**Configuration.**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `FeatureFlags:CacheSeconds` | `30` | the read window (BD13) |
+| `FeatureFlags:HeartbeatSeconds` | `30` **[INFERENCE]** | the invalidator's wait before a heartbeat |
+| `FeatureFlags:ListenerBackoffSeconds` | `1,2,4,8,16,30` **[INFERENCE]** | the invalidator's reconnect ramp; the last entry repeats |
+
+**Guard.** `FeatureFilters.RequireFeature(key)` (and the `RouteHandlerBuilder.RequireFeature(key)`
+extension) answers the **same ProblemDetails a handler error produces** — 404 `feature_disabled` with the
+request's `traceId`, built by `ProblemDetailsWriter.ToProblem`, no exception, never 403. It resolves
+`IFeatureFlags` from the request's services, so it reads the host's cache; the handler is not invoked when
+the flag is off, and an **anonymous** caller gets the same 404 (the host's fallback policy asserts nothing
+about a principal), which is the point of BD13's no-existence-leak rule. Guarded routes are the
+consumers' (02.7, 02.8.3, 06) — this folder adds none.
+
+**Test placement.** `NightTales.Infrastructure.UnitTests/Flags/` (window, fail-closed, key shape, the
+outbox handler's eviction, the notifier's exact SQL, the invalidator's schedule) and
+`NightTales.Api.IntegrationTests/Flags/` (the seeded value and the one-statement-per-window count against
+real PostgreSQL, the guard over the real pipeline, the real `LISTEN` session, and the CLI over
+`WorkerHost`). There is no `NightTales.Infrastructure.Tests` project in this solution; the task file's
+`Infrastructure.Tests` path maps to `Infrastructure.UnitTests`. No migration and no column change: the
+64-character key bound is the Application's `FeatureFlagKey`, and `feature_flags.key` stays `text`.

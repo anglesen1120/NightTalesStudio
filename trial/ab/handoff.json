@@ -1,0 +1,100 @@
+{
+  "model_choice": {
+    "vi": "gpt-6-sol",
+    "en": "gpt-6-luna",
+    "applied_rule": "b"
+  },
+  "d15": {
+    "luna_mean_vi": 3.11,
+    "sol_mean_vi": 3.17,
+    "sol_mean_x0_9_vi": 2.85,
+    "luna_natural_language_vi": 3.39,
+    "luna_mean_en": 3.08,
+    "sol_mean_en": 3.11,
+    "wi": 1,
+    "verdict_ready": true
+  },
+  "d4_calibration": {
+    "words_per_minute_measured": null,
+    "source": "01.3.1-T4 not landed (T26: accepted; D4 rates = T103 VieNeu-baseline rates)",
+    "tiers": {
+      "short": {
+        "tokens": {
+          "vi": 244,
+          "en": 177
+        },
+        "writer_max_output_headroom": {
+          "vi": 0.56,
+          "en": 0.73
+        }
+      },
+      "standard": {
+        "tokens": {
+          "vi": 923,
+          "en": 776
+        },
+        "writer_max_output_headroom": {
+          "vi": 0.69,
+          "en": 0.47
+        }
+      },
+      "long": {
+        "tokens": {
+          "vi": 1564,
+          "en": 1788
+        },
+        "writer_max_output_headroom": {
+          "vi": 0.43,
+          "en": 0.46
+        }
+      }
+    },
+    "segments_observed": {
+      "min": 4,
+      "max": 55,
+      "median": 21
+    }
+  },
+  "price_bounds_12_1_1": {
+    "cost_per_story_usd": {
+      "short": {
+        "gpt-6-luna": 0.00182
+      },
+      "standard": {
+        "gpt-6-luna": 0.0018,
+        "gpt-6-sol": 0.03017
+      },
+      "long": {
+        "gpt-6-luna": 0.00324
+      }
+    },
+    "latency_ms": {
+      "short": {
+        "gpt-6-luna": {
+          "p50": 44879,
+          "p95": 66660
+        }
+      },
+      "standard": {
+        "gpt-6-luna": {
+          "p50": 120030,
+          "p95": 224832
+        },
+        "gpt-6-sol": {
+          "p50": 123725,
+          "p95": 157755
+        }
+      },
+      "long": {
+        "gpt-6-luna": {
+          "p50": 142504,
+          "p95": 169003
+        }
+      }
+    },
+    "rated_tier": "standard"
+  },
+  "rater_source": "ai",
+  "release": "2026.10.1",
+  "evidence": "trial/ab/r1/REPORT.md"
+}

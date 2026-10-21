@@ -1,0 +1,36 @@
+{
+  "en": {
+    "series.style.dark-folklore-ink.label": "Dark folklore ink",
+    "series.style.dark-folklore-ink.hint": "Ink-wash folklore scenes, moonlit and shadowy",
+    "series.style.foggy-cinematic.label": "Foggy cinematic",
+    "series.style.foggy-cinematic.hint": "Misty film stills with cold light",
+    "series.style.vintage-photo-grain.label": "Vintage photo grain",
+    "series.style.vintage-photo-grain.hint": "Old faded photos with film grain",
+    "series.style.watercolor-night.label": "Watercolor night",
+    "series.style.watercolor-night.hint": "Soft night watercolours with lantern glow",
+    "series.style.temple-candlelight.label": "Temple candlelight",
+    "series.style.temple-candlelight.hint": "Warm candlelit temple scenes",
+    "series.style.noir-sketch.label": "Noir sketch",
+    "series.style.noir-sketch.hint": "Black-and-white charcoal, places and objects only",
+    "series.style.case-file-illustration.label": "Case-file illustration",
+    "series.style.case-file-illustration.hint": "Muted case-file drawings, no faces",
+    "series.style.trueCrimeNotice": "Only illustration styles without real faces are available for true crime."
+  },
+  "vi": {
+    "series.style.dark-folklore-ink.label": "Mực tàu dân gian u tối",
+    "series.style.dark-folklore-ink.hint": "Cảnh dân gian vẽ mực, ánh trăng và bóng tối",
+    "series.style.foggy-cinematic.label": "Điện ảnh sương mù",
+    "series.style.foggy-cinematic.hint": "Khung hình điện ảnh mờ sương, ánh sáng lạnh",
+    "series.style.vintage-photo-grain.label": "Ảnh cũ nhiễu hạt",
+    "series.style.vintage-photo-grain.hint": "Ảnh cũ bạc màu, nhiễu hạt phim",
+    "series.style.watercolor-night.label": "Màu nước đêm",
+    "series.style.watercolor-night.hint": "Màu nước đêm dịu, ánh đèn lồng",
+    "series.style.temple-candlelight.label": "Ánh nến đền chùa",
+    "series.style.temple-candlelight.hint": "Cảnh đền chùa ấm áp dưới ánh nến",
+    "series.style.noir-sketch.label": "Phác thảo noir",
+    "series.style.noir-sketch.hint": "Than chì đen trắng, chỉ cảnh vật và đồ vật",
+    "series.style.case-file-illustration.label": "Minh hoạ hồ sơ vụ án",
+    "series.style.case-file-illustration.hint": "Tranh hồ sơ vụ án tông trầm, không có khuôn mặt",
+    "series.style.trueCrimeNotice": "Vụ án có thật chỉ dùng được phong cách minh hoạ, không có khuôn mặt người thật."
+  }
+}

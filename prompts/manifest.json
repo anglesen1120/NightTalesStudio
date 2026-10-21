@@ -1,0 +1,125 @@
+{
+  "release": "2026.10.1",
+  "files": {
+    "bible/propose.v1.md": {
+      "version": "v1",
+      "sha256": "3e2912d313ba7125d211014ea8effa957d50b395c8d9aadf28f4b1b7e0288139"
+    },
+    "facts/v1.md": {
+      "version": "v1",
+      "sha256": "c1eb8022676fabbced995616ef0c853bed46bcc052d77288d5450f5856de328c"
+    },
+    "ideas/generate.v1.md": {
+      "version": "v1",
+      "sha256": "81be7efc541dd37cbdd0d74ddee956e75cfa7fc22b892eb3f5907540d59332ba"
+    },
+    "ideas/novelty.v1.md": {
+      "version": "v1",
+      "sha256": "18bd97f9249cb14f248e75fb6ed51876407afa237180afaa7d9603124ee231c5"
+    },
+    "review/v1.md": {
+      "version": "v1",
+      "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
+    },
+    "revise/v1.md": {
+      "version": "v1",
+      "sha256": "d75afac14ed82e2a00a082d82fd3fac700b74174ac0d9eacf6c079690d7ed202"
+    },
+    "schemas/bible-proposal.v1.json": {
+      "version": "v1",
+      "sha256": "12d3e47a8951554edf595ad59bba3290d1d4a92400cf7ae36465b8714305cf85"
+    },
+    "schemas/facts.v1.json": {
+      "version": "v1",
+      "sha256": "814e68e2a5c4a593b4a53e2b2eb5074330a62b058a9cf3413fbaac910e529345"
+    },
+    "schemas/ideas.v1.json": {
+      "version": "v1",
+      "sha256": "951218b54528cf95ce7c07e97f4db4af0ff93d8d3e8cecf65a66ed90df0bdafd"
+    },
+    "schemas/novelty.v1.json": {
+      "version": "v1",
+      "sha256": "86d122272d18cb49777fdf31159d35d01ba5ec441573bf0303936497fd670675"
+    },
+    "schemas/review.v1.json": {
+      "version": "v1",
+      "sha256": "e4790f0c29f315e882c99bff3a813df36d0fb0fb2843d1deadf60943004b0ab4"
+    },
+    "schemas/story.v1.json": {
+      "version": "v1",
+      "sha256": "a32d53ccbad6c777e12a7efb84c65cef5bf577836b498a2d91c93e9dd0582d96"
+    },
+    "shared/attestation.ta.v1.en.md": {
+      "version": "ta.v1",
+      "sha256": "cc8ab8ca8364f3152cb2056ec99b203d08abc5c60a245c9ab900a3d5b09600fa"
+    },
+    "shared/attestation.ta.v1.vi.md": {
+      "version": "ta.v1",
+      "sha256": "27d11664bf0fc48293a673deefc2cae7b0bf2b3600e233cea84bb85083bf17e5"
+    },
+    "shared/ear-rules.en.v1.md": {
+      "version": "v1",
+      "sha256": "44d5de72da46dc346be9e546a58cd0ef2838ca409849de423e42dda2090b6beb"
+    },
+    "shared/ear-rules.vi.v1.md": {
+      "version": "v1",
+      "sha256": "9a8599145366939861bdf9ad132d74f07aef501ea261d873106fc38a2d2a18f1"
+    },
+    "shared/keyword-rules.v1.md": {
+      "version": "v1",
+      "sha256": "63a2e78d4bcf9760f599be70cd25b6d18dfc4d459cb1693b33e42bea88e2b4f4"
+    },
+    "shared/overused.en.v1.txt": {
+      "version": "v1",
+      "sha256": "a82d5bfa4970afa7a82b04f126dd3d77ba0851a4cab6c778b96b5d2b1990b267"
+    },
+    "shared/overused.vi.v1.txt": {
+      "version": "v1",
+      "sha256": "0e93e287ed88494a4a3ef81c6cb40e32a99c5116a6e4da24d46a24227c64c9b6"
+    },
+    "shared/preset-spec.v1.md": {
+      "version": "v1",
+      "sha256": "45d4d659c9e4ccca9431412d195dc8690a1b6d6acc39f4f0181b347db5124e1e"
+    },
+    "shared/real-world-framing.en.v1.txt": {
+      "version": "v1",
+      "sha256": "0c2e745c8e67a2f702c6b71e3657501a2c171f8e015eb971f89c4ef20c637fd1"
+    },
+    "shared/real-world-framing.vi.v1.txt": {
+      "version": "v1",
+      "sha256": "8e7c14ca61c781904f111fb45d2bfcb7374a5b1e7654e2d6625ebd126e308a0d"
+    },
+    "shared/structure-vocab.v1.json": {
+      "version": "v1",
+      "sha256": "aa8579d97f0a513e23a07f97ed91fd2d03856dc81f93bf9231b5f95fe8d95a77"
+    },
+    "story/ghost.en.v1.md": {
+      "version": "v1",
+      "sha256": "4377b7dee5104bf51aab0ec2aeebfd838b2f3b208471c0c45b6ddcd86a6e3aea"
+    },
+    "story/ghost.vi.v1.md": {
+      "version": "v1",
+      "sha256": "9c49f2791eacbe58d03e3a596adef9ad0ccf3ae17de60f4b18e8ca1f6f1c2b9c"
+    },
+    "story/spiritual.en.v1.md": {
+      "version": "v1",
+      "sha256": "b8370052e5b90dd2c24d90a61b579c14090c30cdfdfae0bb094fde42297951a5"
+    },
+    "story/spiritual.vi.v1.md": {
+      "version": "v1",
+      "sha256": "048f895d8e1fb825885fb01443f61fb9bb8fa52b7c82f8dc91e33c50bd44210d"
+    },
+    "story/true_crime.en.v1.md": {
+      "version": "v1",
+      "sha256": "6404166ec9474a68f5d2e91eb58c81156818048827d86b0f7567d44f9cb89c2f"
+    },
+    "story/true_crime.vi.v1.md": {
+      "version": "v1",
+      "sha256": "2ae9b3cd48196abed6b8b657814606df9e047d1647aecf692fe8d96eac3d8786"
+    },
+    "system/writer.v1.md": {
+      "version": "v1",
+      "sha256": "aa5edb5d8aacd6e9f4e2418eef2e4216d464b452aea4d1f2eafecc581aca5c7c"
+    }
+  }
+}

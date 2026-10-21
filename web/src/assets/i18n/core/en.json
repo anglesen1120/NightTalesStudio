@@ -1,0 +1,78 @@
+{
+  "common": {
+    "close": "Close",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "back": "Back",
+    "loading": "Loading…",
+    "translationUnavailable": "This part is not translated yet"
+  },
+  "core": {
+    "ui": {
+      "pageHeader": { "back": "Back", "actions": "Page actions" },
+      "emptyState": { "title": "Nothing here yet", "body": "Create the first item to get started." },
+      "errorState": { "title": "Content could not be loaded", "body": "Try again.", "retry": "Try again", "traceId": "Trace ID" },
+      "loadingState": { "label": "Loading" },
+      "confirm": { "title": "Confirm action", "cancel": "Cancel", "confirm": "Confirm", "pending": "Working" },
+      "dialog": { "close": "Close dialog" },
+      "statusChip": {
+        "unknown": "Unknown status",
+        "draft": "Draft",
+        "story_generating": "Writing story",
+        "story_review": "Story review",
+        "story_approved": "Story approved",
+        "rendering": "Rendering video",
+        "video_review": "Video review",
+        "ready": "Ready",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "stepper": { "step": "Step", "current": "current", "done": "done" },
+      "theme": { "toggle": "Change theme", "dark": "Dark", "light": "Light" },
+      "charCounter": { "label": "Characters", "over": "over limit" },
+      "copyableCode": { "copy": "Copy code", "copied": "Copied", "unavailable": "Automatic copy is unavailable. Select and copy the code." },
+      "icons": { "check": "Complete", "clock": "Pending", "alert": "Alert", "play": "Play", "pause": "Pause", "copy": "Copy", "unknown": "Unknown" }
+    },
+    "session": {
+      "signedOut": { "title": "You have signed out", "body": "Your session has ended. Sign in again to continue." },
+      "expired": { "title": "Your session expired", "body": "For your security, sign in again to continue." },
+      "revoked": { "title": "Your session was revoked", "body": "This session is no longer valid. Please sign in again." },
+      "reused": { "title": "Unusual session activity detected", "body": "Your session was closed to protect your account. Sign in again and change your password if you do not recognise this activity." },
+      "restoreFailed": { "body": "Your session could not be restored. Please sign in again." },
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "reauthRequired": { "title": "Confirmation required", "body": "Enter your password again to perform this sensitive action." }
+    }
+  },
+  "shell": {
+    "nav": {
+      "label": "Main navigation",
+      "dashboard": "Dashboard",
+      "series": "Series",
+      "episodes": "Episodes",
+      "open": "Open navigation"
+    },
+    "menu": {
+      "triggerLabel": "Account",
+      "logOut": "Sign out",
+      "role": { "user": "User", "admin": "Admin", "owner": "Owner" }
+    },
+    "language": {
+      "label": "Language",
+      "vi": "Tiếng Việt",
+      "en": "English",
+      "saveFailed": "Could not save your language. Please try again."
+    },
+    "realtime": {
+      "connected": "Live updates on",
+      "reconnecting": "Reconnecting…",
+      "paused": "Live updates paused",
+      "continue": "Continue"
+    },
+    "skipToContent": "Skip to main content",
+    "title": { "dashboard": "Dashboard", "series": "Series", "episodes": "Episodes" },
+    "profile": { "loadFailed": "Could not load your account" }
+  }
+}

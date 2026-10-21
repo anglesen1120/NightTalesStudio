@@ -1,0 +1,10 @@
+:host {
+  display: block;
+}
+
+.episodes-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-5);
+  min-width: 0;
+}

@@ -2,7 +2,7 @@
 
 > Contracts: `00-overview.md` §6 (`channel_connections`, `publications`, `platform_quota_usage`, `data_deletion_requests`), §7 Publication states, §8 routes. Backend skeleton: 09. Screens: 10.7. Compliance filings: 13. Facts: `../DECISIONS.md` §5.6, §10.4, §10.6.
 > Level: **high-level plan — not the final plan.** It fixes scope, contracts, key decisions, risks and rough estimates only. Every feature in it will still get (1) a review of the relevant sections and (2) its own **detailed feature plan** in `plans/features/`, reviewed again before implementation (process and template: `00-overview.md` §10.1). Details and estimates here may change in that step.
-> Delivery phase (personal-first, `00-overview.md` §4.1): P (built in the personal phase so autopilot publishes through the official API and the audit can be filed early) except S items 06.1.2-T3, 06.3.2, 06.3.3, 06.5.2. Where this plan says M1 for an S item, read M2.
+> Delivery phase (personal-only, `00-overview.md` §4.1, DEC 10.14): all P (the plan is built in the personal phase so autopilot publishes through the official API and the audit can be filed early); the former S extras 06.1.2-T3, 06.3.2, 06.3.3 and 06.5.2 are dropped.
 
 ## 1. Purpose and scope
 
@@ -22,8 +22,8 @@
 | Y4 | `status.containsSyntheticMedia` exists ✅ | Always `true` |
 | Y5 | Must not automate uploads without the user's prior specific and express consent ✅ (the rule; the autopilot mitigation below is ⚠️ [INFERENCE]) | Consent record per video (Publication cannot leave `awaiting_consent` without `consent_at`): given by the user, or written for autopilot by the scheduler from the owner's versioned series authorization after a veto window (06.2.2-T3) |
 | Y6 | In-app revoke → revoke token right away + delete data within **7 days**; Google-page revoke → **30 days**; stored Authorized Data max 30 days then refresh/delete ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | Jobs in §5.4 |
-| Y7 | Quota extension only via API Compliance Audit ✅ | File in M1 as soon as upload works and the privacy/terms pages are live (00 §4, 13.4.2) |
-| Y8 | Google OAuth app verification requirements for `youtube.upload` ⚠️ — separate from the audit: verification removes the unverified-app screen and the 100-new-user cap; it does **not** lift the private lock (only the audit does, Y2) | Personal phase: app In production, unverified (00 §4.1); verification only for the SaaS (13.4.1, M2) |
+| Y7 | Quota extension only via API Compliance Audit ✅ | File in M1 as soon as upload works and the privacy/terms pages are live (00 §4, 13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public) |
+| Y8 | Google OAuth app verification requirements for `youtube.upload` ⚠️ — separate from the audit: verification removes the unverified-app screen and the 100-new-user cap; it does **not** lift the private lock (only the audit does, Y2) | Personal product: app In production, unverified (00 §4.1); Google verification is not needed for a single-owner app, so it is not planned (DEC 10.14) |
 | Y9 | API clients must link YouTube's Terms, have their own terms stating users agree to them, and require agreement to a privacy policy (III.A.1, III.A.2) ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | 13.1.1-T1, 13.1.2-T1 drafts and 10.3.1-T1 pages are P and live before the audit is filed |
 | Y10 | Write operations: "users must have final control over the data that will be published" (III.C.3) ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | Autopilot shows each upcoming publication (title, description, tags, time) during the veto window with edit/cancel; whether the audit accepts series-level authorization is unverified ⚠️ — fallback: one-tap per-video approval from the notification |
 | A1 | Minimal scopes: `https://www.googleapis.com/auth/youtube.upload` + a read scope to show the channel name ⚠️ (confirm the least-privileged scope for `channels.list?mine=true`) | Fewer scopes = easier verification |
@@ -34,7 +34,7 @@
 - **FR-06-2** Store tokens encrypted (`ITokenProtector`); never expose them to the browser.
 - **FR-06-3** Upload with the resumable protocol; metadata: title, description, tags, `privacyStatus`, optional `publishAt` (only with private ✅), `containsSyntheticMedia = true` ✅, `selfDeclaredMadeForKids = false` ([DECISION] horror/true crime is not for kids).
 - **FR-06-4** Per-video consent record: `consent_at`, `consent_text_version`, `consent_source` (`user`/`autopilot`; for autopilot also the series authorization it came from), channel, schedule — shown in the UI and kept for the audit.
-- **FR-06-5** Global quota ledger per PT day; reservation before upload; FIFO queue with per-user fairness cap.
+- **FR-06-5** Global quota ledger per PT day; reservation before upload; FIFO queue (no per-user fairness cap: one owner, DEC 10.14).
 - **FR-06-6** Poll processing status after upload until processed/failed/rejected; notify the user.
 - **FR-06-7** Revocation flows and deletion windows per Y6; 30-day re-verification of stored data.
 - **FR-06-8** All behind flag `youtube_publish`.
@@ -52,9 +52,9 @@
 **06.1.2 Connect channel** — *As a creator I want to connect my channel so that I can publish from Night Tales.* Must · M
 - Given `POST /channels/youtube/connect`, When the user has no re-auth ≤ 5 min old (`POST /auth/reauth`: password, plus TOTP if enrolled, 09.3), Then 401 `reauth_required` and the UI opens the re-auth dialog; otherwise the API returns the Google authorization URL for the **currently active** YouTube OAuth client with `state` (bound to the user session and that client id, single use, 10 min) and a PKCE challenge.
 - Given `GET /channels/youtube/callback?code&state`, When valid, Then tokens are exchanged with the client bound to `state`, channel id/title fetched, a `channel_connections` row saved (`active`, scopes, `oauth_client_id` = that client, `last_verified_at`), audit logged, the user e-mailed "YouTube channel {title} was connected" (time, IP/device, "This wasn't me" link to `/account/security`, 09.3.7), and the user redirected to `/channels?connected=youtube`.
-- Given the owner configures a new YouTube OAuth client (a critical setting: second-owner approval or 24 h time-lock, 09.10), Then existing connections keep their pinned `oauth_client_id`: refresh, upload and revoke always use the client whose id matches the connection; only new connects use the new client; a client cannot be removed from settings while any `active` or `expired` connection references it, and the admin view shows connection counts per client so the old one can be retired after users reconnect.
+- Given the owner configures a new YouTube OAuth client (configuration, there is no admin settings surface in the personal product, DEC 10.14), Then existing connections keep their pinned `oauth_client_id`: refresh, upload and revoke always use the client whose id matches the connection; only new connects use the new client; the app refuses to start with a client map that drops an id referenced by any `active` or `expired` connection, so the old one can be retired after reconnecting.
 - Given the user denies consent or `state` mismatches, Then no row is created and the UI shows the reason.
-- Given the same channel is already connected by another user, Then 409 `channel_already_connected` [DECISION: one owner per channel].
+- Given the same channel is already connected, Then 409 `channel_already_connected` [DECISION: one connection per channel].
 
 ### Epic 06.2 — Publishing
 
@@ -92,11 +92,7 @@
 - Given `platform_quota_usage(platform='youtube', quota_day=PT date)`, When an upload is about to start, Then a unit is reserved with an atomic `UPDATE … SET units_used = units_used + 1 WHERE units_used < units_limit`; no row updated → wait for the next PT day.
 - Given `units_limit`, Then it is configurable (100 default ✅) and updated after an extension.
 
-**06.3.2 Fairness** — *As a creator I want a fair share so that one heavy user cannot block everyone.* Must · S
-- Given the queue, Then at most N uploads per user per PT day ([DECISION] 3 in beta), FIFO by `consent_at`; admins can override.
-
-**06.3.3 Quota visibility** — *As the operator and users I want to see quota status so that expectations are clear.* Should · S
-- Given `GET /admin/quota`, Then used/limit/queue length today and forecast; the publish form shows the estimated upload time when the queue is long.
+**06.3.2 Fairness** and **06.3.3 Quota visibility** are dropped (DEC 10.14: single owner, no admin surface); the publish ETA lives in 06.3.1.
 
 ### Epic 06.4 — Revocation, token health and data duties
 
@@ -114,10 +110,9 @@
 ### Epic 06.5 — Audit and launch
 
 **06.5.1 Audit evidence pack** — *As the operator I want a complete audit submission so that the extension is approved on the first try.* Must · M
-- Given the **production** API project (the one being audited) and the owner's channel, Then the pack contains: screencast of policy acceptance → connect → publish form → consent → upload → disconnect, **and** autopilot on → series authorization text (version) → veto-window notice with edit/cancel/approve-now → scheduler consent row → upload; privacy policy and ToS URLs; data-flow diagram; data-retention and deletion table (7/30-day jobs live); quota justification (M1: the owner's cadence and daily cap; M2 re-filing: beta data); the synthetic-media flag; description of the consent model with the III.C.3 justification and the one-tap fallback. Filed via https://support.google.com/youtube/contact/yt_api_form ✅.
+- Given the **production** API project (the one being audited) and the owner's channel, Then the pack contains: screencast of policy acceptance → connect → publish form → consent → upload → disconnect, **and** autopilot on → series authorization text (version) → veto-window notice with edit/cancel/approve-now → scheduler consent row → upload; privacy policy and ToS URLs; data-flow diagram; data-retention and deletion table (7/30-day jobs live); quota justification (the owner's cadence and daily cap); the synthetic-media flag; description of the consent model with the III.C.3 justification and the one-tap fallback. Filed via https://support.google.com/youtube/contact/yt_api_form ✅.
 
-**06.5.2 Launch switch** — *As the operator I want a gradual rollout so that problems are contained.* Must · XS
-- Given `youtube_publish` rules (`jsonb`), Then it can be enabled for admins → beta users → everyone.
+**06.5.2 Launch switch** is dropped (DEC 10.14: no multi-user rollout; the owner flips `youtube_publish` for their own account).
 
 ## 5. Technical design
 
@@ -173,8 +168,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | 06.1.1-T1 | Create staging/prod Google projects, consent screens (staging stays in Testing with 7-day re-auth and never uploads real content) | Ops | S | 10.3.1-T1 (privacy/terms URLs) |
 | 06.1.2-T1 | Connect/callback commands + PKCE/state store | BE | M | 09.3 |
-| 06.1.2-T2 | Channel info fetch + connection aggregate + pinned client resolver + connect e-mail (P half of the former 06.1.2-T3; 06 CR-7) | BE | M | 06.1.2-T1 |
-| 06.1.2-T3 | Multi-client settings source (09.10) + client removal guard + admin connection counts (S; re-auth, pinning and connect e-mail moved to 06.1.2-T1/T2 in P, 06 CR-7) | BE | XS | 06.1.2-T1, 09.3, 09.10 |
+| 06.1.2-T2 | Channel info fetch + connection aggregate + pinned client resolver + connect e-mail (the P half of the former 06.1.2-T3, whose phase-S half was dropped by DEC 10.14; 06 CR-7) | BE | M | 06.1.2-T1 |
 | 06.2.1-T1 | Publication aggregate + create command + validation + `pu-` ETag + attribution + episode summary block (06 CR-7) | BE | M | 09.2 |
 | 06.2.2-T1 | Consent command + domain guard | BE | S | 06.2.1 |
 | 06.2.2-T2 | Consent e-mail per publication + veto-window notice with preview and signed cancel link (outbox) | BE | S | 06.2.2-T1 |
@@ -187,14 +181,11 @@ sequenceDiagram
 | 06.2.5-T1 | Processing poll job + go-live job + episode status (06 CR-7) | BE | M | 06.2.3 |
 | 06.2.6-T1 | Cancel command | BE | S | 06.2.2 |
 | 06.3.1-T1 | Quota ledger with PT day + atomic reserve/release | BE | M | 09.2 |
-| 06.3.2-T1 | Fairness queue | BE | S | 06.3.1 |
-| 06.3.3-T1 | Admin quota query (the publish ETA moved to 06.3.1-T1 in P, 06 CR-7) | BE | XS | 06.3.1 |
 | 06.4.1-T1 | Disconnect + Google revoke + deletion request | BE | S | 06.1.2 |
 | 06.4.2-T1 | Token health job + 30-day refresh | BE | M | 06.4.1 |
 | 06.4.2-T2 | Token health incident path per `oauth_client_id` (no revoke, no deletion request) | BE | XS | 06.4.2-T1, 06.2.3-T3 |
 | 06.4.3-T1 | YouTube data deletion handler + alert | BE | S | 13.3.1-T1 |
 | 06.5.1-T1 | Evidence pack (filing is 13.4.2-T1) | BA | M | 10.7.1, 10.7.2, 10.7.4, 10.4.3, 06.2.2-T3, 06.4.3-T1, 13.1.1-T1, 13.1.2-T1, 13.2.1-T1, 10.3.1-T1 |
-| 06.5.2-T1 | Flag rollout rules | BE | XS | 09.9.2 |
 
 ## 7. Test plan
 
@@ -206,33 +197,33 @@ sequenceDiagram
 
 | Risk | Mitigation |
 |---|---|
-| Audit takes months or is rejected | Owner/BA files in M1 as soon as upload works (13.4.2); until approval autopilot runs in pre-audit mode (private); if rejected: appeal (https://support.google.com/youtube/contact/yt_api_appeals), fix, re-file. Residual risk: the channel stays private and Gate 2 cannot be evaluated |
-| 100/day ceiling blocks growth | Fairness caps, clear ETA, pricing aware of the ceiling; extension sized from beta data at the M2 re-filing |
+| Audit takes months or is rejected | Owner/BA files in M1 as soon as upload works and the policy pages are public (13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public); until approval autopilot runs in pre-audit mode (private); if rejected: appeal (https://support.google.com/youtube/contact/yt_api_appeals), fix, re-file. Residual risk: the channel stays private and Gate 2 cannot be evaluated |
+| 100/day ceiling blocks growth | Clear ETA from 06.3.1 (quota and queue length); the owner's cadence and daily cap stay well under the ceiling; extension sized from the owner's cadence at re-filing |
 | Upload failures on large files | Resumable protocol, persisted session URI, retries |
 | Policy change | Watch developer policy updates (08); isolate behind `IYouTubeClient` |
-| A broken or rotated OAuth client is read as mass user revocation and triggers deletion of every connection | `invalid_client`/`unauthorized_client` mapped to a platform incident, never to revoke/deletion; connections pinned to `oauth_client_id`; client changes are critical settings (09.10) |
+| A broken or rotated OAuth client is read as mass user revocation and triggers deletion of every connection | `invalid_client`/`unauthorized_client` mapped to a platform incident, never to revoke/deletion; connections pinned to `oauth_client_id`; a client change is a config change reviewed at deploy (no settings surface, DEC 10.14) |
 | Stolen session connects an attacker's channel or publishes silently | Re-auth on connect; e-mail on every connect and every consent with a cancel path |
 
 ## 9. Exit criteria
 
 - **M1:** connect, private publish and per-video consent work on staging with a test channel (evidence can be recorded; legal drafts ready).
-- **M2:** beta users publish (private until audit) with consent and the quota ledger; disconnect + deletion timers tested.
-- **M3:** audit approved and quota extension (if requested) granted; `youtube_publish` on for everyone.
+- **M2:** *(dropped — no beta users, DEC 10.14)* the owner publishes through autopilot consent and the quota ledger; disconnect + deletion timers tested.
+- **M3:** audit approved and quota extension (if requested) granted; `youtube_publish` on for the owner's channel.
 
 ## 10. Open questions and contract changes
 
 - ⚠️ Least-privileged scope for reading the connected channel's title.
 - ⚠️ Whether Google OAuth verification (sensitive/restricted scope review) applies to `youtube.upload`, and its timeline.
 - **Contract changes (applied to 00):** `publications.next_attempt_at`; upload session URI in `platform_payload`; `channel_connections.oauth_client_id` (pinned client; replaces the former `oauth_project`).
-- **Contract notes (no 00 change needed):** re-auth on `POST /channels/{platform}/connect` for every user is specified in 09.3.2 (401 `reauth_required`); e-mail templates `channel_connected` and `publication_consented` are plan-local (outbox e-mails); YouTube/TikTok client settings are keyed by `oauth_client_id` (09 §5.6) so retired clients stay resolvable.
+- **Contract notes (no 00 change needed):** re-auth on `POST /channels/{platform}/connect` for every user is specified in 09.3.2 (401 `reauth_required`); e-mail templates `channel_connected` and `publication_consented` are plan-local (outbox e-mails); YouTube/TikTok clients are keyed by `oauth_client_id` in configuration so retired clients stay resolvable.
 
 ## 11. Estimate summary
 
 | Epic | Days |
 |---|---|
-| 06.1 Setup + connect | 2.75 |
+| 06.1 Setup + connect | 2.5 |
 | 06.2 Publishing | 8.5 |
-| 06.3 Quota scheduler | 1.75 |
+| 06.3 Quota scheduler | 1.0 |
 | 06.4 Revocation + data duties | 2.25 |
-| 06.5 Audit + launch | 1.25 |
-| **Total** | **16.5** → with 20 % buffer **19.8** person-days (P 15.25, S 1.25; 06 CR-7: was 15.0 / 18.0 — P re-estimated in `features/06-youtube-posting/README.md` §9) |
+| 06.5 Audit | 1.0 |
+| **Total** | **15.25** → with 20 % buffer **18.3** person-days (all P; 06 CR-7: was 15.0 / 18.0 — re-estimated in `features/06-youtube-posting/README.md` §9; DEC 10.14 removed the S extras 06.1.2-T3, 06.3.2-T1, 06.3.3-T1, 06.5.2-T1 = 1.25) |

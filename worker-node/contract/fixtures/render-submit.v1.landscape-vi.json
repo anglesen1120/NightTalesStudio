@@ -1,0 +1,58 @@
+{
+  "schema": "render-submit.v1",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "mpt": {
+    "video_subject": "Fixture story title (landscape-vi)",
+    "video_script": "NTS_FIXTURE_SCRIPT",
+    "video_terms": [
+      "<styled scene prompt vi 1>",
+      "<styled scene prompt vi 2>",
+      "<styled scene prompt vi 3>",
+      "<styled scene prompt vi 4>"
+    ],
+    "video_aspect": "16:9",
+    "video_fit_mode": "cover",
+    "video_concat_mode": "sequential",
+    "video_transition_mode": null,
+    "video_clip_duration": 10,
+    "video_clip_speed": 1.0,
+    "match_materials_to_script": true,
+    "video_count": 1,
+    "video_source": "openai_image",
+    "video_materials": null,
+    "custom_audio_file": null,
+    "video_language": "vi",
+    "voice_name": "kokoro:Hải Đăng",
+    "voice_volume": 1.0,
+    "voice_rate": 1.0,
+    "bgm_type": "custom",
+    "bgm_file": "dark-ambient-01.mp3",
+    "bgm_volume": 0.146,
+    "video_music_prompt": "",
+    "sonilo_bgm_prompt": "",
+    "subtitle_enabled": true,
+    "subtitle_display_mode": "sentence",
+    "subtitle_animation": "none",
+    "subtitle_position": "bottom",
+    "custom_position": 70.0,
+    "font_size": 84,
+    "stroke_color": "#000000",
+    "stroke_width": 3.0,
+    "text_fore_color": "#FFFFFF",
+    "text_background_color": false,
+    "rounded_subtitle_background": false,
+    "font_name": "BeVietnamPro-Bold.ttf",
+    "paragraph_number": 1,
+    "video_script_prompt": "",
+    "custom_system_prompt": ""
+  },
+  "image_plan": {
+    "max_images": 4,
+    "prompt_sha256": [
+      "4025b1d790ceddb2eb7832b96aa2d81bab6d49d4d9ebcf903012c912c169f7ff",
+      "0350ef3f09a7599f55edb705c735dee7b39b4e561d741d9902c1bcc3fa2b0deb",
+      "5c9f95977ace15f3d14caad958fc6401abaeca3d89191de6e03e890ad36d2ca3",
+      "88773abe984b2de27d615171bdc89f84757741d96ddfb35c5a343ee771ae1378"
+    ]
+  }
+}

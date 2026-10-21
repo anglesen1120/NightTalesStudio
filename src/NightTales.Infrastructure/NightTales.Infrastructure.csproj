@@ -1,0 +1,97 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.Application\NightTales.Application.csproj" />
+    <!-- 02.5.2-T3 [DECISION T40]: the safe fetcher classes live in Fetcher.Core (Domain only) so the Fetcher host can use them without Infrastructure. -->
+    <ProjectReference Include="..\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
+  </ItemGroup>
+
+  <!--
+    09.2.5-T1: the committed `seed/` catalogs must be found at runtime. Only the catalogs the
+    Infrastructure seeders read are copied, into the output (preserving the `seed/...` layout the
+    `Seed:*File` configuration names), so a host that resolves a relative catalog path against
+    AppContext.BaseDirectory finds them in Development, in a published image and under `dotnet run`.
+    `Content` items of this project flow transitively to every referencing host and test project.
+  -->
+  <ItemGroup>
+    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\music-tracks.v1.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json"
+             Link="seed\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" />
+    <PackageReference Include="EFCore.NamingConventions" />
+    <!-- 06.1.2-T1 (06 README G8/D9): `GoogleYouTubeClient` — the token/revoke form posts and
+         `channels.list` through `Google.Apis.YouTube.v3`. -->
+    <PackageReference Include="Google.Apis.Auth" />
+    <PackageReference Include="Google.Apis.YouTube.v3" />
+    <PackageReference Include="Hangfire.Core" />
+    <PackageReference Include="Hangfire.NetCore" />
+    <PackageReference Include="Hangfire.PostgreSql" />
+    <!-- 09.2.6-T3 (09 README W2-O4): the SMTP client behind `ISmtpEmailSender`. -->
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- 09.9.4-T1 (09 README W1/WF15): the key ring's PostgreSQL store over AppDbContext. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!-- 02.2.1-T2 (02 README D7/F23): the one retry layer (per-step pipelines) of OpenAiTextClient. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="OpenAI" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Npgsql.OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Sinks.Async" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+  </ItemGroup>
+
+  <!--
+    09.3.1-T1: the bundled breached-password top-list of `Security:BreachedPasswords:Mode = list`.
+    It is embedded (not copied) so it cannot be lost at deployment time, and `TopListPasswordChecker`
+    addresses it by this exact logical name. Replace the file with the provider's real top-list once its
+    terms are confirmed (09.3.1-T2, S); the lookup needs no change.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Identity/Resources/breached-passwords.txt" LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
+  </ItemGroup>
+
+  <!--
+    09.2.6-T3 (09 README BD9): the `Templates/Email/<name>.<locale>.{txt,html}` pairs of every catalog
+    template, copied into the output (the same mechanism the `seed/` catalogs of 09.2.5-T1 use), so a
+    published image carries them and `EmailTemplateProvider` reads them from `AppContext.BaseDirectory`.
+    `Content` items of this project flow transitively to every referencing host and test project.
+  -->
+  <ItemGroup>
+    <Content Include="Email/Templates/Email/*.txt;Email/Templates/Email/*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    02.7.2-T1: the reviewed research allow-list is embedded, not copied, so the start-up hash covers the bytes that
+    ship (`EmbeddedResearchAllowList` reads it by this exact logical name). The file is owned by the owner review.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\config\source-finder\allowed-sites.v1.json" LogicalName="NightTales.Infrastructure.Research.allowed-sites.v1.json" />
+  </ItemGroup>
+
+  <!--
+    02.2.3-T1 (02 README D5, F22): the whole `prompts/` tree is embedded, so a deployment cannot ship
+    without its prompts and `PromptCatalog` never reads a file. `LinkBase="Prompts"` makes every logical
+    name `NightTales.Infrastructure.Prompts.<path with '/' replaced by '.'>`; the catalog resolves a
+    manifest key by matching that dotted suffix, so the prefix is not a hash input.
+    The tree is outside this project directory, and the SDK's default `None`/`Compile`/`EmbeddedResource`
+    globs are project-relative, so nothing is added twice — there is no `None Remove` to write here.
+    `prompts/manifest.json` hashes the raw bytes, which is why `.gitattributes` pins the tree to LF.
+    02.3.3-T1: `WithCulture="false"` stops MSBuild reading the `.vi`/`.en` before the extension of
+    `shared/attestation.ta.v1.{vi,en}.md` as a culture and moving the file into a satellite assembly.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" WithCulture="false" />
+    <EmbeddedResource Remove="../../prompts/fixtures/similarity/**" />
+  </ItemGroup>
+</Project>

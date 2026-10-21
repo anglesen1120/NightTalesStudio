@@ -127,7 +127,7 @@ Node-only checks never run in CI; CI runs `shellcheck`, `bash -n`, `systemd-anal
 |---|---|---|---|---|---|
 | 11.3.1-T1 | GPU host base: driver, CUDA libs, venvs, weights, layout | Ops | M (1.0) | 11.2.1-T1, 01.3.3-T1, 01.3.3-T2 | 11.3.1-T2, 11.5.3-T3 |
 | 11.3.1-T2 | Node services: D10 units, env examples, release installer, journald | Ops | M (1.0) | 11.3.1-T1, 11.3.5-T3, 11.3.5-T4, 04.1.5-T1, 05.1.1-T2, 05.2.2-T1, 05.3.1-T1, 05.3.2-T2 | 11.3.1-T3, 11.3.2-T1, 11.3.4-T1 |
-| 11.3.1-T3 | Node bundle layout and `nts-node` provision/deploy/rollback/drain/activate | Ops | M (1.0) | 11.3.1-T2, 11.5.1-T2, 11.3.3-T1 | 11.6.3-T1, 11.5.3-T2 |
+| 11.3.1-T3 | Node bundle layout and `nts-node` provision/deploy/rollback/drain/activate | Ops | M (1.0) | 11.3.1-T2, 11.5.1-T2, 11.3.3-T1 | 11.6.3-T1 |
 | 11.3.2-T1 | Provider firewall, nftables, adapter certificate, port scan | Ops | S (0.5) | 11.3.1-T2, 11.2.2-T1 | 11.3.2-T2 |
 | 11.3.2-T2 | Egress rules and deny tests, node keys, rotation, key-leak runbook | Ops | S (0.5) | 11.3.2-T1, 11.4.1-T1 | 11.6.3-T1 |
 | 11.3.4-T1 | `nts-cleanup` timer and `cleanup-orphans.py` | Ops | S (0.5) | 11.3.1-T2, 11.3.5-T2 | — |

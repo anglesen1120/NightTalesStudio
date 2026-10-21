@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+  </ItemGroup>
+
+  <!--
+    The tests assert the redaction rule (AdapterFieldNames) and the body-cap reader (RequestBodyReader) at their
+    own boundary; both stay internal to the core on purpose.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="NightTales.RenderNode.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ErrorOr" />
+  </ItemGroup>
+
+  <!--
+    The core is a route/middleware library, so it needs the ASP.NET Core shared framework (routing, HttpContext,
+    Kestrel's body-size feature). It never references Domain, Application or Infrastructure (11 README D3).
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

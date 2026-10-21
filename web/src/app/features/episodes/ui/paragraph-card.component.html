@@ -1,0 +1,24 @@
+<nts-segment-editor [viewModel]="viewModel()" [limitHit]="limitHit()" [annotations]="annotations()" [flaggedChips]="flaggedChips()" [similarityLevel]="similarityLevel()" (intent)="forward($event)">
+  <div segmentActions class="paragraph-card__actions" [hidden]="locked()">
+    @if (!locked()) {
+      @if (pointerReorder()) {
+        <span cdkDragHandle class="paragraph-card__handle" role="img" [attr.aria-label]="'episodes.editor.moveHandle' | transloco">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5h2v2H8zm6 0h2v2h-2zM8 11h2v2H8zm6 0h2v2h-2zM8 17h2v2H8zm6 0h2v2h-2z" /></svg>
+        </span>
+      }
+      <button type="button" data-action="move-up"
+        [attr.aria-label]="'episodes.editor.moveUpPosition' | transloco: { position: index() + 1 }"
+        [attr.aria-disabled]="index() === 0 ? 'true' : 'false'" (click)="move(-1)">
+        <span aria-hidden="true">↑</span> {{ 'episodes.editor.moveUp' | transloco }}
+      </button>
+      <button type="button" data-action="move-down"
+        [attr.aria-label]="'episodes.editor.moveDownPosition' | transloco: { position: index() + 1 }"
+        [attr.aria-disabled]="index() === count() - 1 ? 'true' : 'false'" (click)="move(1)">
+        <span aria-hidden="true">↓</span> {{ 'episodes.editor.moveDown' | transloco }}
+      </button>
+      <button type="button" class="paragraph-card__delete" data-action="delete"
+        [attr.aria-label]="'episodes.editor.deletePosition' | transloco: { position: index() + 1 }"
+        (click)="remove()">{{ 'episodes.editor.delete' | transloco }}</button>
+    }
+  </div>
+</nts-segment-editor>

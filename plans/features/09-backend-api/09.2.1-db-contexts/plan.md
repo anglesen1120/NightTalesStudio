@@ -5,7 +5,7 @@
 > Also: `../../../00-overview.md` §5.2 (CQRS rules), §6 (domain contract), §9 (estimates).
 > Template: `../../../00-overview.md` §10.1.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: **implemented 2026-09-29** — `09.2.1-T1` merged in wave 1 (PR #38), `09.2.1-T2` in the wave-2 batch (branch `feature/09.2.1-testkit`, PR #39): independent QA, code/performance/security reviews, the fix round, the fix-delta re-review and the final wave review are closed; 50 test cases green (31 without a database). `WorkerHost`/`InlineJobScheduler` and the Series/Episode builders are deferred to their owning tasks (09.2.6-T1 / 09.2.2-T1) per §1.
 
 ## 1. Scope
 
@@ -13,7 +13,7 @@
 
 **In scope.** `IAppDbContext` / `IReadDb`; `AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IAppDbContext` (tracked); `ReadDbContext : DbContext, IReadDb` (`QueryTrackingBehavior.NoTracking`, every `SaveChanges*` throws); the shared model pipeline both contexts run (`ApplyConfigurationsFromAssembly`, snake_case, Identity table renames, `HasEnumCheck<TEnum>`, `xmin` on every `AggregateRoot`, UTC `timestamptz`); DI (`AddPersistence(IConfiguration)`, scoped, no pooling); the `ConnectionStrings:Postgres` key; no retrying execution strategy (D5); the Npgsql complex-type `ToJson()` spike (N9 ⚠️) with its fallback rule; and the `NightTales.TestKit` harness (D13).
 
-**Out of scope.** Entity configurations of individual tables and the `InitialCore` migration → 09.2.2-T1 / 09.2.2-T2 (D9). The outbox interceptor, `outbox_messages` and the dispatcher → 09.2.4-T1 (D11). The `"tenant"` query filter, the `ICurrentUser` implementations, `ISystemContext`, `ISystemWorkQuery` → 09.2.3-T1 (D10); only the `ICurrentUser` interface and a temporary anonymous implementation are added here, because the context constructor needs them. Error codes, catalogue and HTTP helpers → 09.1.4-T1 (D7). Mediator, the transaction and idempotency → 09.1.3-T1/-T2 (D4–D6). Hangfire storage/schema → 09.2.6-T1 (D12).
+**Out of scope.** Entity configurations of individual tables and the `InitialCore` migration → 09.2.2-T1 / 09.2.2-T2 (D9). The outbox interceptor, `outbox_messages` and the dispatcher → 09.2.4-T1 (D11). The `"tenant"` query filter, the `ICurrentUser` implementations, `ISystemContext`, `ISystemWorkQuery` → 09.2.3-T1 (D10); only the `ICurrentUser` interface and a temporary anonymous implementation are added here, because the context constructor needs them. Error codes, catalogue and HTTP helpers → 09.1.4-T1 (D7). Mediator, the transaction and idempotency → 09.1.3-T1/-T2 (D4–D6). Hangfire storage/schema → 09.2.6-T1 (D12). **T2's harness output only**: its `WorkerHost` / `InlineJobScheduler` → 09.2.6-T1, which owns the D12 `IBackgroundJob`/`IJobScheduler` ports and the Worker composition root (there is no job type to schedule before it), and its `SeriesBuilder` / `EpisodeBuilder` → 09.2.2-T1, which defines the `Series`/`Episode` entities (T2 ships `PostgresFixture`, `TestDatabase`, `IntegrationTest`, `ApiFactory`, `TestAuthHandler`, `FakeClock` and `UserBuilder` only).
 
 ## 2. Confirmed facts
 
@@ -30,11 +30,11 @@
 | C9 | Identity tables are renamed `users`, `roles`, `user_roles`, `user_claims`, `user_logins`, `user_tokens`, `role_claims`; no `citext`; `email` uniqueness comes from Identity's unique `normalized_email` index | README D8, F12 ✅ |
 | C10 | `IClock` lives in `Domain/Common` (pure interface); `FakeClock : IClock` (settable, `Advance(TimeSpan)`) lives in `tests/NightTales.TestKit/Time/FakeClock.cs`; `SystemClock` returns `DateTimeOffset.UtcNow` | README F20, D3 ✅ |
 | C11 | No retrying execution strategy: `EnableRetryOnFailure` stays **off**; a transient DB failure surfaces as 503 `service_unavailable`. UnitOfWork rolls back and maps `DbUpdateConcurrencyException` → 409 `concurrency_conflict` | README D5 ✅ |
-| C12 | Test harness (D13): `PostgresFixture` (one `postgres:17-alpine` container per run, template database `nts_template` migrated once, `CREATE DATABASE … TEMPLATE nts_template` per test class), `ApiFactory : WebApplicationFactory<Program>`, `TestAuthHandler` (scheme `Test`, headers `X-Test-User`/`X-Test-Role`, registered only by `ApiFactory`), `WorkerHost` with `InlineJobScheduler`, `FakeClock`, builders. Integration tests never sleep | README D13 ✅ |
+| C12 | Test harness (D13): `PostgresFixture` connects to the real PostgreSQL 17 named by `NTS_TEST_PG` (no container start; a missing/blank env or a non-17 server fails fast with a named error), rebuilds the template database `nts_template` once per run and gives every test class `CREATE DATABASE … TEMPLATE nts_template` (09 W3 CR-35), `ApiFactory : WebApplicationFactory<Program>`, `TestAuthHandler` (scheme `Test`, headers `X-Test-User`/`X-Test-Role`, registered only by `ApiFactory`), `WorkerHost` with `InlineJobScheduler`, `FakeClock`, builders. Integration tests never sleep | README D13 ✅ |
 | C13 | `NightTales.TestKit` is referenced by every test project and holds hand-written fakes; there is **no** mocking library | README D1, D2 ✅ |
-| C14 | PostgreSQL image `postgres:17-alpine` for dev, CI and tests; production on the same major, owner decision **O3** (decided 2026-09-24) | README D8, O3 ✅ |
-| C15 | `docker-compose.yml` (PostgreSQL only) is 09.1.1-T2 and provides the dev connection string | README D2, CR-6 ✅ |
-| C16 | 09 §7: integration tests run through `WebApplicationFactory` + Testcontainers PostgreSQL; the outbox crash test and the cross-tenant table belong to this level | 09 §7 ✅ |
+| C14 | PostgreSQL 17 in dev (native Homebrew `postgresql@17`, `127.0.0.1:5432`), CI and tests (`postgres:17` service container), and production on the same major — owner decision **O3** (2026-09-24) plus the native dev decision (owner 2026-09-28, 09 W3 CR-35) | README D8, O3 ✅ |
+| C15 | 09.1.1-T2 owns the dev database: native `postgresql@17` + `tools/dev/db-init.sh` (role and database from `.env`), with the `docker-compose.yml` `postgres` service as the optional e2e/image-smoke path; the connection string comes from `.env`/user-secrets (09 W3 CR-35) | README D2, CR-6 ✅ |
+| C16 | 09 §7: integration tests run through `WebApplicationFactory` + real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`; 09 W3 CR-35); the outbox crash test and the cross-tenant table belong to this level | 09 §7 ✅ |
 
 **Closed here.** The pooling question (C12-vs-scope state): **no pooling in P** — [DECISION] below. The `ToJson()` ⚠️ (C4) is closed by a spike in T1 with a documented fallback.
 
@@ -67,13 +67,13 @@ Model rules (D8, both contexts):
 - Identity: `base.OnModelCreating(builder)` first, then `users`, `roles`, `user_roles`, `user_claims`, `user_logins`, `user_tokens`, `role_claims` (C9), assigned on the closed generic types (`IdentityUserRole<Guid>`, …).
 - Ids: `ValueGeneratedNever()` on `Entity.Id`; UUIDv7 is produced by domain factories (D8) — the model never generates ids.
 - Times: every `DateTimeOffset` → `timestamptz`; no `Npgsql.EnableLegacyTimestampBehavior` anywhere (C7).
-- JSON: structured `jsonb` uses a complex type with `ToJson()` **only if** the T1 spike proves Npgsql supports it on `postgres:17-alpine`; otherwise — and for opaque payloads (outbox) — `string`/`JsonDocument` + `HasColumnType("jsonb")` (D8, C4). The chosen strategy is recorded in the T1 note and is the same for every later feature.
+- JSON: structured `jsonb` uses a complex type with `ToJson()` **only if** the T1 spike proves Npgsql supports it on PostgreSQL 17 (dev Homebrew server or the CI `postgres:17` service; 09 W3 CR-35); otherwise — and for opaque payloads (outbox) — `string`/`JsonDocument` + `HasColumnType("jsonb")` (D8, C4). The chosen strategy is recorded in the T1 note and is the same for every later feature.
 
 ### 3.3 Configuration (owned here)
 
 | Key | Default | Notes |
 |---|---|---|
-| `ConnectionStrings:Postgres` | none — **required** | `Host=…;Database=nighttales;Username=…;Password=…`; dev value from `docker-compose.yml` (09.1.1-T2, C15). Missing/empty → start-up failure with a named validation error. |
+| `ConnectionStrings:Postgres` | none — **required** | `Host=…;Database=nighttales;Username=…;Password=…`; dev value from the native dev server via `.env`/user-secrets (09.1.1-T2, C15; 09 W3 CR-35). Missing/empty → start-up failure with a named validation error. |
 | `Persistence:CommandTimeoutSeconds` | `30` | applied through `UseNpgsql(o => o.CommandTimeout(...))`. |
 
 No `EnableRetryOnFailure` (C11): the absence is asserted by a unit test, since a retrying strategy would silently change the D5 transaction semantics.
@@ -90,7 +90,7 @@ No new table and no migration in this folder — `InitialCore` is 09.2.2-T2, and
 |---|---|---|---|
 | UC1 | Handle a command | any `ICommand<…>` handler (09.1.3-T2) | resolves `IAppDbContext` (tracked, scoped); UnitOfWork opens `ReadCommitted`, handler mutates aggregates, UnitOfWork calls `SaveChangesAsync`, outbox interceptor (09.2.4-T1) runs inside that save, commit. |
 | UC2 | Serve a query | any `IQuery<…>` handler | resolves `IReadDb`; no tracking, no transaction, no `SaveChanges`; projections straight to DTOs (00 §5.2). |
-| UC3 | Run an integration test | `NightTales.Api.IntegrationTests` | `PostgresFixture` container → per-class database from the `nts_template` template → `ApiFactory` (or `WorkerHost`) with the class' connection string → HTTP calls or direct job iteration; time via `FakeClock`, no sleeps (C12). |
+| UC3 | Run an integration test | `NightTales.Api.IntegrationTests` | `PostgresFixture` connects to `NTS_TEST_PG` → per-class database from the `nts_template` template → `ApiFactory` (or `WorkerHost`) with the class' connection string → HTTP calls or direct job iteration; time via `FakeClock`, no sleeps (C12). |
 | UC4 | Start the Api or the Worker | composition root | `AddPersistence(configuration)`; a missing/blank `ConnectionStrings:Postgres` fails boot (no lazy failure on the first request). |
 
 **Authorization / idempotency.** None here; row visibility is 09.2.3-T1 (D10) and transaction/idempotency are 09.1.3-T2 (D5, D6).
@@ -108,14 +108,14 @@ None (backend only): the persistence layer has no user-visible surface; every DT
 | Item | Detail |
 |---|---|
 | Jobs | None. `WorkerHost` (T2) only *runs* Worker services in-process. |
-| Integrations | Npgsql only (`postgres:17-alpine`). No external API, no object storage, no MPT. |
+| Integrations | Npgsql only (PostgreSQL 17: Homebrew `postgresql@17` in dev, the `postgres:17` service in CI/tests; 09 W3 CR-35). No external API, no object storage, no MPT. |
 | Metrics / logging | `db_command_duration_seconds` and EF command logging come from the 09.1.3-T1 logging behaviour; no new metric here. Connection strings and passwords are never logged (12 §security; the connection string is masked in Serilog config). |
 
 ## 8. Security and privacy
 
 | Threat / rule | Control |
 |---|---|
-| Connection string leak | Read from configuration only (`ConnectionStrings:Postgres`), supplied via env/user-secrets; never committed, never logged; the TestKit container's generated password is per-run. |
+| Connection string leak | Read from configuration only (`ConnectionStrings:Postgres`), supplied via env/user-secrets; never committed, never logged; the fixture reads `NTS_TEST_PG` from the environment (a dev/CI credential, never committed; 09 W3 CR-35). |
 | Cross-scope tenant leak through recycled state | No pooling in P (§3.3, [DECISION]) + architecture test forbidding `AddDbContextPool`. |
 | Read path writing | `ReadDbContext.SaveChanges*` throws; `IReadDb` exposes no `SaveChanges` and no `Database`. |
 | Timestamp smuggling (offset / local time) | every `DateTimeOffset` column is `timestamptz`; a non-zero offset is rejected by Npgsql (C7) and covered by a T1 test. |
@@ -128,15 +128,15 @@ None (backend only): the persistence layer has no user-visible surface; every DT
 |---|---|
 | Integration — model/DB | `ReadDbContext_SaveChanges_ThrowsInvalidOperationException`, `ReadDbContext_QueryTrackingBehavior_IsNoTracking`, `AppDbContext_AggregateUpdate_BumpsXminVersion`, `AppDbContext_WriteNonUtcDateTimeOffset_IsRejected`, `Model_SeriesColumns_AreSnakeCase_AssertedThroughInformationSchema`, `Model_EnumColumn_RejectsUnknownValue` (SQLSTATE 23514), `Model_IdentityTables_UseRenamedSnakeCaseTables`, `JsonComplexTypeSpike_ToJson_RoundTripsOnPostgres17` |
 | Unit — configuration | `AddPersistence_MissingConnectionString_FailsValidation`, `AddPersistence_DoesNotConfigureRetryOnFailure`, `AddPersistence_UsesSnakeCaseNamingConvention`, `AddPersistence_RegistersContextsScoped_NotPooled` |
-| Integration — harness | `PostgresFixture_MigratesTemplateOnce_AndCreatesPerClassDatabase`, `PostgresFixture_DropsClassDatabase_AtEndOfClass`, `ApiFactory_WithTestUserHeader_IsAuthenticated`, `ApiFactory_WithoutHeader_IsAnonymous`, `ProductionHost_DoesNotRegisterTestScheme`, `WorkerHost_InlineJobScheduler_RunsJobSynchronously_AndRecordsCall`, `FakeClock_Advance_MovesUtcNow`, `TestKit_ContainsNoTaskDelayOrSleep` |
-| Manual | `grep -rn "TestAuthHandler" src/` → no hits; `grep -rn "Task.Delay\|Thread.Sleep" tests/NightTales.TestKit/` → no hits. |
+| Integration — harness | `PostgresFixture_MigratesTemplateOnce_AndCreatesPerClassDatabase`, `PostgresFixture_DropsClassDatabase_AtEndOfClass`, `ApiFactory_WithTestUserHeader_IsAuthenticated`, `ApiFactory_WithoutHeader_IsAnonymous`, `ProductionHost_DoesNotRegisterTestScheme`, `PostgresFixture_MissingEnv_FailsWithNamedError`, `PostgresFixture_ServerVersionNot17_Fails`, `FakeClock_AdvanceAndSet_ChangeUtcNow`, plus the guard/negative tests added during implementation and QA (`PostgresFixture_*` DDL-privilege, managed-name, remote-target, boundary, isolation and teardown; `TestAuthHandler_*` header negatives). **Deferred to 09.2.6-T1: `WorkerHost_InlineJobScheduler_RunsJobSynchronously_AndRecordsCall`** — the D12 ports it needs are created by that task. |
+| Manual | `TestKit_ContainsNoTaskDelayOrSleep` — a **grep acceptance check, not a test** (the name is the check's label, there is no test method): `grep -rnE "Task\.Delay\|Thread\.Sleep" tests/` → no hits; `grep -rn "TestAuthHandler" src/` → no hits. |
 
 ## 10. Tasks and re-estimate
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.1-T1 | `AppDbContext`/`ReadDbContext`, shared model pipeline, `AddPersistence`, `ToJson()` spike | M (1.0) | 09.1.1-T1 | 09.2.1-T2, 09.2.2-T1, 09.1.3-T2, 09.2.6-T1, 09.9.4-T1, 09.7.2-T1 (09 W2 CR-9), 12.2.1-T1, 07.2.1-T1 |
-| 09.2.1-T2 | `NightTales.TestKit` harness: `PostgresFixture`, `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `FakeClock`, builders | S (0.5) | 09.2.1-T1 | 09.1.5-T1, every integration test of this wave |
+| 09.2.1-T1 | `AppDbContext`/`ReadDbContext`, shared model pipeline, `AddPersistence`, `ToJson()` spike | M (1.0) | 09.1.1-T1 | 09.2.1-T2, 09.2.2-T1, 09.1.3-T2, 09.2.6-T1, 09.9.4-T1, 09.7.2-T1 (09 W2 CR-9), 07.2.1-T1 |
+| 09.2.1-T2 | `NightTales.TestKit` harness: `PostgresFixture`, `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `FakeClock`, builders | S (0.5) | 09.2.1-T1; 09.1.1-T2 (soft) | 09.1.5-T1, every integration test of this wave |
 
 Total **1.5 d** — matches README §9 (`09.2.1-T1` M 1.0, `09.2.1-T2` S 0.5 new). No change to the plan-09 total.
 
@@ -144,12 +144,12 @@ Total **1.5 d** — matches README §9 (`09.2.1-T1` M 1.0, `09.2.1-T2` S 0.5 new
 
 - **[OPEN] Pooling.** Revisit `AddDbContextPool` only with a measured need and an explicit tenant-field reset; the architecture test must change first (§3.3).
 - **[DECISION] No runtime JSON-mapping switch.** The mapping strategy is a model decision fixed by the T1 spike; a config switch would make the model disagree with the migrations.
-- **[DECISION] O3 (PostgreSQL major, owner 2026-09-24).** T1/T2 pin `postgres:17-alpine` per D8; production uses 17 too.
+- **[DECISION] O3 (PostgreSQL major, owner 2026-09-24).** T1/T2 target PostgreSQL 17 per D8: Homebrew `postgresql@17` in dev, `postgres:17` in CI/tests, production on the same major (09 W3 CR-35).
 
 ## 11. Rollout
 
 - **Flag:** none — internal plumbing; it ships with the skeleton (09.1.1) and is exercised by every later test.
 - **Order:** 09.1.1-T1 → **09.2.1-T1** → 09.2.1-T2 → (09.2.2-T1/-T2, 09.1.3-T2, 09.2.6-T1) → all wave-1 integration tests.
-- **Migration order:** none here; `InitialCore` is 09.2.2-T2, and the TestKit template applies whatever migrations exist, so the harness degrades to a no-op (EF `Migrate` with no pending migrations) until that task lands.
-- **Monitoring:** none specific; a boot-time validation error covers a missing connection string, and 09.1.5-T1's CI runs the container tests.
+- **Migration order:** none here; `InitialCore` is 09.2.2-T2, and `PostgresFixture` rebuilds `nts_template` from the compiled migrations once per run, so the harness degrades to a no-op (EF `Migrate` with no pending migrations) until that task lands (09 W3 CR-35).
+- **Monitoring:** none specific; a boot-time validation error covers a missing connection string, and 09.1.5-T1's CI runs the integration tests against its `postgres:17` service.
 - **Rollback:** revert the `AddPersistence` registration (Api/Worker) — the contexts are not referenced by persisted data; no migration to undo.

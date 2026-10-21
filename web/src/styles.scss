@@ -1,0 +1,59 @@
+@use 'app/shared/ui/theme/tokens';
+@use 'app/shared/ui/theme/typography';
+@use 'app/shared/ui/theme/theme';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 360px;
+  background: var(--nts-color-bg);
+  color: var(--nts-color-on-surface);
+  font-family: var(--nts-font-sans);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--nts-color-bg);
+  color: var(--nts-color-on-surface);
+  font-size: var(--nts-type-body-size);
+  line-height: var(--nts-type-body-line);
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  border-radius: var(--nts-radius-control);
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--nts-color-primary);
+  color: var(--nts-color-on-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0ms !important;
+  }
+}

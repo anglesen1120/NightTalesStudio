@@ -1,0 +1,104 @@
+{
+  "schema": "openai-access.v1",
+  "base_url": "https://api.aixingialaire.shop/v1",
+  "org": "n/a:relay (01 DEC-9: no OpenAI org or dashboard; spend cap lives in the relay account)",
+  "projects": "n/a:relay (01 DEC-9)",
+  "checks": [
+    {
+      "id": "C0i",
+      "call": "image models",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "C0s",
+      "call": "story models",
+      "status": 200,
+      "pass": true
+    },
+    {
+      "id": "C1",
+      "call": "story chat",
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      },
+      "reasoning_effort": "medium",
+      "pass": true,
+      "cost_usd_est": 3.5e-06,
+      "model_echoed": "gpt-6-luna"
+    },
+    {
+      "id": "C2",
+      "call": "story images",
+      "status": 403,
+      "error": {
+        "code": null,
+        "type": "permission_error",
+        "message": "Image generation is not enabled for this group"
+      },
+      "pass": true,
+      "note": "denied"
+    },
+    {
+      "id": "C3",
+      "call": "image images",
+      "status": 200,
+      "usage": {
+        "input_tokens": 6658,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 115,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 6773
+      },
+      "model_requested": "gpt-image-2",
+      "api": "responses",
+      "reasoning_effort": "low",
+      "quality": "medium",
+      "size": "1536x1024",
+      "output_format": "png",
+      "cost_usd_est_openai_rates": 0.00345,
+      "pass": true
+    },
+    {
+      "id": "C4",
+      "call": "image chat",
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      },
+      "reasoning_effort": "low",
+      "pass": true,
+      "note": "not denied: relay scopes per group, not per key/model (01 DEC-10)"
+    },
+    {
+      "id": "C6",
+      "call": "story files",
+      "status": 404,
+      "pass": true,
+      "note": "denied"
+    },
+    {
+      "id": "C7",
+      "call": "story astra",
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      },
+      "reasoning_effort": "medium",
+      "pass": true,
+      "note": "not denied: relay scopes per group, not per key/model (01 DEC-10)"
+    }
+  ]
+}

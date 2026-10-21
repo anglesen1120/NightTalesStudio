@@ -50,16 +50,18 @@ All under `src/NightTales.Domain/` (folders per 00 §5.2 / F38):
 
 | Rule id | Check (D3) |
 |---|---|
-| `title_too_long`, `title_has_markup` | ≤ 100 chars, no `<` `>` |
+| `title_too_long`, `metadata_has_markup` | ≤ 100 chars; `title`/`description` carry no markup, URL/domain, @handle, #hashtag, e-mail or phone number (02 T70) |
 | `hook_too_long` | hook ≤ 3 sentences |
-| `keyword_invalid`, `keyword_count_out_of_range` | each keyword passes `KeywordRules` (English, 3–12 words, no person names, no gore list); 1–2 per segment |
+| `keyword_invalid`, `keyword_count_out_of_range` | each keyword passes `KeywordRules` (English, 3–12 words, no person names, no gore list); 1–2 per segment (exactly 1 at `short`; 02 T65) |
 | `segment_count_out_of_range` | within `LengthTarget.MinSegments..MaxSegments` |
 | `length_out_of_range`, `length_advisory` | tokens > 15 % outside `MinTokens..MaxTokens` (blocking) / inside 15 % (advisory) |
-| `text_has_markup` | no markdown, brackets, list markers or URLs in `text` |
-| `description_too_long`, `tags_invalid` | description ≤ 1,000 chars; ≤ 15 tags, each ≤ 30 chars, total ≤ 400 (F36, same limits as 06.2.1) |
+| `text_has_markup` | no markdown, brackets (incl. `(` `)` — 02 T72), list markers or URLs in `text` |
+| `description_too_long`, `tags_invalid` | description ≤ 1,000 chars; ≤ 15 tags, each ≤ 30 chars, total ≤ 400 (F36, same limits as 06.2.1); a tag rejects URL, `<`, `>`, `,`, `#` (02 T70) |
 | `fact_ref_unknown` | `fact_refs` ⊆ approved sheet ids (true crime) or empty |
 | `beat_invalid`, `narrator_mode_invalid`, `warning_invalid` | D3 enums |
-| `structure_vocab_unknown` | free string not in `structure-vocab.v1.json` → stored `other:<text>` (advisory, not a failure) |
+| `structure_vocab_unknown` | free string not in `structure-vocab.v1.json` → stored `other:<text>` by the mapper only (the model emits the plain string); advisory, never fails a run |
+| `structure_text_invalid` | unmapped structure free string > 40 chars or with URL/markup — blocking; the mapper strips a model-supplied `other:` prefix (02 T71) |
+| `control_characters_invalid` | NUL or another C0 control character other than LF, CR and TAB in a free-text field — blocking; the persisting paths (edit 02.3.1-T1, job 02.2.2-T3) never reach Postgres with one (QA-1) |
 
 The validator never throws and never truncates: it returns issues; the job decides (D21, D7 `InvalidOutput`).
 
@@ -67,11 +69,11 @@ The validator never throws and never truncates: it returns issues; the job decid
 
 | Tier | vi tokens | en tokens | Segments | writer / review / revision `max_output_tokens` |
 |---|---|---|---|---|
-| `short` | 120–160 | 110–145 | 4–5 | 1,500 / 1,200 / 1,500 |
-| `standard` | 800–1,280 | 725–1,160 | 20–32 | 6,000 / 2,500 / 6,000 |
-| `long` | 1,600–2,400 | 1,450–2,175 | 40–60 | 10,000 / 3,500 / 10,000 |
+| `short` | 195–260 | 150–200 | 4–5 | 2,500 / 1,200 / 1,500 |
+| `standard` | 1,300–2,080 | 1,000–1,600 | 20–32 | 6,000 / 2,500 / 6,000 |
+| `long` | 2,600–3,900 | 2,000–3,000 | 40–60 | 10,000 / 3,500 / 10,000 |
 
-Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 160, `:en` = 145 ⚠️ calibrate from 01 `words_per_minute_measured` and 02.1.3. K = 6 → segments ≈ `ceil(D × K ÷ 1.5)`.
+Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 260 syllables/min, `:en` = 200 words/min — per-language measured rates (02 T103; en ⚠️[INFERENCE], read with vi voice `Hải Đăng`, corroborated by 01.3.1-T4 `wpm 192.5`). K = 6 → segments ≈ `ceil(D × K ÷ 1.5)` for `standard`/`long`; the `short` row is set by its beat floor (`setup → twist → reveal`, one paragraph each, `reveal` optionally folded into `ending`; 02 T65). `short` writer cap is 2,500 (02 T66).
 
 ### 3.4 Data
 
@@ -127,15 +129,15 @@ None. No route, no DTO the UI reads. Per D1 there is **no credits UI in P**; `ge
 ## 7. Jobs and integrations
 
 - **Consumed by `GenerateStoryJob`** (02.2.2-T3): stage `writing` → `IStoryWriter.WriteAsync`; stage `checking` → `StoryDraftValidator.Validate`; stage `saving` → `DerivedStoryFields.From`. Each call records usage via `IUsageMeter` (D21, D14).
-- **OpenAI adapter** (`src/NightTales.Infrastructure/OpenAI/`): `OpenAiTextClient` on one typed `ResponsesClient` (`IHttpClientFactory`), `ResponseTextFormat.CreateJsonSchemaFormat(name, schema, jsonSchemaIsStrict: true)` (O2). Per call: `model` from `OpenAi:Models:{step}` (default `gpt-6-luna`), `reasoning.effort` from `OpenAi:Effort:{step}` (default `low` ⚠️), `max_output_tokens` from the request, `store = false` (O5), `safety_identifier = sha256hex(user_id)`, `prompt_cache_key = "<step>:<preset>"`, header `X-Client-Request-Id = "<generation_run_id>:<step>:<attempt>"`.
+- **OpenAI adapter** (`src/NightTales.Infrastructure/OpenAI/`): `OpenAiTextClient` on one typed `ResponsesClient` (`IHttpClientFactory`), `ResponseTextFormat.CreateJsonSchemaFormat(name, schema, jsonSchemaIsStrict: true)` (O2). Per call: `model` from `OpenAi:Models:{step}` (default `gpt-6-luna`), `reasoning.effort` from `OpenAi:Effort:{step}` (`Writer` default `medium`, owner 2026-09-25; other steps `low` ⚠️), `max_output_tokens` from the request, `store = false` (O5), `safety_identifier = sha256hex(user_id)`, `prompt_cache_key = "<step>:<preset>"`, header `X-Client-Request-Id = "<generation_run_id>:<step>:<attempt>"`.
 - **Retry budget (F23, D7):** SDK internal retry **disabled** (⚠️ option name in 2.14.0 — `ClientRetryPolicy(maxRetries: 0)` or the `OpenAIClientOptions` equivalent); one `Microsoft.Extensions.Http.Resilience` pipeline per call — timeout (writer 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout, jittered backoff honouring `Retry-After`; Hangfire retry 0 for the story job (02.2.2-T3).
 - **Outcome mapping** exactly per the D7 table, incl. `429 *_spend_limit_exceeded` / `credit_balance_exhausted` → `ProviderFundsExhausted`; `x-request-id` read from `ClientResult.GetRawResponse().Headers` → `usage_records.provider_request_id` (O8 ⚠️).
 - **Prompt catalog** loaded at boot (D5); no disk reads at request time (embedded resources).
 
 ## 8. Security and privacy
 
-- **Injection (D6, F21):** all untrusted material (brief, bible, facts, avoid-plots, structure plan, corrective note) travels in **one JSON object** in the user message, serialised with `System.Text.Json`; the system prompt declares every string value as material, never instructions. No untrusted text is substituted into a template placeholder; the placeholder list is closed (D5): `language_name`, `tier_minutes`, `token_range`, `segment_range`, `keyword_rules`, `ear_rules`, `overused_phrases`, `structure_vocab` — all server-derived.
-- **Caching order (O9):** system (static, ≥ 1,024 tokens) → preset → shared rules → data object **last**. `store = false` (O5).
+- **Injection (D6, F21):** all untrusted material (brief, bible, facts, avoid-plots, structure plan, corrective note) travels in **one JSON object** in the user message, serialised with `System.Text.Json`; the system prompt states the two-tier rule — the control keys (`task`, `length`, `structure_plan`, fact ids) are parameters to follow, every material string is written about and never an instruction (02 T69). No untrusted text is substituted into a template placeholder; the placeholder list is closed (D5): `language_name`, `tier_minutes`, `token_range`, `segment_range`, `keyword_rules`, `ear_rules`, `overused_phrases`, `structure_vocab` — all server-derived.
+- **Caching order (O9):** system (static) → preset → shared rules → data object **last**; the first three together are the cacheable head (≥ 1,024 tokens — 02 T67). `store = false` (O5).
 - **Logging (D19):** no prompt, brief, story/fact/bible text, source text, title or URL is ever logged — logs carry ids, codes, token counts, model, latency, `prompt_version`, registrable domains only.
 - **Attribution and keys:** `safety_identifier = sha256(user_id)` (hex); `OPENAI_API_KEY` from the runtime secret manager (01/11), never in `appsettings.json`.
 - **Cost safety:** every call sets `max_output_tokens` from the run's `price_version` (D14); `IBudgetGuard` (D1) runs before dispatch; the 272K-input surcharge (O3) is a calculator/estimator rule, never a silent 2× surprise.
@@ -145,7 +147,7 @@ None. No route, no DTO the UI reads. Per D1 there is **no credits UI in P**; `ge
 Unit (no network). Plan-level contract: **one test per rule id of §3.2 and per outcome of D7**; the exhaustive named lists live in each task file's `## Tests`.
 
 - `StoryDraftValidator` (10) — e.g. `Validate_TitleOver100Chars_TitleTooLong`, `Validate_Tokens15PercentOver_LengthOutOfRange`, `Validate_FactRefNotInApprovedSheet_FactRefUnknown`, `Validate_ValidDraft_NoBlockingIssues`.
-- `DerivedStoryFields` / `KeywordRules` / `LengthTargetResolver` / `TextCostCalculator` — the 3 cost worked examples + the 272K surcharge case; `KeywordRules_ThirteenWordKeyword_Invalid`; `LengthTargetResolver_StandardVi_Returns800To1280And20To32Segments`.
+- `DerivedStoryFields` / `KeywordRules` / `LengthTargetResolver` / `TextCostCalculator` — the 3 cost worked examples + the 272K surcharge case; `KeywordRules_ThirteenWordKeyword_Invalid`; `LengthTargetResolver_StandardVi_Returns1300To2080And20To32Segments`.
 - `PromptCatalog` / `PromptAssembler` — missing preset / sha256 mismatch / unknown placeholder fail at start-up; the data object is a single JSON value; system prompt first, data object last; one test per injection fixture.
 - `OpenAiTextClient` / `UsageMeter` — one test per D7 outcome; `…_429ThenOk_RetriesOnceAndSucceeds`; `UsageMeter_FailedJob_StillWritesRow`.
 
@@ -161,7 +163,7 @@ Manual (M1 §7): one live `WriteAsync` per tier × language with `OPENAI_LIVE_TE
 | 02.2.3-T2 | Prompt assembly + data object + injection tests | S (0.5) | BE | 02.2.3-T1 | 02.2.1-T2 |
 | 02.2.1-T1 | `StoryContentV1` + `StoryDraftValidator` + derived fields + `KeywordRules` | M (1.0) | BE | 02.1.1-T0 | 02.2.1-T2, 02.3.4-T1, 03.2.2 |
 | 02.2.1-T2 | `OpenAiTextClient` + `OpenAiStoryWriter.WriteAsync` | M (1.0) | BE | 02.2.1-T1, 02.2.3-T2, 02.2.4-T1 | 02.2.2-T3 |
-| 02.2.4-T1 | `price_versions` P subset + `TextCostCalculator` + `IUsageMeter` + `IStoryCostEstimator` | S (0.5) | BE | 09 persistence | 02.2.1-T2, 02.2.2-T2, 09.6.1-T1 (09 W2 CR-9), 12.8.1-T1, 12.1.4-T1, 12.1.2-T1, 12.5.2-T1 |
+| 02.2.4-T1 | `price_versions` P subset + `TextCostCalculator` + `IUsageMeter` + `IStoryCostEstimator` | S (0.5) | BE | 09 persistence | 02.2.1-T2, 02.2.2-T2, 09.6.1-T1 (09 W2 CR-9) |
 
 Total **3.5 d** — matches README §9 (02.2 writer 2.0 → 3.5: prompt catalog, adapter hardening, retry budget, `price_versions` in P; F22, F23, F35). Order: 02.2.4-T1 ∥ 02.2.3-T1 → 02.2.3-T2 ∥ 02.2.1-T1 → 02.2.1-T2.
 
@@ -170,7 +172,7 @@ Total **3.5 d** — matches README §9 (02.2 writer 2.0 → 3.5: prompt catalog,
 - [OPEN] **SDK retry-off option name** in `OpenAI` 2.14.0 unverified (⚠️). If it cannot be disabled, D7's "SDK retries off" needs a workaround (strip the SDK retry handler, or keep the SDK default and drop Polly to 1 attempt) — changes the F23 retry budget, so it needs a ruling.
 - [OPEN] **`x-request-id` accessor** (`ClientResult.GetRawResponse().Headers`) is a System.ClientModel pattern not shown in OpenAI docs (O8 ⚠️); if unavailable, `provider_request_id` is best-effort null.
 - [OPEN] **`IStoryWriter` with two unimplemented methods**: D21 fixes one interface, but `ReviewAsync`/`ReviseAsync` are owned by a later wave. Either accept a split (`IStoryWriter` + `IStoryReviewer`) or accept that their DI registration lands with 02.6.1 — this plan assumes the latter. Confirm.
-- [OPEN] **`reasoning.effort = none`** with strict JSON schema on `gpt-6-luna` unverified; default `low`, but `short`/`standard` may want `none` for cost. ⚠️ measure in 02.1.3.
+- [OPEN] **`reasoning.effort = none`** with strict JSON schema on `gpt-6-luna` unverified; the `Writer` default is `medium` (owner 2026-09-25, D7) and the other steps default to `low`. ⚠️ measure in 02.1.3.
 - [OPEN] **`IPriceCatalog`** (D21 `GetActive(queuedAt)`) has no declared owner; this plan puts it in 02.2.4-T1 (`Infrastructure/Persistence/Queries/PriceCatalog.cs`). Confirm 02.2, not 12.
 - ⚠️ **Prompt files do not exist yet** at M1 start (02.1.4-T1/02.1.1-T0 produce them); 02.2.3-T1 must run against placeholder files and the M0→M1 gate must be explicit.
 

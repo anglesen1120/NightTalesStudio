@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+    <ProjectReference Include="..\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <!--
+    The host is a Kestrel service and the poller is a BackgroundService: the shared framework owns both, so no
+    package is needed. The adapter never references Domain, Application or Infrastructure (11 README D3).
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!--
+    The store DDL of plan §3.1 travels inside the binary: the node publishes the adapter self-contained (E8)
+    and the process must not depend on a file next to the executable.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Migrations\0001_tasks.sql" />
+  </ItemGroup>
+
+  <!-- The poller's single-cycle entry point is internal on purpose; the tests drive it directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="NightTales.MptAdapter.Tests" />
+  </ItemGroup>
+
+</Project>

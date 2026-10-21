@@ -1,0 +1,15 @@
+Subject: Review before it publishes: {{videoTitle}}
+
+Hello {{displayName}},
+
+{{videoTitle}} will publish to YouTube channel {{channelTitle}} when the veto window closes. Until then you can still edit it or stop it.
+
+Description: {{description}}
+Tags: {{tags}}
+Privacy: {{privacy}} {{privacyNote}}
+Publishing slot (UTC): {{scheduledAt}}
+Veto deadline (UTC): {{vetoEndsAt}}
+
+When the slot shows no time, the upload starts as soon as the veto window closes. Edit it at {{publicationUrl}}.
+
+Cancel it at {{cancelUrl}} — the link cancels this one publication only, and it works once.

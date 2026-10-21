@@ -63,7 +63,7 @@ Node-side only. No database, no migration, no domain type in this folder (D1: th
 
 ```json
 { "run_id": "spike-05-s3-landscape", "story_file": "trial/fixtures/spike-story-en.txt",
-  "terms_file": "trial/fixtures/spike-terms.json", "aspect": "landscape", "language": "en",
+  "terms_file": "trial/fixtures/spike-terms.json", "aspect": "16:9", "language": "en",
   "voice_id": "Thiện Minh", "preset_file": "seed/subtitle-presets.v1.json", "music_track": null }
 ```
 
@@ -122,7 +122,7 @@ $NTS_HOME/runs/<run_id>/{final-1.mp4,subtitle.srt,audio.mp3,script.json,submit-b
 
 **Events.** None. No public API route changes in this story; the Worker's read model (09.5.3) and the domain events (`RenderSucceeded`, 02 CR-23) are untouched.
 
-**Mapping note.** `mpt_client.py` prints the same `render-status.v1` shape the adapter serves (D13), so the M0 samples are directly replayable as D14 fixtures. `check` and `output` are `null` in M0 when `render_check.py` is absent (D9: without `--normalize`, `output` is `null`).
+**Mapping note.** `mpt_client.py` prints the same `render-status.v1` shape the adapter serves (D13), so the M0 samples are directly replayable as D14 fixtures. While `render_check.py` is absent (05.5.1-T1), `check` is `null` and `output` is filled from the download manifest (video/subtitles bytes+sha256; `narration_seconds` is `null` until that tool lands); once the checker runs (`run` always passes `--normalize`), `output.video` is the normalized `final-1.norm.mp4` with its hash (T60).
 
 ## 6. UI
 
@@ -137,7 +137,7 @@ None — worker-side tooling and contract files. No screen, no copy key, no i18n
 | `mpt_client.py download` → `/api/v1/download/…` | 300 s read | missing `subtitle.srt` is not an error when subtitles are off |
 | MPT → TTS stub (`[kokoro] base_url`) | stub `slow` = first byte at 130 s | `e500`/`empty`/`abort` → `failed_stage = audio` |
 | MPT → image stub | stub `slow` = 320 s > MPT's 300 s read timeout | `moderated`/`e500`/all-fail → `materials` (03 P4) |
-| `mpt_client.py run` → `render_check.py` | optional; skipped when the tool is absent (`check: null`, `output: null`) | exit 1 → the written report is still embedded as `check` (D9: exit 1 = input unreadable, report written), the run exits 1, the spike continues |
+| `mpt_client.py run` → `render_check.py` | optional; skipped when the tool is absent (`check: null`; `output` filled from the download manifest — video/subtitles bytes+sha256, `narration_seconds: null` until 05.5.1-T1) | exit 1 → the written report is still embedded as `check` (D9: exit 1 = input unreadable, report written), the run exits 1, the spike continues |
 | T1 → T2 | none (file hand-over) | a D3/D4/D5 change → README §10 ruling first |
 | T2 → 09.6.2-T1 / 11.1.2-T1 / 11.3.5-T1 | none (hard gate) | consumers start only when `check_fixtures.py` is exit 0 |
 
@@ -167,7 +167,7 @@ Consumers of the tools (D1): `05.2.1-T1` (fidelity/sync evaluation reuses `mpt_c
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 05.4.1-T1 | Spike: MPT API, failures, restart, queue, outputs, stubs, mpt_client.py | Worker | L (2.0) | 01.2.2-T5, 01.2.3-T1, 03.4.1-T1; 04.1.2-T1 soft (S16) | 05.4.1-T2, 05.1.1-T1, 05.2.3-T1, 05.5.1-T1, 05.2.1-T1, 05.5.2-T1 |
-| 05.4.1-T2 | render-node.v1 contract, fixtures, hand-over to 09/11 | TL | S (0.5) | 05.4.1-T1 | 09.6.2-T1, 11.1.2-T1, 11.3.5-T1, 05.1.1-T2, 05.1.2-T1, 05.5.1-T2, 12.8.3-T3 (12 CR-19, soft) |
+| 05.4.1-T2 | render-node.v1 contract, fixtures, hand-over to 09/11 | TL | S (0.5) | 05.4.1-T1 | 09.6.2-T1, 11.1.2-T1, 11.3.5-T1, 05.1.1-T2, 05.1.2-T1, 05.5.1-T2 (the former 12.8.3-T3 (12 CR-19, soft) blocker was dropped by DEC 10.14) |
 
 Total **2.5 d** (high-level 2.25 d; README §9). The +0.25 d is T2 growing XS → S: the contract file, `contract/README.md`, 24 fixtures and the hand-over for three consumers are a full deliverable, not a note (README §9 row "05.4 worker contract").
 
@@ -175,7 +175,7 @@ Total **2.5 d** (high-level 2.25 d; README §9). The +0.25 d is T2 growing XS �
 
 - [RULED — README §10 T1] C23 does not exist; `/ping` is part of C1. Contract line corrected to C19–C22.
 - [RULED — README §10 T33] D4 marks the adapter port **8090** ⚠️ ("final in 11.3.5") and the adapter's durable store ("a file or SQLite under its data dir ⚠️ 11.3.5"). `render-node.v1.md` ships both as *proposed*; a change is additive (base URL / storage only) and needs no re-plan, but the 11.3.5 owner should rule before the fixture freeze is treated as final.
-- [RULED — README §10 T31] `render_check.py` (05.5.1-T1) is **blocked by** 05.4.1-T1 yet **used by** its `run` step (D13). The spike therefore runs with `check: null` / `output: null` (D9). If the TL wants a real `check` block in the S3 sample, 05.5.1-T1 must move ahead of T1 — that inverts the Blocks edge in README §5/§7.
+- [RULED — README §10 T31] `render_check.py` (05.5.1-T1) is **blocked by** 05.4.1-T1 yet **used by** its `run` step (D13). The spike therefore runs with `check: null` and `output` filled from the download manifest (video/subtitles bytes+sha256; `narration_seconds: null` until 05.5.1-T1 lands) (D9). If the TL wants a real `check` block in the S3 sample, 05.5.1-T1 must move ahead of T1 — that inverts the Blocks edge in README §5/§7.
 - [RULED — README §10 T32] D12's speech fixtures use macOS `say`; a **vi** voice is ⚠️. If absent, all SRT/timing evidence from S3/S7/S8 is English-only and the Vietnamese timing evidence depends on S16 (04.1.2-T1, soft dependency).
 - [NOTED — README README §7 gate] F16 is **not** closed here: `initial_prompt` stays unset (D2) and S16 only records the detected-language log line; the effect on sync is measured in 05.2.1-T1. Worth stating explicitly in the 05-M0 gate so nobody expects the spike to settle it.
 - [NOTED — README §4] CR-5 and CR-7 edit other plans' task headers (01.2.2-T2 Notes; 03.4.1-T1 `Depends`/`Blocks`). They are applied only after the owner answers O1–O7 (README §4/§10); until then the `spike`-profile `[kokoro]` change is agreed verbally with the 03.4.1-T1 owner and tagged in both files.
@@ -186,5 +186,5 @@ Total **2.5 d** (high-level 2.25 d; README §9). The +0.25 d is T2 growing XS �
 - **Order:** this folder starts **first in M0**, right after 01.2.2-T5 (MPT smoke) and 03.4.1-T1 (image stub + `images.md`): `05.4.1-T1` → `05.4.1-T2` → then 05.1.1-T1 and 05.5.1-T1 (both blocked by T1). S16 is deferred until 04.1.2-T1 exists and is not a gate item.
 - **Flag / profile:** nothing changes on the node. On the Mac, the `spike` profile only: `render-mpt-config.py --profile spike` renders `config.spike.toml` (image stub `18003`, TTS stub `18004`, `[whisper]` unchanged), `start-mpt-api.sh --profile spike` swaps it in, and the normal profile is restored on stop (the 03.4.1-T1 guard refuses the normal profile while `openai_image_base_url` points at `18003`).
 - **Gate text (05-M0, README §7):** "`worker-node/contract/mpt-api.md` + samples S0–S16 recorded at the pin; `render-node.v1.md` + the 24 D14 fixtures committed with `check_fixtures.py` exit 0 (05.4.1-T1/T2); the 09.6 re-estimate is requested from the 09 wave-2 detailing (P6)." This is the **hard gate** for 09.6.2-T1, 11.1.2-T1 and 11.3.5-T1; 05.1.2-T1, 05.5.1-T2 and 05.1.1-T2 follow the same edge.
-- **Rollback:** stop the two stubs, `start-mpt-api.sh --profile mac`, `smoke.sh` green again (proves the config swap was undone); the spike artefacts are additive files and need no rollback.
+- **Rollback:** stop the two stubs, `start-mpt-api.sh --profile normal`, `smoke.sh` green again (proves the config swap was undone); the spike artefacts are additive files and need no rollback.
 - **Monitoring:** none (no service). The spike's exit criteria are file-based (`mpt-api.md`, samples, `check_fixtures.py` exit 0).

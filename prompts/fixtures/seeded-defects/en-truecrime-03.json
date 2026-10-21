@@ -1,0 +1,228 @@
+{
+  "id": "en-truecrime-03",
+  "language": "en",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A synthetic unresolved disappearance: a man was last seen at a bus stop on the edge of a village, the first statement in the file comes from a neighbour who said he watched him from a window, and a later interview puts the same neighbour somewhere else. No real person, place or incident is used.",
+  "draft": {
+    "title": "The Two Statements from the Neighbour",
+    "hook": {
+      "text": "Two statements sit in this file, and they come from the same neighbour. In the first he watched the man walk to the road, and in the second he did not.",
+      "keywords": ["bus stop pole beside open fields at dusk"],
+      "fact_refs": ["f3", "f4"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "The man was last seen at a bus stop on the edge of the village on a Friday evening. The stop is a pole and a bench, and the fields start on the other side of the road. By seven the light had gone, and the lane behind the stop was already dark.",
+        "keywords": ["empty wooden bench at a roadside stop in winter light"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "setup",
+        "text": "His sister reported him missing three days later, after two calls went unanswered. The fields on either side of the village were still wet from the night. Nothing about the report looked unusual at the time.",
+        "keywords": ["small village office doorway in morning fog"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "setup",
+        "text": "The first statement in the file comes from a neighbour who said he had watched the man from his window as he walked to the main road. The window faces the lane, and the lane is the only way out of the village.",
+        "keywords": ["gravel lane between hedges leading to a main road"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "setup",
+        "text": "The village sits where a lane meets the main road, with the fields spread out on three sides of it. There is one shop, one bus stop and a crossroads, and after dark the crossroads is the only place with a light. The rest of the village goes dark at the same time every evening. The shop opens late and shuts early, and the lamp at the crossroads comes on at dusk.",
+        "keywords": ["small crossroads with a single lamp in a village"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The report is dated three days after the last sighting at the stop, and it opens the account of that Friday. Two calls had gone unanswered before it was filed.",
+        "keywords": ["small office with a desk and one wooden chair"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The village is small enough that the road runs through it in one line. The fields are flat, and in winter the ditches on both sides stand full. The wind comes across the land without anything to stop it, and it is the only thing that moves out there. The ditches are cleared every autumn, and the water in them stays until the spring. The hedge along the lane is cut back in the autumn, and it grows out again over the winter.",
+        "keywords": ["flat winter fields with full ditches beside a lane"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The searches covered the river and the fields. Nothing came back from them that carried his name, and the work went on for as long as the light allowed each day.",
+        "keywords": ["river bank with bare trees on a grey afternoon"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The neighbour gave his account, and it described the man walking towards the main road from the lane. The account pointed the search at the main road.",
+        "keywords": ["open front gate of a small house on a lane"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The land around the village is worked in flat fields. The tractors go out along the lane before the light comes, and they come back along the same lane after dark with their lights on. In between, the lane belongs to whoever walks it. The fields change colour through the year, and after the harvest they are bare to the road. In the evenings the shadows of the hedges lie across the lane for a mile.",
+        "keywords": ["tractor tracks in frost along a field edge at dawn"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The bus stop kept its place at the edge of the village, with the fields behind it and the road in front. The bench there faces the fields and stays damp until the middle of the day. The pole leans slightly towards the road, and it has leaned that way for years. The paint on the plate has worn away on one side. Cars pass the stop without slowing, and the fields behind it are empty all winter.",
+        "keywords": ["low wooden fence beside a quiet country road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The lane to the main road curves once and then straightens. From the stop the main road can be seen a long way in both directions.",
+        "keywords": ["long straight country road seen from a field gate"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The river runs along the far side of the fields, and the searches went over both banks. The water was low that month, and the banks were easy to walk, so the ground was covered more than once.",
+        "keywords": ["slow river between low banks on a grey morning"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "clue",
+        "text": "The case leaned on the neighbour's account, because he had watched the man walk to the main road. The search took its direction from that account.",
+        "keywords": ["kitchen table with a cold cup of tea under a low light"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "A second interview put the same neighbour in a different place. He told the interviewer that he had not watched the man that evening, and that is all the second account records.",
+        "keywords": ["flickering bulb in a small front room at night"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "So the two statements do not agree, and they were taken by different interviewers. One places him at the window and the other does not. The direction of the search rests on the first of the two.",
+        "keywords": ["two chairs at a small table facing a window"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "The window the neighbour described faces the lane and the stop, and behind it the room is small. In winter the glass keeps the light out until late in the morning, and the lamp in the room is on all day. The sill of the window is deep enough to sit on.",
+        "keywords": ["small room with a lamp beside a curtained window"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The stop is a pole with a plate on it and a bench beside it. The bus comes twice a day, in the morning and in the late afternoon, and the stop is the only one for a mile in either direction.",
+        "keywords": ["bus stop with a metal pole beside a country road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The key witness had not watched the road at all. The first statement put him at the window, and the second took him away from it. The search had gone that way on the strength of the first one.",
+        "keywords": ["curtained window of a small house at night"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "twist",
+        "text": "The second account came from a different interviewer, and it changes what the first one is worth. Only one of the two can put him at the window, and the second one takes him away from it.",
+        "keywords": ["empty wooden chair beside a window at dawn"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "twist",
+        "text": "The account the search followed was the one that moved. The search itself went on from a window that, on the second telling, the witness had not been standing at.",
+        "keywords": ["quiet lane seen from behind a house window"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "reveal",
+        "text": "What the neighbour saw that evening, and why the two accounts differ, has not been settled. Both accounts stand as they were given, side by side.",
+        "keywords": ["grey sky above bare fields at first light"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "reveal",
+        "text": "The Friday evening, the lane and the main road, and one account set against another. The two statements are the whole of the difference.",
+        "keywords": ["long empty lane under a low winter sky"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The case is still open, and no confirmed sighting has been recorded since that Friday. Nothing since then has moved the evening, in either direction.",
+        "keywords": ["empty track through fields under an overcast sky"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The case remains open, and the file records no confirmed sighting since that Friday. The village has kept to its routine around it, with the bus coming twice a day as it always did.",
+        "keywords": ["empty village square with a covered well at dawn"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The lane is the same, and the main road still carries traffic past the fields. The bench at the stop is still there, and it is still damp in the mornings. The fields around the village are still worked. The bus still comes twice a day, and it still stops whether or not anyone is waiting.",
+        "keywords": ["country lane meeting a main road under grey clouds"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "The report was made by his sister, three days after the last sighting at the stop. She made it after two calls went unanswered, and that is where the account begins.",
+        "keywords": ["grey morning at a village crossroads with no cars"],
+        "fact_refs": ["f1", "f2"]
+      }
+    ],
+    "ending": {
+      "text": "",
+      "keywords": ["quiet village road at sunrise with no one in frame"],
+      "fact_refs": []
+    },
+    "description": "A disappearance on the edge of a village and the two statements it left behind. A neighbour first says he watched the man leave for the main road, and a later interview takes that back.",
+    "tags": ["unexplained disappearance", "rural area", "witness account", "missing person", "true crime"],
+    "content_warnings": ["crime", "disturbing"],
+    "structure": {
+      "sub_genre": "unexplained disappearance",
+      "setting": "rural area",
+      "opening": "the first statement",
+      "twist_type": "the key witness lied",
+      "narrator_mode": "third_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "The man was last seen at a bus stop on the edge of the village on a Friday evening.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f2",
+      "statement": "His sister reported him missing three days later, after two calls went unanswered.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f3",
+      "statement": "The first statement in the file comes from a neighbour who said he had watched the man from his window as he walked to the main road.",
+      "source_aliases": ["s1", "s2"]
+    },
+    {
+      "id": "f4",
+      "statement": "The neighbour later told a second interviewer that he had not watched the man that evening.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f5",
+      "statement": "The searches of the river and the fields recovered nothing that named the man.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f6",
+      "statement": "The case remains open, and the file records no confirmed sighting since that Friday.",
+      "source_aliases": ["s2"]
+    }
+  ],
+  "defects": [
+    {
+      "type": "ending_missing",
+      "segment": "ending",
+      "note": "The ending segment is empty: the story stops after the aftermath with no closing and no call to action, so there is no usable ending."
+    }
+  ]
+}

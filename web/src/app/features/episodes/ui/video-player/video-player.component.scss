@@ -1,0 +1,4 @@
+:host { display: block; min-width: 0; }
+video { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 70vh; background: var(--nts-color-surface-variant); border-radius: var(--nts-radius-sheet); }
+p { margin: var(--nts-space-3) 0 0; color: var(--nts-color-on-surface-muted); max-width: var(--nts-measure); }
+@media (prefers-reduced-motion: reduce) { video { animation: none; transition: none; } }

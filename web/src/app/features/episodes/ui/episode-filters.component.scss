@@ -1,0 +1,98 @@
+:host {
+  display: block;
+}
+
+.episode-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nts-space-3) var(--nts-space-4);
+}
+
+.episode-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-2);
+  flex: 1 1 200px; /* two-up where space allows; stacked and full-width at 360px */
+  min-width: 0;
+
+  label {
+    font-weight: var(--nts-type-label-weight);
+  }
+
+  select {
+    width: 100%;
+    min-height: var(--nts-control-h);
+    padding: var(--nts-space-2) var(--nts-space-3);
+    border: 1px solid var(--nts-color-outline);
+    border-radius: var(--nts-radius-control);
+    background: var(--nts-color-surface);
+    color: var(--nts-color-on-surface);
+    text-overflow: ellipsis;
+
+    &:focus-visible {
+      outline-offset: 0;
+      border-color: var(--nts-color-focus);
+    }
+
+    &[disabled] {
+      color: var(--nts-color-on-surface-muted);
+      border-style: dashed;
+    }
+  }
+}
+
+.episode-filters__hint {
+  color: var(--nts-color-on-surface-muted);
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+}
+
+.episode-filters__active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nts-space-2);
+  margin-top: var(--nts-space-3);
+}
+
+.episode-filters__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--nts-control-h-sm);
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--nts-color-primary);
+  border-radius: var(--nts-radius-pill);
+  background: var(--nts-color-primary-soft);
+  color: var(--nts-color-primary);
+  font-size: var(--nts-type-caption-size);
+  font-weight: 500;
+
+  &:hover {
+    border-color: var(--nts-color-on-surface);
+  }
+}
+
+.episode-filters__chip-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.episode-filters__clear-all {
+  min-height: var(--nts-control-h-sm);
+  padding: 0 var(--nts-space-3);
+  border: 1px solid transparent;
+  border-radius: var(--nts-radius-control);
+  background: transparent;
+  color: var(--nts-color-on-surface-muted);
+  font-size: var(--nts-type-caption-size);
+  font-weight: 500;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--nts-color-on-surface);
+    border-color: var(--nts-color-outline);
+  }
+}

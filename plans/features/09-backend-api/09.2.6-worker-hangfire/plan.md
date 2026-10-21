@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.6**, L104–109), §2 T8, §5.3, §8 (Hangfire licence risk).
 > Contract: `../README.md` — **N5**, **N6**, **N14**, **F09**, **D1**, **D10**, **D12**, **D13**, **O1**; CR-11.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: 09.2.6-T1 **implemented 2026-09-30** (PR #46); T2 waits for 09.10.4-T1 + 09.3.6-T1; T3 waits for 09.2.4-T1.
 
 ## 1. Scope
 
@@ -35,7 +35,7 @@
 
 ## 3. Domain and data
 
-No domain tables. Hangfire creates and upgrades its own schema `hangfire` (`PrepareSchemaIfNecessary = true` in Development and tests; in production the schema install runs as part of the Worker start with the same flag [DECISION] ⚠️ confirm that the migration lock is safe with 2 Workers).
+No domain tables. Hangfire creates and upgrades its own schema `hangfire` (`PrepareSchemaIfNecessary = true` in Development and tests; in production a separate deploy/migration role installs the schema before rollout and the Worker runs with `PrepareSchemaIfNecessary = false` and no DDL rights (O2, owner 2026-09-30) [DECISION]; the earlier plan had the Worker install it at start ⚠️ 2 Workers: the 1.21.1 installer runs in one Serializable transaction and tolerates a concurrent install rather than locking — read from source, not load-tested; T1 Notes).
 
 Types:
 
@@ -88,9 +88,9 @@ T1 integration tests with a real Hangfire server on the test database (short `Sc
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 09.2.6-T1 | Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration | M (1.0) | 09.2.1-T1 | 09.2.4-T1, 09.1.3-T2 (cleanup job registration), every 02 job, 09.10.1-T2 (09 W3 CR-17) |
+| 09.2.6-T1 | Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration | M (1.0) | 09.2.1-T1 | 09.2.4-T1, 09.1.3-T2 (cleanup job registration), every 02 job |
 | 09.2.6-T2 | `/internal/jobs` dashboard auth | S (0.5) | 09.2.6-T1, 09.10.4-T1, 09.3.6-T1 | — |
-| 09.2.6-T3 | E-mail pipeline: `IEmailSender`, outbox `EmailRequested`, `SendEmailJob` (queue `email`, 5 retries), templates, `email_messages`, `IEmailDeliveryStatus` | M (1.0) | 09.2.6-T1, 09.2.4-T1 | 09.3.3-T1, 09.3.1-T3, 02.8.2-T1, 02.8.3-T4, 06.1.2-T2, 06.2.2-T2 (06 CR-8), 09.3.3-T3, 09.3.7-T1, 09.10.8-T1 (09 W3 CR-17), 12.6.3-T1, 12.5.1-T2, 07.1.2-T2, 07.2.2-T2 |
+| 09.2.6-T3 | E-mail pipeline: `IEmailSender`, outbox `EmailRequested`, `SendEmailJob` (queue `email`, 5 retries), templates, `email_messages`, `IEmailDeliveryStatus` | M (1.0) | 09.2.6-T1, 09.2.4-T1 | 09.3.3-T1, 02.8.2-T1, 02.8.3-T4, 06.1.2-T2, 06.2.2-T2 (06 CR-8), 12.6.3-T1, 12.5.1-T2, 07.1.2-T2 (the S consumers 09.3.3-T3, 09.3.7-T1 and 09.10.8-T1 are deleted by DEC 10.14), 07.2.2-T2 |
 
 Total **1.5 d** (high-level M 1.0; +0.5 because the dashboard is split out, README §9).
 
@@ -99,7 +99,8 @@ Total **1.5 d** (high-level M 1.0; +0.5 because the dashboard is split out, READ
 ### Open items for the TL
 
 - O1 (owner): Hangfire licence acceptance. If rejected, `IJobScheduler` is re-implemented on another C# library (≈ 2 d, 09 §8); this plan's port and tests stay.
-- ⚠️ H2: if the spike fails, pin Hangfire.PostgreSql to a version tested with Npgsql 10, or run it on its own `NpgsqlDataSource` [DECISION at spike].
+- H2 resolved (2026-09-30): the spike PASSED on Hangfire.PostgreSql 1.21.1 + Npgsql 10 (T1 Notes); no pin change, no separate `NpgsqlDataSource`.
+- O2 (owner, before the first production deploy — 11.1.1-T1): the earlier design had the Worker install the `hangfire` schema at start, which needs DDL rights for its long-lived runtime role. Alternative: a separate deploy/migration role installs the schema and production runs with `PrepareSchemaIfNecessary = false`. Local dev is unaffected (security review 09.2.6-T1, SEC-03). **Decided (owner 2026-09-30): the separate deploy/migration role.** Production runs with `PrepareSchemaIfNecessary = false` and the Worker role has no DDL rights; 11.1.1-T1 wires the schema install into the deploy step.
 
 ## 11. Rollout
 

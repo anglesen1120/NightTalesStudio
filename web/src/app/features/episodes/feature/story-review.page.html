@@ -1,0 +1,223 @@
+<div class="story-review-page">
+  @if (loading()) {
+    <nts-loading-state [rows]="5" labelKey="episodes.editor.loading" />
+  } @else if (fatalError() !== null) {
+    <nts-error-state
+      [bodyKey]="errorKey()"
+      [traceId]="traceId()"
+      retryLabelKey="errors.action.retry"
+      (retry)="retry()"
+    />
+  } @else if (episode(); as detail) {
+    @if (makeVideoErrorKey(); as makeErrorKey) {
+      <div class="story-review-page__make-error" role="alert">
+        <p>{{ makeErrorKey | transloco }}</p>
+        @if (makeVideoTrace(); as trace) {
+          <p class="story-review-page__make-error-trace" [title]="trace.params.traceId">{{ trace.key | transloco: trace.params }}</p>
+        }
+        @if (makeVideo.retryAfterSec(); as seconds) {
+          <nts-retry-countdown [seconds]="seconds" />
+        }
+      </div>
+    }
+    @if (renderView()) {
+      <nts-page-header [title]="store.title() || undefined" titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      @if (renderStore.needsRefetch()) {
+        <nts-loading-state [rows]="3" labelKey="episodes.render.timeline.heading" />
+      } @else if (renderStore.failure(); as failure) {
+        <nts-render-failure
+          [failure]="failure"
+          [copy]="renderFailureCopy()"
+          [actions]="renderActions()"
+          [episodeId]="detail.id"
+          [canEditScenes]="approval.canReopen()"
+          (editScenes)="openReopen()"
+          (retry)="makeVideo.makeVideo()"
+        />
+      } @else {
+        <nts-render-timeline
+          [steps]="renderStore.steps()"
+          [percent]="renderStore.percent()"
+          [subStepKey]="renderStore.subStepKey()"
+          [elapsedSec]="renderStore.elapsedSec()"
+          [waitingForSlot]="renderStore.waitingForSlot()"
+          [showEmailNotice]="renderStore.active()"
+          [cancellable]="renderStore.cancellable()"
+          [cancelling]="renderStore.cancelling()"
+          [cancelErrorKey]="cancelErrorKey()"
+          (cancelRequest)="renderStore.cancel()"
+        />
+      }
+    } @else if (reviewView() || readyView()) {
+      <!--
+        The review view (WD4). `video_review` is the finished cut before the owner decides; `ready` is the same
+        container narrowed by `[ready]` to the `finalVideo` metadata and the download link — no decision buttons and
+        **no** publication state, which is 10.7.4-T1's (`plan.md` §10 O-1), so `scheduled`/`published` stay unhandled.
+      -->
+      <nts-page-header [title]="store.title() || undefined" titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      <nts-video-review
+        [ready]="readyView()"
+        [url]="reviewStore.url()"
+        [urlFailed]="reviewStore.urlFailed()"
+        [urlErrorKey]="reviewStore.urlErrorKey()"
+        [urlRetryAfterSec]="reviewStore.urlRetryAfterSec()"
+        [loadingUrl]="reviewStore.loadingUrl()"
+        [notes]="reviewStore.notes()"
+        [skipped]="reviewStore.skipped()"
+        [episodeId]="detail.id"
+        [finalVideo]="reviewStore.finalVideo()"
+        [canApprove]="reviewStore.canApprove()"
+        [canReject]="reviewStore.canReject()"
+        [canDownload]="reviewStore.canDownload()"
+        [downloadName]="reviewStore.downloadName()"
+        [busy]="reviewStore.deciding()"
+        (approveRequest)="reviewStore.openApprove()"
+        (rejectRequest)="reviewStore.openReject('story')"
+        (reMakeRequest)="reviewStore.openReject('re_render')"
+        (retryUrl)="reviewStore.retryUrl()"
+        (mediaError)="reviewStore.onPlayerError()"
+      />
+    } @else if (detail.currentStory === null) {
+      <nts-page-header titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      @if (store.generationError(); as error) {
+        <nts-form-error-alert [error]="error" [showTrace]="true" />
+      }
+      <nts-empty-state
+        titleKey="episodes.editor.emptyTitle"
+        bodyKey="episodes.editor.emptyBody"
+        [actionLabelKey]="store.canGenerate() && !storyGateBlocked() ? actionKey('generate_story') : undefined"
+        (action)="store.generateStory()"
+      />
+      @if (storyGateBlocked()) {
+        <div class="story-review-page__gate" role="status">
+          <p class="story-review-page__gate-copy">{{ 'episodes.research.gate.writeStoryBlocked' | transloco }}</p>
+          <p class="story-review-page__gate-reason">{{ gateHintKey() | transloco }}</p>
+          <a class="story-review-page__gate-link story-review-page__link" [routerLink]="['/episodes', detail.id, 'research']">{{ 'episodes.editor.research.link' | transloco }}</a>
+        </div>
+      }
+    } @else {
+      <nts-page-header [title]="store.title()" backHref="/episodes">
+        @if (store.revisedBadge()) {
+          <nts-revised-badge actions [describedById]="reviewDescriptionId()" />
+        }
+        <a actions class="story-review-page__research-link story-review-page__link" [routerLink]="['/episodes', detail.id, 'research']">{{ 'episodes.editor.research.link' | transloco }}</a>
+        <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
+        <button #versionsToggle actions type="button" class="story-review-page__versions-toggle story-review-page__control" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
+          {{ 'episodes.versions.open' | transloco }}@if (versionCount(); as count) { ({{ count }})}
+        </button>
+        @if (approval.status() === 'story_review') {
+          <div actions class="story-review-page__approval-action">
+            <button #approveTrigger type="button" class="story-review-page__approve story-review-page__control" [disabled]="!approval.canOpenApprove()" [attr.aria-disabled]="!approval.canOpenApprove()" [attr.aria-describedby]="approvalSaveHint() ? 'approval-save-hint' : null" (click)="openApprove(approveTrigger)">
+              {{ 'episodes.editor.action.approve_story' | transloco }}
+            </button>
+            @if (approvalSaveHint()) { <p id="approval-save-hint">{{ 'episodes.editor.approvalSaveHint' | transloco }}</p> }
+          </div>
+        } @else if (approval.status() === 'story_approved') {
+          <div actions class="story-review-page__approval-action story-review-page__approval-action--row">
+            @if (makeVideo.labelKey(); as makeLabelKey) {
+              <nts-make-video-button [disabled]="!makeVideo.canMakeVideo()" [busy]="makeVideo.submitting()" [labelKey]="makeLabelKey" [reasonKey]="makeVideo.reasonKey()" (request)="makeVideo.makeVideo()" />
+            }
+            <button #reopenTrigger type="button" class="story-review-page__reopen story-review-page__control" [disabled]="!approval.canReopen()" [attr.aria-disabled]="!approval.canReopen()" (click)="openReopen(reopenTrigger)">
+              {{ 'episodes.editor.action.reopen_story' | transloco }}
+            </button>
+          </div>
+        }
+      </nts-page-header>
+
+      @if (store.invalidState() || store.readOnly()) {
+        <section class="story-review-page__notice" role="note" aria-labelledby="story-readonly-heading">
+          <h2 id="story-readonly-heading">{{ 'errors.episode_invalid_state' | transloco }}</h2>
+          <p>{{ 'episodes.editor.readOnlyBody' | transloco }}</p>
+          @if (allowedActions().length > 0) {
+            <div class="story-review-page__actions" [attr.aria-label]="'episodes.editor.allowedActions' | transloco">
+              @for (action of allowedActions(); track action) {
+                <button type="button" disabled>{{ actionKey(action) | transloco }}</button>
+              }
+            </div>
+          }
+        </section>
+      }
+
+      @if (store.remoteChange() !== null && !conflictDialogOpen()) {
+        <section class="story-review-page__notice story-review-page__notice--remote" aria-labelledby="story-remote-heading">
+          <h2 id="story-remote-heading">{{ 'episodes.conflict.elsewhereTitle' | transloco }}</h2>
+          <p role="status">{{ 'episodes.conflict.elsewhereBody' | transloco }}</p>
+          @if (remoteNoticeLabels().length > 0) {
+            <ul class="story-review-page__diff">
+              @for (label of remoteNoticeLabels(); track $index) {
+                <li>{{ label }}</li>
+              }
+            </ul>
+          }
+          <div class="story-review-page__actions">
+            <button type="button" (click)="reloadRemoteNotice()">{{ 'episodes.conflict.reload' | transloco }}</button>
+            <button type="button" (click)="saveMineRemoteNotice()">{{ 'episodes.conflict.saveMine' | transloco }}</button>
+            <button type="button" (click)="dismissRemoteNotice()">{{ 'episodes.conflict.dismiss' | transloco }}</button>
+          </div>
+        </section>
+      }
+
+      <nts-review-panel
+        [counts]="store.reviewCounts()"
+        [scores]="store.reviewBlock()?.scores ?? null"
+        [stale]="store.reviewBlock()?.stale ?? false"
+        [whyIssues]="store.whyIssues()"
+        [driftNote]="store.driftNote()"
+        [similarityRows]="similarityRows()"
+        [similarityCorpus]="store.sourcesExist() ? store.similarity()?.corpus ?? null : null"
+        [similarityScore]="store.sourcesExist() ? store.snapshot()?.similarityScore ?? null : null"
+        [similarityUnavailable]="store.sourcesExist() && store.similarityUnavailable()"
+        [hasAudit]="store.reviewBlock() !== null"
+        [partial]="reviewPartial()"
+        (focusRequested)="handleIntent({ kind: 'openSegment', address: $event })"
+      />
+
+      <div class="story-review-page__workspace" [class.story-review-page__workspace--versions]="versionsOpen()">
+        <nts-story-editor
+          #editorHost
+          [viewModel]="viewModel()"
+          [segmentTexts]="segmentTexts()"
+          [annotationViews]="annotationViews()"
+          [similarityHighlights]="similarityHighlights()"
+          [announcement]="announcement()"
+          (intent)="handleIntent($event)"
+        />
+        @if (versionsOpen()) {
+          <nts-versions-panel-host [episodeId]="detail.id" [initialLeft]="versionIds().left" [initialRight]="versionIds().right" (selectionChange)="changeVersions($event)" (closed)="closeVersions()" (reopenRequested)="openReopen()" />
+        }
+      </div>
+      @if (approveOpen()) {
+        <nts-approve-dialog [episodeId]="detail.id" [attestation]="approval.attestation()" [hintCount]="approval.hintCount()" [busy]="approval.approving()" [blocked]="approval.blocked() ?? approval.error()" [accepted]="approval.attestationAccepted()" [checkboxInvalid]="approval.checkboxInvalid()" [retryAfterSec]="approval.retryAfterSec()" [confirmDisabled]="!approval.canApprove()" (acceptedChange)="approval.setAccepted($event)" (approved)="confirmApproval('approve', detail.id)" (cancelled)="closeApprovalDialogs()" />
+      }
+    }
+    @if (reopenOpen()) {
+      <nts-reopen-dialog [busy]="approval.reopening()" [blocked]="approval.blocked() ?? approval.error()" [retryAfterSec]="approval.retryAfterSec()" (reopened)="confirmApproval('reopen', detail.id)" (cancelled)="closeApprovalDialogs()" />
+    }
+    @if (reviewStore.dialog(); as reviewDialog) {
+      <nts-video-decision-dialog
+        [mode]="reviewDialog"
+        [target]="reviewStore.target()"
+        [noteControl]="reviewStore.note"
+        [reasonControl]="reviewStore.reason"
+        [busy]="reviewStore.deciding()"
+        [errorKey]="reviewStore.errorKey()"
+        [retryAfterSec]="reviewStore.retryAfterSec()"
+        [confirmDisabled]="reviewStore.needsRefresh()"
+        (confirmed)="confirmReviewDecision()"
+        (dismissed)="reviewStore.closeDialog()"
+        (targetChange)="reviewStore.setTarget($event)"
+      />
+    }
+  }
+  <div class="story-review-page__announcement" role="status" aria-live="polite" aria-atomic="true">
+    @if (pageAnnouncement(); as announcement) {
+      @for (message of [announcement]; track message.sequence) { <span>{{ message.text }}</span> }
+    }
+  </div>
+</div>

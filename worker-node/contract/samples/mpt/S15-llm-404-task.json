@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "task_id": "a31fe20d-611c-40ab-ae60-1deae29aede7",
+    "state": -1,
+    "progress": 10,
+    "videos": null,
+    "combined_videos": null,
+    "failed_stage": "terms",
+    "error": "failed to generate video search terms",
+    "cross_post_state": null,
+    "cross_post_results": null,
+    "cross_post_error": null
+  }
+}

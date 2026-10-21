@@ -19,9 +19,9 @@
 
 **Out of scope (owner in brackets).**
 - The upload call site that reserves and the failure map that releases: `PublishYouTubeJob` (06.2.3-T2); the cancel path that must not double-release (06.2.6-T1).
-- Per-user fairness and the queue length of one user: 06.3.2-T1 (**S**).
-- `GET /admin/quota` used/limit/forecast + the publish-form estimate banner: 06.3.3-T1 (**S**, 00 §8 Admin row). The ETA endpoint itself is P here (README §9).
-- Flag rollout rules: 06.5.2-T1 (**S**).
+- Per-user fairness and the queue length of one user: not built (phase S dropped, DEC 10.14).
+- `GET /admin/quota` used/limit/forecast: not built (phase S dropped, DEC 10.14); the ETA endpoint and the publish-form estimate banner are P here (README §9).
+- Flag rollout rules: not built (phase S dropped, DEC 10.14).
 - The filing itself: `13.4.2-T1` (form answers, submission, calendar entry, appeal path, 13 README D5).
 - The publish form and the quota-wait copy: 10.7.2-T1 (**10 wave 2, not detailed** → copy keys handed over here, §6).
 - Token health/data refresh quota accounting: 06.4.2-T1 (see §7 — one [OPEN] for the TL).
@@ -50,7 +50,7 @@
 | F18 | Acceptance before connect: `ILegalAcceptance.EnsureCurrentAsync` (409 `legal_acceptance_required`); pages built from `manifest.json` versions and rendered by 10.3.1-T1 | `../../13-compliance/README.md` D1, D3, K1 ✅ |
 | F19 | 13.4.2-T1 starts with a behaviour walkthrough checklist mapping each III.x clause and each policy sentence to a test or screenshot; answers drafted in `docs/compliance/youtube-audit-<date>.md`; **no secrets or personal data in the repo copy** | `../../13-compliance/README.md` D5 ✅ |
 | F20 | Gate **06-publish** requires the `quotaExceeded` / `invalid_grant` / `invalid_client` paths to pass against `FakeGoogleServer`; gate **06-audit-ready** requires this pack complete **and** the 13 P slice done, then 13.4.2-T1 files | `../README.md` §7 ✅ |
-| F21 | `FakeGoogleServer` (TestKit, Kestrel, no mocking library) covers token/revoke/channels/resumable/videos errors; integration tests run on real PostgreSQL (Testcontainers) and drive time with `FakeClock` | `../README.md` D19 ✅; `../../09-backend-api/README.md:141,297-298` ✅ |
+| F21 | `FakeGoogleServer` (TestKit, Kestrel, no mocking library) covers token/revoke/channels/resumable/videos errors; integration tests run on real PostgreSQL 17 via `PostgresFixture` and drive time with `FakeClock` | `../README.md` D19 ✅; `../../09-backend-api/README.md:141,297-298` ✅ |
 
 **Open / inference.**
 - [OPEN] **02's PT-day rule ("02 T7")**: `../README.md` D10 pins the ICU zone, but no shared helper exists anywhere in `plans/` (grep 2026-09-25: only D10 mentions `America/Los_Angeles`). This task owns `PacificQuotaDay`; if the 02 writer adds an equivalent helper, one of the two must be dropped. TL ruling requested → §11.
@@ -149,7 +149,7 @@ The pack is a set of documents + a manifest that **references** artefacts; it ad
 |---|---|---|
 | UC1 | **Reserve one unit** — `IQuotaLedger.TryReserveAsync(platform: "youtube", now: DateTimeOffset) → ErrorOr<QuotaReservation>` | `QuotaReservation(string Platform, DateOnly Day)` [INFERENCE: D10 writes `QuotaReservation(DateOnly Day)`; `ReleaseAsync(reservation)` must address the row, so the record carries `platform` too]. Steps: `day = PacificQuotaDay.Day(now)` → seed (§3.4 step 1, limit = `options.Quota.UnitsPerDay`) → conditional update (step 2). `rows == 1` → success + `metrics.SetYoutubeQuotaUsed(used / limit)` (ratio read back from the same statement — `RETURNING units_used, units_limit` [INFERENCE, keeps it to one round trip]); `rows == 0` → `Error.TooManyRequests(code: ErrorCodes.YouTubeQuotaExhausted, metadata: { retryAfterSeconds = seconds until PacificQuotaDay.NextResetAt(now) })`. Called from `PublishYouTubeJob` (06.2.3-T2) **before** `StartUploadAsync` (F3). No `Idempotency-Key`: one unit per call by design, and the counter is atomic. No audit row (machine-rate operation; D17 owns the publishing actions). |
 | UC2 | **Release a unit** — `IQuotaLedger.ReleaseAsync(QuotaReservation) → ErrorOr<Success>` | Called only for failures where YouTube never received the insert or on `quotaExceeded`/`uploadLimitExceeded` (F3, D10). Always returns success (Q5); the caller's own state change (`scheduled` + `next_attempt_at`) commits in the same `IUnitOfWork` transaction, so a crash rolls back both the release and the state change — no double release [INFERENCE from F13 + D9's error map]. Same metric update. |
-| UC3 | **Read the publish ETA** — `GetYouTubeEtaQuery() → YouTubeEtaDto(int Available, DateTimeOffset? NextSlotAt)` | One `SELECT` for today's PT row; missing row → `used = 0`, `limit = options.Quota.UnitsPerDay`, so a fresh day reports the full limit. `available = max(0, limit - used)`; `nextSlotAt = available > 0 ? null : PacificQuotaDay.NextResetAt(now)`. Bearer required; `RequireFeature("youtube_publish")` → 404 `feature_disabled` (F15); the route returns the **global** counter only — the per-user queue is 06.3.3-T1 (S). No audit row. |
+| UC3 | **Read the publish ETA** — `GetYouTubeEtaQuery() → YouTubeEtaDto(int Available, DateTimeOffset? NextSlotAt)` | One `SELECT` for today's PT row; missing row → `used = 0`, `limit = options.Quota.UnitsPerDay`, so a fresh day reports the full limit. `available = max(0, limit - used)`; `nextSlotAt = available > 0 ? null : PacificQuotaDay.NextResetAt(now)`. Bearer required; `RequireFeature("youtube_publish")` → 404 `feature_disabled` (F15); the route returns the **global** counter only — the per-user queue was dropped with phase S (DEC 10.14). No audit row. |
 | UC4 | **PT rollover** | A reserve after the PT midnight boundary addresses the new `quota_day`, seeds it and succeeds even though the previous day was full (F5, Q4). Never a "reset job": the day key does the work [DECISION D10]. |
 | UC5 | **Assemble the audit evidence pack** | BA sequence: run the walkthrough on prod-API staging → collect the artefact set (§3.5) → write the manifest, the clause-mapped checklist, the retention/deletion table and the quota justification → review against every III.x clause and every policy sentence (13 README D5) → hand to 13.4.2-T1 with the pack index. Signals: every artefact row has a source, a date, and a verified "live" state; no secret, token or personal data in the repo copy (F19). |
 
@@ -190,7 +190,7 @@ The pack is a set of documents + a manifest that **references** artefacts; it ad
 | `AutopilotConsentJob` | 06.2.2-T3 | does not touch the ledger (no Upload API call) |
 | `TokenHealthJob` | 06.4.2-T1 | **outside** the upload bucket: `channels.list` + `videos.list` (1 unit per batch of 50) share the 10,000-unit/day bucket, not the 100-upload bucket (F5). [OPEN] whether it reserves: option A — a second ledger bucket (`platform = 'youtube_api'`, limit from a new option) is **out of P** (scope creep); option B — exempt, only counted by the metric. TL decides; this folder ships the upload bucket only |
 | `DataDeletionJob` | 13.3.1-T1 | no ledger interaction; produces the deletion evidence the pack cites (F17, F19) |
-| `GET /admin/quota` | 06.3.3-T1 (**S**) | not built here; the alert runbook points at the ledger row meanwhile |
+| `GET /admin/quota` | dropped (DEC 10.14) | not built; the alert runbook points at the ledger row |
 | `FakeGoogleServer` | TestKit (D19, F21) | used for the reserve-then-fail sequences (`quotaExceeded`) that exercise the release path |
 | 11.6.2-T1 | 11 | consumes `youtube_quota_used`; warn at > 80 %; no rename (F8) |
 
@@ -222,7 +222,7 @@ The pack is a set of documents + a manifest that **references** artefacts; it ad
 
 ## 9. Test plan
 
-Tools: xunit.v3 + Shouldly, `NightTales.TestKit` (`FakeClock`, `PostgresFixture`, `ApiFactory`, `TestAuthHandler`), real PostgreSQL via Testcontainers, no mocking library (F21). Canonical projects (`../../09-backend-api/README.md` Part A D2): `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Infrastructure.UnitTests`, `NightTales.Architecture.Tests`, `NightTales.Api.IntegrationTests`, `NightTales.TestKit`.
+Tools: xunit.v3 + Shouldly, `NightTales.TestKit` (`FakeClock`, `PostgresFixture`, `ApiFactory`, `TestAuthHandler`), real PostgreSQL 17 via `PostgresFixture`, no mocking library (F21). Canonical projects (`../../09-backend-api/README.md` Part A D2): `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Infrastructure.UnitTests`, `NightTales.Architecture.Tests`, `NightTales.Api.IntegrationTests`, `NightTales.TestKit`.
 
 | Name | Project / kind | Asserts |
 |---|---|---|
@@ -251,16 +251,16 @@ Tools: xunit.v3 + Shouldly, `NightTales.TestKit` (`FakeClock`, `PostgresFixture`
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 06.3.1-T1 | Quota ledger (PT day, atomic reserve/release) + `GET /publishing/youtube/eta` | M (1.0) | 09.2.2-T1 | 06.2.6-T1, 06.2.3-T2, 06.4.1-T1, 10.7.2-T1 (10 CR-15), 06.3.2-T1, 06.3.3-T1 (06 CR-18) |
+| 06.3.1-T1 | Quota ledger (PT day, atomic reserve/release) + `GET /publishing/youtube/eta` | M (1.0) | 09.2.2-T1 | 06.2.6-T1, 06.2.3-T2, 06.4.1-T1, 10.7.2-T1 (10 CR-15) |
 | 06.5.1-T1 | Audit evidence pack (filing is 13.4.2-T1) | M (1.0) | 06.2.5-T1, 06.2.2-T4, 06.4.2-T2, 06.4.3-T1, 13.1.1-T1, 13.1.2-T1, 13.2.1-T1, 10.3.1-T1, 10.4.3-T2, 10.7.1-T1, 10.7.2-T1, 10.7.4-T1 | 13.4.2-T1 |
 
-Total **2.0 d** — matches `../README.md` §9 (06.3 quota 1.0 unchanged, 06.5 audit 1.0 unchanged). The ETA endpoint is folded into T1 (the S story 06.3.3-T1 keeps only the admin view).
+Total **2.0 d** — matches `../README.md` §9 (06.3 quota 1.0 unchanged, 06.5 audit 1.0 unchanged). The ETA endpoint is folded into T1 (phase S, and with it the admin view, is dropped by DEC 10.14).
 
 ## 11. Rollout
 
 - **Flag.** The ETA route and the reserve path are behind `youtube_publish` (D1); recurring jobs that would reserve register only while the flag is on (06.2.3-T2 owns that registration).
 - **Sequence (M1).** `_06_PlatformQuotaUsage` is applied by the migration bundle (11.5.1) before the Worker starts; 06.3.1-T1 must land before 06.2.3-T2 (upload) and 06.2.6-T1 (cancel). Then 06.5.1-T1 assembles the pack once 06.2.5-T1, 06.2.2-T4, 06.4.2-T2 and 06.4.3-T1 are green and the 13 P slice (13.1.x, 13.2.1, 13.3.1) is live → `13.4.2-T1` files (gate **06-audit-ready**, F20).
-- **Monitoring.** `youtube_quota_used` on the platform board with the > 80 % warn (11.6.2-T1); the operator action is to read the day row (the admin view is S, 06.3.3-T1).
+- **Monitoring.** `youtube_quota_used` on the platform board with the > 80 % warn (11.6.2-T1); the operator action is to read the day row (no admin view: phase S dropped, DEC 10.14).
 - **Smoke on staging** (gate 06-publish evidence): set `YouTube:Quota:UnitsPerDay = 1`, upload once → success; a second publication → `scheduled`, `next_attempt_at` = next PT midnight, form shows the wait from `nextSlotAt`; next day the counter resets with no operator action; `platform_quota_usage` shows one row per day.
-- **Rollback.** Forward-only migration; if the counter desyncs, an operator `UPDATE` on the day row is the documented fix ([INFERENCE] runbook step for 11.6.1 — no admin endpoint in P; 06.3.3-T1 is S). Lowering `units_limit` takes effect on the next day's row (§7).
+- **Rollback.** Forward-only migration; if the counter desyncs, an operator `UPDATE` on the day row is the documented fix ([INFERENCE] runbook step for 11.6.1 — no admin endpoint; phase S dropped by DEC 10.14). Lowering `units_limit` takes effect on the next day's row (§7).
 - **DoR items raised by this plan** (§2 [OPEN]): (1) the 02 PT-day helper duplication; (2) `TokenHealthJob` quota accounting; (3) 10 wave-2 ETA/copy keys. All three are contract-level and must be ruled before 06.3.1-T1 starts.

@@ -262,11 +262,14 @@ Rules that hold for every row:
 | 12 | Repeated run failures | two consecutive runs of the series end `failed` for the same non-platform reason | `repeated_run_failures` | the series | `autopilot.pause.repeated_run_failures` |
 | 13 | Slot missed twice in a row | two consecutive runs end `failed` with `pause_reason = slot_missed` | `slot_missed` | the series (a sign the estimates are wrong) | `autopilot.pause.slot_missed` |
 | 14 | Pre-audit mode "pause after N private videos" | `pre_audit_mode = pause_after_n_private` and the count of the series' `published_private_locked` runs ≥ `pre_audit_pause_after` | `pre_audit_private_limit` | the series (the default mode does **not** pause) | `autopilot.pause.pre_audit_private_limit` |
-| 15 | Content report / takedown | a `reports` row targeting one of the series' episodes/publications (13.3.4) | `content_reported` | the series (08.4.4 runbook then applies: private/remove in Studio within 24 h) | `autopilot.pause.content_reported` |
-| 16 | Owner pressed Pause | `POST /series/{id}/autopilot/pause` | `owner_paused` | the series | none (no e-mail; the owner just did it) |
-| 17 | Authorization revoked | `current_autopilot_authorization_id` null/revoked (§3.5) | — (state `awaiting_authorization`, **not** a pause) | production stops; the series is not marked paused, and the UI shows "re-accept the authorization" | `autopilot.authorization_required` (banner, no e-mail) |
+| 15 | Owner pressed Pause | `POST /series/{id}/autopilot/pause` (also the entry point for an owner takedown, 08.4.4-T1) | `owner_paused` | the series | none (no e-mail; the owner just did it) |
+| 16 | Authorization revoked | `current_autopilot_authorization_id` null/revoked (§3.5) | — (state `awaiting_authorization`, **not** a pause) | production stops; the series is not marked paused, and the UI shows "re-accept the authorization" | `autopilot.authorization_required` (banner, no e-mail) |
 
-Alert e-mail (all rows except 16/17) — one outbox message per pause event, template `autopilot_alert` (vi/en), sent by `SendEmailJob` (09.2.6):
+**(DEC 10.14 residue) — the content-report trigger is out of the table:** the public abuse-report form and its `reports` table were dropped with 13.3.4, so nothing produces that pause and row 15 (content report) is deleted. The already-shipped code still carries `AutopilotPauseReason.ContentReported` and its value in the `ck_autopilot_runs_pause_reason` check constraint; both are unreachable and tracked for removal in STATUS `DEC10.14-2`.
+
+**(02.8.3-T1 S71 deviation) — row 16:** shipped code pauses the run with `owner_paused` instead (`AutopilotStepSupport.SeriesMaySpendAsync`), because §3.5 can reach `awaiting_authorization` only from `planned`. Kept as shipped under a deferred owner review (STATUS S71-43, 2026-10-21); the rejected alternative was to move the run to `awaiting_authorization` and re-gate.
+
+Alert e-mail (all rows except 15/16) — one outbox message per pause event, template `autopilot_alert` (vi/en), sent by `SendEmailJob` (09.2.6):
 
 ```
 Subject: [NightTales] Autopilot paused — <series title>
@@ -379,7 +382,7 @@ Events:
 | `StoryGenerated` / `StoryGenerationFailed` (02.2.2) | outbox | `Trigger = autopilot` | the orchestrator |
 | `StoryApproved` (02.3.2) | outbox | `ApprovalSource` | the orchestrator (continue after an owner approval) |
 
-⚠️ Only `StoryGenerated`, `StoryGenerationFailed`, `StoryApproved` and `StoryReopened` are named in README D21. The remaining event names above and in §7.2/§7.3 (`FactSheetGenerated`, `FactSheetApproved`, `RenderCompleted`, `ChannelConnectionChanged`, `ReportCreated`, `PlatformIncidentRaised/Cleared`) are **[INFERENCE]** and are requested as confirmed contract events in §10 open item 11. The handlers subscribe by `outbox_messages.type`, so a rename is a one-line change; the orchestrator's time-based fallback (plan §7.2) keeps the machine correct if an event is never delivered or is renamed before this is confirmed.
+⚠️ Only `StoryGenerated`, `StoryGenerationFailed`, `StoryApproved` and `StoryReopened` are named in README D21. The remaining event names above and in §7.2/§7.3 (`FactSheetGenerated`, `FactSheetApproved`, `RenderCompleted`, `ChannelConnectionChanged`, `PlatformIncidentRaised/Cleared`) are **[INFERENCE]** and are requested as confirmed contract events in §10 open item 11. The handlers subscribe by `outbox_messages.type`, so a rename is a one-line change; the orchestrator's time-based fallback (plan §7.2) keeps the machine correct if an event is never delivered or is renamed before this is confirmed.
 
 ## 6. UI
 
@@ -461,7 +464,7 @@ The time-based fallbacks make the machine self-healing after a missed outbox mes
 
 ### 7.4 Pre-audit mode (owned by T3)
 
-- Read the audit status from `YouTubeOptions.AuditStatus` (`pending|approved|rejected`) through `IOptionsMonitor` — environment value in P (09 WT27 / W2 CR-10; 06 D11, 06 CR-3); the `system_settings` source is 09.10.3-T1 (S).
+- Read the audit status from `YouTubeOptions.AuditStatus` (`pending|approved|rejected`) through `IOptionsMonitor` — the environment value (09 WT27 / W2 CR-10; 06 D11, 06 CR-3); the `system_settings` source and its task, 09.10.3-T1, were dropped by DEC 10.14.
 - `pending` + `keep_cadence_private` (default): the publication is created with `privacy = private`, **no `publishAt` is sent to YouTube** (otherwise YouTube would go live itself), the 06.2.5 go-live check is skipped, and the run ends `published_private_locked` when 06 reports the video processed. CR to 06.2.4-T1: skip `publishAt` when the project is in pre-audit mode.
 - `pending` + `pause_after_n_private`: same, plus pause trigger 14 once `pre_audit_pause_after` videos are locked.
 - `approved`: normal path (`publicly` scheduled, go-live check active).
@@ -534,7 +537,7 @@ Integration (`tests/NightTales.Api.IntegrationTests/Features/Autopilot/`):
 | `PreAuditMode_PublicationCreatedPrivate_NoPublishAt` | the recorded 06 request has `privacy = private`, `publishAt = null` |
 | `PreAuditMode_Processed_EndsPublishedPrivateLocked` | outcome `published_private_locked` |
 | `VetoNoticeUndelivered_PausesAfter30Min` | trigger 11 + alert |
-| `CrossTenant_AutopilotRoutes_Return404` | the generated cross-tenant table (09.2.3-T2) covers the new routes |
+| `CrossTenant_AutopilotRoutes_Return404` | the cross-tenant rows for the new routes are enumerated by hand (the 09.2.3-T2 generated table was dropped by DEC 10.14) |
 | `AlertEmail_ContainsScheduledPublicationsWithStudioLinks` | body assertion |
 
 Manual: the M1-autopilot gate — a fiction series produces and schedules on its cadence with no manual step; a true-crime series stops for approval; a gate failure and a spend cap each pause with an alert.
@@ -543,9 +546,9 @@ Manual: the M1-autopilot gate — a fiction series produces and schedules on its
 
 | Task | Title | Size | Depends on | Blocks |
 |---|---|---|---|---|
-| 02.8.3-T1 | Slot planner + `AutopilotPlanJob` + run state machine + ready buffer | L 2.25 (README §10 T7: +0.25 for `TimeZoneInfo`) | 02.8.1-T1/T2 (`IIdeaPlanner`), 02.8.2-T1, 02.8.2-T3, 09.2.6, 09.4.1, 02.2.2-T3, 09.6.1 | 02.8.3-T2, T3, T4, 06.5.2-T1 (06 CR-18) |
+| 02.8.3-T1 | Slot planner + `AutopilotPlanJob` + run state machine + ready buffer | L 2.25 (README §10 T7: +0.25 for `TimeZoneInfo`) | 02.8.1-T1/T2 (`IIdeaPlanner`), 02.8.2-T1, 02.8.2-T3, 09.2.6, 09.4.1, 02.2.2-T3, 09.6.1 | 02.8.3-T2, T3, T4 (the former 06.5.2-T1 block (06 CR-18) was dropped by DEC 10.14) |
 | 02.8.3-T2 | Autopilot endpoints + series authorization accept/revoke + settings validation | S 0.5 | 02.8.3-T1, 09.4.1-T1, 09.3.2 (re-auth) | 02.8.3-T4 |
-| 02.8.3-T3 | Publish hand-off to 06 + pre-audit mode | S 0.5 | 02.8.3-T1, 06.2.1-T1, 06.2.2-T3, 06.2.4-T1, 09.10.3-T1 | 02.8.3-T4 |
+| 02.8.3-T3 | Publish hand-off to 06 + pre-audit mode | S 0.5 | 02.8.3-T1, 06.2.1-T1, 06.2.2-T3, 06.2.4-T1 (the former 09.10.3-T1 dependency was dropped by DEC 10.14; the setting is configuration) | 02.8.3-T4 |
 | 02.8.3-T4 | Pause triggers + spend caps + outbox alerts + resume | M 1.0 | 02.8.3-T1, 02.8.3-T2, 02.8.3-T3, 06.4.2-T1, 06.2.3-T2 (06 CR-4), 11.6.2, 08.4.4-T1 (soft; 08 CR-4) | M1-autopilot gate, 08.4.2-T1 (08 CR-5) |
 | **Total** | | **4.25 d** | | |
 
@@ -557,7 +560,7 @@ High-level 02 §6 had a single 02.8.3-T1 M (1.5 d for the epic). README §9 re-e
 2. ~~`autopilot_runs` extra columns~~ **Accepted** (T6, CR-4 extension).
 3. ~~New authorization routes~~ **Accepted** (T6, CR-12 to 00 §8).
 4. ~~New error codes~~ **Accepted**: `autopilot_settings_invalid` (400), `series_conflict` (412), `autopilot_pause_reason_active` (409) are now in D8 (T5).
-5. ~~`youtube_audit_status` settings key~~ **Accepted**: CR-13 to 09 §5.6 (T8).
+5. ~~`youtube_audit_status` settings key~~ **Accepted then superseded**: CR-13 to 09 §5.6 (T8) is withdrawn by DEC 10.14 — the settings catalogue and `system_settings` are dropped, so the value is the `Youtube:AuditStatus` configuration key read through `IOptionsMonitor`.
 6. ~~CR to 06.2.4-T1 (omit `publishAt`)~~ **Accepted**, and extended: CR-14 also covers 06.2.2-T3 (`AutopilotConsentJob` must skip a paused series, T9) — this plan's T4 already assumed the second half; both are now contract.
 7. ~~`"sa-<xmin>"` ETag family~~ **Accepted**: added to D9 directly (T4).
 8. ~~NodaTime~~ **Rejected**: `TimeZoneInfo` behind `ISlotCalculator` (T7); reflected in §2, §3.2 and the sizing above.

@@ -1,0 +1,33 @@
+{
+  "input": "synthetic:synthetic-markdown-separator",
+  "input_sha256": "0163564d7539aa539f9775d33ad3d943e5e17058c4be2048447b90d54280a891",
+  "input_text": "Story title\n---\n***\n___\nbody line\n\n- - -\ntail line",
+  "normalized": "Story title\n\nbody line\n\n- - -\ntail line",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "Story title",
+    "body line",
+    "- - -",
+    "tail line"
+  ]
+}

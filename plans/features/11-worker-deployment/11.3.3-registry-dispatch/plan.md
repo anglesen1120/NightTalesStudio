@@ -220,7 +220,7 @@ DB/HTTP tests live in `tests/NightTales.Api.IntegrationTests` (Worker jobs run i
 | Suite (class) | Representative tests | Asserts |
 |---|---|---|
 | `NightTales.Domain.UnitTests/Rendering/WorkerNodeStateTransitionTests` | `SetOperatorState_RejectsDown`, `MarkActive_FromDraining_IsNoOp`, `RecordHeartbeat_NeverMovesBackwards`, `Create_RejectsBadSha256` | D13 state rules, F12 |
-| `NightTales.Api.IntegrationTests/Rendering/WorkerNodesMigrationTests` (Testcontainers `postgres:17-alpine`) | `Migration_CreatesWorkerNodesWithConstraints`, `UniqueName_RejectsDuplicate`, `CheckRejectsUnknownState`, `DownMigration_DropsTable` | 00 §6 L311 columns, D13 constraints |
+| `NightTales.Api.IntegrationTests/Rendering/WorkerNodesMigrationTests` (real PostgreSQL 17 via `PostgresFixture`, `NTS_TEST_PG` — no Testcontainers, 11 CR-16) | `Migration_CreatesWorkerNodesWithConstraints`, `UniqueName_RejectsDuplicate`, `CheckRejectsUnknownState`, `DownMigration_DropsTable` | 00 §6 L311 columns, D13 constraints |
 | `.../WorkerNodeSeederTests` | `SeedsConfiguredNodes`, `Upsert_KeepsStateAndHeartbeat`, `RowMissingFromConfig_GoesDown_NotDeleted`, `MissingKey_FailsStartupWithExit2` | D13, UC4/UC10 |
 | `.../RenderNodeConnectionFactoryTests` (self-signed cert made in-test ⚠️) | `AcceptsExactlyPinnedSha256`, `RejectsOtherCertificate`, `RefusesHttpOutsideDevelopment`, `AllowsHttpInDevelopment`, `DisablesRedirects`, `RejectsExpiredCertificate`, `EmitsCertExpiryDaysGauge`, `NeverLogsKey` | D13, F26, S3/S4 [RULED — README §10 T57] (D20 H12) |
 | `.../NodeHealthPollerTests` (scripted `HttpMessageHandler`) | `Http200_StoresHeartbeatAndCache`, `Http503WithValidBody_CountsAsAnswer`, `Down_After120sWithoutAnswer`, `Up_AfterTwoConsecutiveGoodPulls`, `Draining_NeverChangedByPoller`, `SecondInstance_DoesNotPoll`, `DriftAlert_AfterThreePulls` | D13, F10/F12, Q5, UC5/UC6/UC9 |
@@ -234,7 +234,7 @@ No GPU, no real node, no network in CI (D18); every HTTP test uses a scripted ha
 
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
-| 11.3.3-T1 | `worker_nodes` registry, pinned-TLS connection factory and health poller | BE | M (1.0) | 09.2.2-T2, 11.3.5-T1, 09.3.6-T1 (09 W2 CR-8) | 11.3.3-T2, 11.3.1-T3, 09.6.2-T1, 12.8.3-T3 |
+| 11.3.3-T1 | `worker_nodes` registry, pinned-TLS connection factory and health poller | BE | M (1.0) | 09.2.2-T2, 11.3.5-T1, 09.3.6-T1 (09 W2 CR-8) | 11.3.3-T2, 11.3.1-T3, 09.6.2-T1 |
 | 11.3.3-T2 | `INodeSelector` dispatch rules and node metrics | BE | S (0.5) | 11.3.3-T1 | 09.6.3-T1, 11.6.2-T1 |
 
 **Re-estimate: 1.5 d raw** (T1 1.0 + T2 0.5, unchanged from the README §8 mapping "11.3.3-T1 M → T1 M + T2 S (new)"), **1.8 d buffered** at the README's 1.2 factor. No new external dependency, licence or price; plan 11's 17.75 → 23.0 d re-estimate is unaffected by this folder.

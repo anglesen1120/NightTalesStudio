@@ -1,0 +1,55 @@
+# NightTales Studio — MPT config template (trial, Mac M4). Rendered by worker-node/bin/render-mpt-config.py
+# to $$NTS_HOME/src/mpt/config.toml (0600). Placement copied from worker-node/mpt/config.example.pinned.toml
+# (MPT 3d5f4e421927d61f3eac729cf4b711ac0b69d688). Line refs verified at the pin 2026-09-25 (M1's recorded
+# numbers were stale; names and sections match). Never edit the rendered file; the MPT WebUI is not used
+# in M0 (D14). Comments are lost if MPT rewrites the file.
+
+# ---- top level (pin L9-12; must stay above [app]) ----
+log_level = "INFO"            # default "DEBUG" may log prompts/script text; INFO keeps M9 stage markers
+listen_host = "127.0.0.1"     # pin L11 default "0.0.0.0" — guard
+listen_port = 8080            # pin L12; D4 — guard
+
+[app]                          # pin L14
+api_key = "${NTS_MPT_API_KEY}" # pin L26; empty = auth off (M11) — guard
+
+# material source (pin L78-88)
+video_source = "openai_image"  # pin L78 default "pexels" — guard
+pexels_api_keys = []           # pin L85 — guard
+pixabay_api_keys = []          # pin L88 — guard
+
+# images via usage tap D6 (pin L192-208)
+openai_image_base_url = "http://127.0.0.1:8002/v1"      # pin L192; empty → ValueError (M4) — guard
+openai_image_api_keys = ["${NTS_OPENAI_IMAGE_KEY}"]     # pin L195; project nts-trial-image (D7) — guard
+openai_image_model = "gpt-image-2"                      # pin L198; 01 DEC-11 (tap translates to /responses) — guard
+openai_image_size = ""                                  # pin L204; "" = auto per aspect (landscape 1536x1024)
+# TEMPORARY neutral style until plan 03 delivers the style template (03 §5.2); {term} = MPT keyword
+openai_image_prompt_template = "Atmospheric cinematic illustration of {term}. Muted colours, soft low-key light, painterly detail, no text, no letters, no watermark, no logos."  # pin L208
+
+# LLM via usage tap D6 (pin L240, L270-272)
+llm_provider = "openai"                                 # pin L240 default "moonshot" — guard
+openai_api_key = "${NTS_OPENAI_STORY_KEY}"              # pin L270; project nts-trial-story (D7) — guard
+openai_base_url = "http://127.0.0.1:8002/v1"            # pin L271; empty → api.openai.com (M5) — guard
+openai_model_name = "gpt-6-luna"                        # pin L272; empty → "gpt-5.5" (M5) — guard
+
+# subtitles (pin L429)
+subtitle_provider = "whisper"  # pin L429 default "edge" — guard
+
+# queue (pin L457-464)
+enable_redis = false           # pin L457 — guard
+max_concurrent_tasks = 1       # pin L464 default 5; D11 — guard
+
+# publishing: never (pin L474-480; app/services/upload_post.py unused)
+upload_post_enabled = false    # pin L474 — guard
+upload_post_api_key = ""       # pin L475 — guard
+upload_post_auto_upload = false  # pin L480 — guard
+
+[whisper]                      # pin L500
+model_size = "large-v3-turbo"  # pin L503 default "large-v3"; weights pre-placed by 01.2.3-T1 — guard
+device = "cpu"                 # pin L506; CTranslate2 has no Metal (W1); node: "cuda" (CR-9)
+compute_type = "int8"          # pin L507; node: "float16" (CR-9)
+
+[kokoro]                       # pin L576; slot served by the VieNeu proxy (04)
+base_url = "http://127.0.0.1:8001/v1"   # pin L579; 04 §5.2 — guard
+api_key = "${NTS_PROXY_API_KEY}"        # pin L580; = PROXY_API_KEY (04 §5.2) — guard
+model_id = "vieneu-v3-turbo"            # 04 F18/D3: the proxy ignores MPT's model and always sends vieneu-v3-turbo; value kept for readable logs (04 CR-5)
+voices = []                             # pin L584; [] = MPT fetches {base_url}/audio/voices — read by the WebUI only; the MPT API never reads it (04 M6) (04 CR-6) (04.1.3; 04 F2 supersedes DECISIONS §5.3 "listed manually", CR-8). VieNeu itself exposes /v1/voices, not /audio/voices

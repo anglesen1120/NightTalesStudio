@@ -1,0 +1,8 @@
+{"schema":"mpt-sample.v1","scenario":"S11-queue-vs-capacity","date":"2026-09-26",
+ "mpt_commit":"3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "setup":"custom --template render setting max_queued_tasks=0 (max_concurrent_tasks=1 already); one occupant task running, then a second POST /api/v1/videos",
+ "probes":[
+   {"request":"POST /api/v1/videos (occupant 51ace7c8)","http":200,"body":{"status":200,"data":{"task_id":"51ace7c8-bc37-44fd-ad2f-839293c7df7c"}}},
+   {"request":"POST /api/v1/videos (2nd, queue full)","http":429,"body":{"status":429,"message":"s11-qfull: task queue is full, please try again later"}}],
+ "verdict":"With max_queued_tasks=0 a second submit is rejected 429 'task queue is full, please try again later' (video.py L230-233, C10). With the default max_queued_tasks=100 it is accepted and silently queued at state 4/progress 0 (see S11-queue.json).",
+ "adapter_note":"429 -> retry later (bounded), NOT a task failure. The adapter must distinguish submit-429 (no task created) from a queued-200."}

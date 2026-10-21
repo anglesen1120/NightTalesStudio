@@ -1,0 +1,22 @@
+<section class="skipped-scenes">
+  <h3>{{ titleKey() | transloco }}</h3>
+  <ol>
+    @for (row of rows(); track row.trackKey) {
+      <li>
+        <nts-icon-alert aria-hidden="true" />
+        <div class="scene-copy">
+          <span class="scene-count">{{ row.count }}.</span>
+          @if (row.address; as address) {
+            <a [routerLink]="['/episodes', episodeId()]" [queryParams]="{ segment: address }">{{ row.segment }}</a>
+          } @else {
+            <span class="scene-address">{{ 'episodes.render.images.sceneUnnamed' | transloco: { index: row.count } }}</span>
+          }
+          <span class="scene-reason">{{ row.reasonKey | transloco }}</span>
+          @if (row.moderated) {
+            <p class="scene-guidance">{{ 'episodes.render.images.moderatedScene' | transloco }}</p>
+          }
+        </div>
+      </li>
+    }
+  </ol>
+</section>

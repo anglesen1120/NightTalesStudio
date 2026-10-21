@@ -1,0 +1,55 @@
+<section class="source-finder" [attr.aria-labelledby]="panelId + '-heading'">
+  <header>
+    <h2 [id]="panelId + '-heading'">{{ 'episodes.sources.find.title' | transloco }}</h2>
+    <p class="note" [id]="panelId + '-note'">{{ 'episodes.sources.find.note' | transloco }}</p>
+  </header>
+  <form class="finder-form" (submit)="$event.preventDefault(); submit()">
+    <div class="field">
+      <label [for]="panelId + '-query'">{{ 'episodes.sources.find.queryLabel' | transloco }}</label>
+      <input type="text" [id]="panelId + '-query'" [formControl]="query" maxlength="300" [placeholder]="'episodes.sources.find.queryPlaceholder' | transloco" [attr.aria-describedby]="panelId + '-note'" (input)="clearError.emit()" />
+    </div>
+    <button class="primary" type="submit" [disabled]="!canFind() || running() || finding() || retryAfterSec() !== null || query.invalid" [attr.aria-busy]="running() || finding()" [attr.aria-describedby]="running() ? panelId + '-running' : null">{{ (failedRun() ? 'episodes.sources.find.run' : 'episodes.sources.find.button') | transloco }}</button>
+  </form>
+  <div aria-live="polite" aria-atomic="true">
+    @if (running() || finding()) { <p class="running" role="status" [id]="panelId + '-running'">{{ 'episodes.sources.find.running' | transloco }}</p> }
+  </div>
+  @if (errorKey(); as key) { <p class="error" role="alert">{{ key | transloco }}</p> }
+  @else if (failedRun()) { <p class="error" role="alert">{{ 'episodes.sources.error.find_sources_generation_failed' | transloco }}</p> }
+  @if (retryAfterSec() !== null) { <nts-retry-countdown [seconds]="retryAfterSec() ?? 0" (elapsed)="retryElapsed.emit()" /> }
+  @if (loading() && candidates().length === 0) { <nts-loading-state labelKey="episodes.sources.find.loading" /> }
+  @if (sourceLimitReached()) { <p class="hint">{{ 'episodes.sources.find.sourceLimit' | transloco }}</p> }
+  @if (empty()) { <nts-empty-state titleKey="episodes.sources.find.empty" /> }
+  @if (candidates().length > 0) {
+    <ul class="candidate-list">
+      @for (candidate of candidates(); track candidate.id) {
+        @let displayTitle = candidate.title?.trim() ? candidate.title : candidate.url;
+        <li class="candidate-row" [attr.aria-busy]="busyId() === candidate.id">
+          <div class="candidate-main">
+            <strong class="candidate-title" [title]="displayTitle">{{ displayTitle }}</strong>
+            <span class="site-name">{{ candidate.siteName }}</span>
+            <span class="candidate-url" [title]="candidate.url">{{ candidate.url }}</span>
+          </div>
+          <div class="candidate-actions">
+            @if (canOpen(candidate.url)) {
+              <a [href]="candidate.url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="'episodes.sources.find.openNewTab' | transloco: { site: candidate.siteName }">{{ 'episodes.sources.find.open' | transloco }}</a>
+            }
+            @if (candidate.status === 'proposed') {
+              <button type="button" [attr.aria-disabled]="busyId() === candidate.id || sourceLimitReached() || (retryRowId() === candidate.id && rowRetryAfterSec() !== null)" [attr.aria-label]="'episodes.sources.find.addFromSite' | transloco: { site: candidate.siteName }" [attr.aria-describedby]="rowErrorKeys().has(candidate.id) ? panelId + '-error-' + candidate.id : null" (click)="addCandidate(candidate.id)">{{ 'episodes.sources.find.add' | transloco }}</button>
+              <button type="button" [attr.aria-disabled]="busyId() === candidate.id" [attr.aria-label]="'episodes.sources.find.dismissFromSite' | transloco: { site: candidate.siteName }" [attr.aria-describedby]="rowErrorKeys().has(candidate.id) ? panelId + '-error-' + candidate.id : null" (click)="dismissCandidate(candidate.id)">{{ 'episodes.sources.find.dismiss' | transloco }}</button>
+            } @else {
+              <span class="candidate-status" role="status">{{ (candidate.status === 'added' ? 'episodes.sources.find.added' : 'episodes.sources.find.dismissed') | transloco }}</span>
+            }
+          </div>
+          @if (rowErrorKeys().get(candidate.id); as key) {
+            <div class="row-error" [id]="panelId + '-error-' + candidate.id" role="alert">
+              <p>{{ key | transloco }}</p>
+              @if (key === 'errors.source_duplicate') { <p>{{ 'episodes.sources.find.rowAlreadyInList' | transloco }}</p> }
+              @if (key === 'errors.source_limit_reached') { <p>{{ 'episodes.sources.find.sourceLimit' | transloco }}</p> }
+            </div>
+          }
+          @if (retryRowId() === candidate.id && rowRetryAfterSec() !== null) { <nts-retry-countdown [seconds]="rowRetryAfterSec() ?? 0" (elapsed)="rowRetryElapsed.emit()" /> }
+        </li>
+      }
+    </ul>
+  }
+</section>

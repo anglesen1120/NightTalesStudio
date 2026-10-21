@@ -29,7 +29,7 @@
 | Q2 | Rates: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min | O8 ✅ |
 | Q3 | Sheet schema v2 columns: `image_count`, `moderation_blocked_count`, `image_http_429_count`, `image_failed_count`, `image_tokens_per_image_avg`, `image_cost_per_image_usd`; one aspect per run | 01.3.1-T1 ✅ (P2) |
 | Q4 | Run ids `YYYYMMDD-HHMM-<vi|en>-<landscape|portrait>-<nn>`; the tap takes the run id from `$NTS_HOME/current_run` | 01 README D10, D6 ✅ |
-| Q5 | Image project `nts-trial-image`: allow-list `gpt-image-2.5-flare`, hard limit **$25**; key in Keychain `nts.openai.image` | 01 README D7, D3 ✅ |
+| Q5 | Image project `nts-trial-image`: allow-list `gpt-image-2` (`gpt-image-2.5-flare` superseded, 01 DEC-11), hard limit **$25**; key in Keychain `nts.openai.image` | 01 README D7, D3 ✅ |
 | Q6 | DECISIONS §4 floor prices at 1024²: low ≈ $0.006, medium ≈ $0.013, high ≈ $0.053 → ≈ 200 / 433 / 1,767 output tokens [INFERENCE from $30/1M] | DECISIONS §4 ✅ / [INFERENCE] |
 | Q7 | 05.5.2 renders one 5-min vi and one 5-min en ghost video (landscape) | 05 §4 05.5.2 ✅ |
 
@@ -41,7 +41,7 @@ No production table. Tracked artefacts (all under `trial/images/`):
 
 | File | Written by | Content |
 |---|---|---|
-| `contact-sheet-results.csv` | 03.3.2-T1 tool | one row per call: `cell_id, keyword_id, template, aspect, quality_requested, quality_echoed, size, http_status, error_code, text_tokens, image_tokens, output_tokens, cost_usd, latency_ms` |
+| `contact-sheet-results.csv` | 03.3.2-T1 tool | one row per call: `cell_id, keyword_id, template, aspect, quality_requested, quality_echoed, size, http_status, error_code, text_tokens, image_tokens, output_tokens, cost_usd, latency_ms, size_actual, note` (16 columns; `size_actual` = the measured pixel size of the saved image, `note` = `;`-joined markers such as `portrait_hint`, `usage_absent`, `format_<fmt>`) |
 | `contact-sheet-ratings.csv` | owner | `cell_id, letter, rating_1_5, text_visible, face_realistic, gore, off_prompt, note` |
 | `contact-sheet-key.json` | tool | letter ↔ quality per keyword (opened only after rating) |
 | `tokens-per-image.csv` | 03.3.1-T1 report script | `aspect, quality_echoed, source (render|contact), n, mean, p50, p95, max, cost_mean_usd` |

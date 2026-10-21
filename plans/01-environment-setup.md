@@ -58,7 +58,7 @@
 
 **01.2.4 OpenAI access** — *As the owner I want API access with a hard budget so that a bug cannot overspend.* Must · S
 - Given an OpenAI project for the trial, When I set a monthly budget/limit ⚠️ (dashboard feature name to confirm), Then the key is stored only in local `config.toml`/env.
-- Given MPT config, When a render runs, Then story uses `openai_model_name = "gpt-6-luna"` and images use `openai_image_model = "gpt-image-2.5-flare"`, `openai_image_size = ""` ✅.
+- Given MPT config, When a render runs, Then story uses `openai_model_name = "gpt-6-luna"` and images use `openai_image_model = "gpt-image-2"` (01 DEC-11), `openai_image_size = ""` ✅.
 
 ### Epic 01.3 — Measurement
 
@@ -91,9 +91,9 @@ video_source = "openai_image"
 llm_provider = "openai"
 openai_api_key = "<from local secret>"
 openai_model_name = "gpt-6-luna"
-openai_image_base_url = "https://api.openai.com/v1"
+openai_image_base_url = "http://127.0.0.1:8002/v1"   # usage tap → OPENAI_BASE_URL relay (01 DEC-9/CR-15, DEC-11)
 openai_image_api_keys = ["<from local secret>"]
-openai_image_model = "gpt-image-2.5-flare"
+openai_image_model = "gpt-image-2"   # 01 DEC-11 (was gpt-image-2.5-flare, superseded; advisory on the relay)
 openai_image_size = ""
 openai_image_prompt_template = "<style template from plan 03> {term}"
 subtitle_provider = "whisper"

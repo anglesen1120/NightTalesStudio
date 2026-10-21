@@ -1,0 +1,165 @@
+{
+  "facts": [
+    {
+      "id": "f1",
+      "brief_id": "b7",
+      "statement": "The disappearance was reported on a Tuesday morning, two days after the man was last seen at the river market.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f2",
+      "brief_id": "b7",
+      "statement": "A second, unsigned version of the last witness statement appears in the reopened case file.",
+      "sources": ["s1", "s2"]
+    },
+    {
+      "id": "f3",
+      "brief_id": "b8",
+      "statement": "The original statement notebook is still held by the clerk who took it that year.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f4",
+      "brief_id": "b9",
+      "statement": "Both crashes on the coastal road happened at night, in clear weather, on the same stretch of road.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f5",
+      "brief_id": "b9",
+      "statement": "Neither crash site showed brake marks on the road surface.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f6",
+      "brief_id": "b9",
+      "statement": "Phone records place both drivers on the same incoming call shortly before the two crashes.",
+      "sources": ["s2", "s3"]
+    },
+    {
+      "id": "f7",
+      "brief_id": "b7",
+      "statement": "The case was reopened twenty years after the disappearance, after an unsigned letter reached the local newspaper.",
+      "sources": ["s1", "s2"]
+    },
+    {
+      "id": "f8",
+      "brief_id": "b7",
+      "statement": "The newspaper kept no record of who delivered the letter, and the envelope carried no stamp and no postmark.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f9",
+      "brief_id": "b7",
+      "statement": "In the reopened file, the last witness's statement page is a replacement on different paper, typed in a different typeface.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f10",
+      "brief_id": "b7",
+      "statement": "The last witness's statement describes him leaving the river market alone, but records no hour for it.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f11",
+      "brief_id": "b7",
+      "statement": "The clerk who filed the original case retired years before the letter arrived and was never interviewed about the swap.",
+      "sources": ["s1", "s2"]
+    },
+    {
+      "id": "f12",
+      "brief_id": "b7",
+      "statement": "The missing man had lived in the riverside town for three years and was not known to have quarrels or debts.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f13",
+      "brief_id": "b8",
+      "statement": "The conviction later recognised as wrongful rested on a statement read out in court.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f14",
+      "brief_id": "b8",
+      "statement": "The first statement taken at the station differs from the court version in both wording and length.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f15",
+      "brief_id": "b8",
+      "statement": "The clerk's private notebook from that year matches the station version rather than the court version.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f16",
+      "brief_id": "b8",
+      "statement": "The accused withdrew his first statement before the trial, saying it did not read the way he had spoken.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f17",
+      "brief_id": "b8",
+      "statement": "The notebook runs without gaps and was never entered as evidence in the original proceedings.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f18",
+      "brief_id": "b8",
+      "statement": "The court record places the first statement's signing a day later than the date the clerk's notebook carries.",
+      "sources": ["s1", "s2"]
+    },
+    {
+      "id": "f19",
+      "brief_id": "b8",
+      "statement": "The wrongful-conviction finding came decades after the trial, in an administrative review.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f20",
+      "brief_id": "b9",
+      "statement": "The two crashes on the coastal stretch happened ten years apart.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f21",
+      "brief_id": "b9",
+      "statement": "Both drivers were alone in their cars; neither could be interviewed afterwards.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f22",
+      "brief_id": "b9",
+      "statement": "The two drivers did not know each other and lived in different provinces.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f23",
+      "brief_id": "b9",
+      "statement": "Both crash reports record the weather as dry with good visibility.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f24",
+      "brief_id": "b9",
+      "statement": "The incoming call each driver took before the crash came from the same phone number.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f25",
+      "brief_id": "b9",
+      "statement": "The stretch of road was resurfaced once between the two crashes; the second investigation file does not mention the resurfacing.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f26",
+      "brief_id": "b9",
+      "statement": "A new investigator reopened the comparison after noticing the shared phone number while digitising old files.",
+      "sources": ["s2"]
+    }
+  ],
+  "sources": [
+    { "alias": "s1", "title": "Reopened case file (fictional fixture)" },
+    { "alias": "s2", "title": "Local newspaper archive (fictional fixture)" },
+    { "alias": "s3", "title": "Road investigation summary (fictional fixture)" }
+  ]
+}

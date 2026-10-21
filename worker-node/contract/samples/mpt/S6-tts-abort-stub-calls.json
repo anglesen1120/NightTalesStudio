@@ -1,0 +1,35 @@
+[
+ {
+  "aborted": true,
+  "bytes_written": 4096,
+  "case": "s6",
+  "input_len": 592,
+  "input_sha256": "bccb8756662418c359a640df1a17e98bc7d8e07416b3eb6b7f97decfe0bfb43e",
+  "mode": "abort",
+  "n": 1,
+  "status": 200,
+  "ts": "2026-09-26T15:18:32Z"
+ },
+ {
+  "aborted": true,
+  "bytes_written": 4096,
+  "case": "s6",
+  "input_len": 592,
+  "input_sha256": "bccb8756662418c359a640df1a17e98bc7d8e07416b3eb6b7f97decfe0bfb43e",
+  "mode": "abort",
+  "n": 2,
+  "status": 200,
+  "ts": "2026-09-26T15:18:32Z"
+ },
+ {
+  "aborted": true,
+  "bytes_written": 4096,
+  "case": "s6",
+  "input_len": 592,
+  "input_sha256": "bccb8756662418c359a640df1a17e98bc7d8e07416b3eb6b7f97decfe0bfb43e",
+  "mode": "abort",
+  "n": 3,
+  "status": 200,
+  "ts": "2026-09-26T15:18:32Z"
+ }
+]

@@ -1,0 +1,44 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using NightTales.Domain.Assets;
+using NightTales.Domain.Episodes;
+using NightTales.Infrastructure.Persistence.Conventions;
+
+namespace NightTales.Infrastructure.Persistence.Configurations;
+
+/// <summary>
+/// The <c>assets</c> table (09.2.2 plan §3). It owns the column types only: <c>ix_assets_retention_due</c>
+/// is 09.7.3-T1's index-only migration, so this table carries just <c>(episode_id)</c> (09 W3 CR-40).
+/// </summary>
+internal sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
+{
+    public void Configure(EntityTypeBuilder<Asset> builder)
+    {
+        builder.ToTable("assets");
+        builder.HasKey(asset => asset.Id);
+
+        builder.Property(asset => asset.Kind).HasEnumCheck();
+        builder.Property(asset => asset.StorageKey).HasMaxLength(512).IsRequired();
+        builder.Property(asset => asset.ContentType).IsRequired();
+        builder.Property(asset => asset.SizeBytes).IsRequired();
+        builder.Property(asset => asset.DurationSec).HasPrecision(9, 2);
+        builder.Property(asset => asset.Sha256).HasMaxLength(64).IsFixedLength().IsRequired();
+
+        // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the episode (see SeriesConfiguration).
+        builder.HasAlternateKey(asset => new { asset.Id, asset.UserId });
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(asset => new { asset.EpisodeId, asset.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<AppUser>().WithMany().HasForeignKey(asset => asset.UserId).OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(asset => asset.StorageKey).IsUnique();
+        builder.HasIndex(asset => asset.EpisodeId);
+
+        // 09.7.3-T1: the due-assets scan of RetentionSweepJob. Partial, so the index holds only the live rows
+        // that carry a retention instant and the sweep never reads a deleted or unstamped row.
+        builder.HasIndex(asset => asset.RetentionUntil)
+            .HasDatabaseName("ix_assets_retention_due")
+            .HasFilter("deleted_at IS NULL AND retention_until IS NOT NULL");
+    }
+}

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!--
+    02.6.1-T2: the live seeded-defect acceptance set. It composes the real prompt catalog, adapter and writer, so it
+    references the same projects the Worker does. Like NightTales.Performance.Tests it stays OUT of
+    NightTales.ci.slnf: its tests are gated by OPENAI_LIVE_TESTS=1 and never run in CI (D20).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Application\NightTales.Application.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.Domain\NightTales.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.Infrastructure\NightTales.Infrastructure.csproj" />
+    <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

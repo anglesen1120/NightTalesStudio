@@ -1,0 +1,608 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "apprehensive-at-best",
+      "file": "apprehensive-at-best.mp3",
+      "title": "Apprehensive at Best",
+      "artist": "Biz Baz Studio",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "suspense",
+        "noir"
+      ],
+      "durationSec": 102.812,
+      "loudnessLufs": -9.1,
+      "bgmVolume": 0.057,
+      "sha256": "533167ff4273ab9f0749aa9ed7681730b4b385aed85b4b900a1a4b7c28002d0e",
+      "active": true
+    },
+    {
+      "id": "aztec-empire",
+      "file": "aztec-empire.mp3",
+      "title": "Aztec Empire",
+      "artist": "Jimena Contreras",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "temple",
+        "dark_ambient"
+      ],
+      "durationSec": 171.004,
+      "loudnessLufs": -15.3,
+      "bgmVolume": 0.116,
+      "sha256": "d7471dca3792db0650659590eef6d0f871bcc89e450e0f8a6402b45b5117ad61",
+      "active": true
+    },
+    {
+      "id": "blood-kiss",
+      "file": "blood-kiss.mp3",
+      "title": "Blood Kiss",
+      "artist": "Hainbach",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 169.433,
+      "loudnessLufs": -8.86,
+      "bgmVolume": 0.055,
+      "sha256": "da4a99761cc87c79dbb5be65f578c7bc25d8a3f272da0b29fa75e2d8254495b9",
+      "active": true
+    },
+    {
+      "id": "cosmic-nightmares",
+      "file": "cosmic-nightmares.mp3",
+      "title": "Cosmic Nightmares",
+      "artist": "Jimena Contreras",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 192.857,
+      "loudnessLufs": -12.76,
+      "bgmVolume": 0.087,
+      "sha256": "0ebbcab924e7de86c7ae8a5bf28312feb3df5fe463199ddfc5fe0610a302a970",
+      "active": true
+    },
+    {
+      "id": "dark-matter",
+      "file": "dark-matter.mp3",
+      "title": "Dark Matter",
+      "artist": "Chasms",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "noir"
+      ],
+      "durationSec": 176.115,
+      "loudnessLufs": -12.65,
+      "bgmVolume": 0.086,
+      "sha256": "26a8dac19d9ac9da4bbed0cbd921b05fc7c911cbe98c7049086031251dbade70",
+      "active": true
+    },
+    {
+      "id": "dead-forest",
+      "file": "dead-forest.mp3",
+      "title": "Dead Forest",
+      "artist": "Brian Bolger",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 126.145,
+      "loudnessLufs": -12.33,
+      "bgmVolume": 0.083,
+      "sha256": "ec635ab90d15e53dd919916046b11853a83d200b7822a105296f5bfb66fac7bf",
+      "active": true
+    },
+    {
+      "id": "dead-wrong",
+      "file": "dead-wrong.mp3",
+      "title": "Dead Wrong",
+      "artist": "Jeremy Blake",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "noir",
+        "suspense"
+      ],
+      "durationSec": 195.503,
+      "loudnessLufs": -10.3,
+      "bgmVolume": 0.065,
+      "sha256": "a26dc34385f463e9e16e455a3d885f29378edae2cf6f9255a09cbe449fe9a60d",
+      "active": true
+    },
+    {
+      "id": "devils-organ",
+      "file": "devils-organ.mp3",
+      "title": "Devil's Organ",
+      "artist": "Jimena Contreras",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 186.0,
+      "loudnessLufs": -11.17,
+      "bgmVolume": 0.072,
+      "sha256": "72fd7f4b0932fb238b66133e88ef8a4acb0255f1d4cfd0cdf87b71e2e7834768",
+      "active": true
+    },
+    {
+      "id": "dont-look-inside",
+      "file": "dont-look-inside.mp3",
+      "title": "Don't Look Inside",
+      "artist": "Biz Baz Studio",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 132.723,
+      "loudnessLufs": -7.25,
+      "bgmVolume": 0.046,
+      "sha256": "d1b3a2fb357f9d4e207d764f8674bb610e322af81bb8b0a70943691ee80e01f4",
+      "active": true
+    },
+    {
+      "id": "forest-of-fear",
+      "file": "forest-of-fear.mp3",
+      "title": "Forest of Fear",
+      "artist": "Aakash Gandhi",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 140.26,
+      "loudnessLufs": -19.03,
+      "bgmVolume": 0.178,
+      "sha256": "71308ecfdb05ce55e807267c98442ef6dce54bbad1ad7574664d9141987c2d57",
+      "active": true
+    },
+    {
+      "id": "fresh-fallen-snow",
+      "file": "fresh-fallen-snow.mp3",
+      "title": "Fresh Fallen Snow",
+      "artist": "Chris Haugen",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "calm",
+        "meditation"
+      ],
+      "durationSec": 214.655,
+      "loudnessLufs": -18.66,
+      "bgmVolume": 0.171,
+      "sha256": "dde0393b4382dc7607976698fff0c0960f18c3267e752c073212cc1b62b093e8",
+      "active": true
+    },
+    {
+      "id": "frightmare",
+      "file": "frightmare.mp3",
+      "title": "Frightmare",
+      "artist": "Jimena Contreras",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 163.19,
+      "loudnessLufs": -10.6,
+      "bgmVolume": 0.068,
+      "sha256": "fa9eab3c922e6dd98a0944a3a4d9c5e30ba9bd3e375fb16e9a1ee0efde9fa18c",
+      "active": true
+    },
+    {
+      "id": "ghost-cop",
+      "file": "ghost-cop.mp3",
+      "title": "Ghost Cop",
+      "artist": "Dougie Wood",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "noir"
+      ],
+      "durationSec": 152.451,
+      "loudnessLufs": -8.92,
+      "bgmVolume": 0.056,
+      "sha256": "f5cffd37440ce0e3d1d3f0bf9447abada1bcd408f92f378ebf6a3f62be9ac6fd",
+      "active": true
+    },
+    {
+      "id": "glacier",
+      "file": "glacier.mp3",
+      "title": "Glacier",
+      "artist": "Chris Haugen",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "meditation",
+        "calm"
+      ],
+      "durationSec": 303.108,
+      "loudnessLufs": -14.75,
+      "bgmVolume": 0.109,
+      "sha256": "4237ff4a6e29d66334e9f14d8b71b76bdce855d54306d71aeacef8c0d1b563db",
+      "active": true
+    },
+    {
+      "id": "heartbeat-of-the-hood",
+      "file": "heartbeat-of-the-hood.mp3",
+      "title": "Heartbeat of the Hood",
+      "artist": "Media Right Productions",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "noir"
+      ],
+      "durationSec": 127.2,
+      "loudnessLufs": -11.91,
+      "bgmVolume": 0.079,
+      "sha256": "3737718e51cba6a99a67f4b7ebae37d80fb860aff59c26f0832f0f43a9ca3cdb",
+      "active": true
+    },
+    {
+      "id": "horror-bass-choir",
+      "file": "horror-bass-choir.mp3",
+      "title": "Horror Bass Choir",
+      "artist": "John Patitucci",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 122.0,
+      "loudnessLufs": -14.8,
+      "bgmVolume": 0.11,
+      "sha256": "ab26d34f6a30ecb0255ff3a20825f7f4e3add68bbb2b6bdaf9c00582b4fe3428",
+      "active": true
+    },
+    {
+      "id": "house-on-the-hill",
+      "file": "house-on-the-hill.mp3",
+      "title": "House on the Hill",
+      "artist": "Everet Almond",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "noir"
+      ],
+      "durationSec": 209.183,
+      "loudnessLufs": -17.56,
+      "bgmVolume": 0.151,
+      "sha256": "780f5181277df4ecbf1d37e67861e2c65d9090a312ccc7a35bd608048f8d2d3f",
+      "active": true
+    },
+    {
+      "id": "in-the-temple-garden",
+      "file": "in-the-temple-garden.mp3",
+      "title": "In the Temple Garden",
+      "artist": "Aaron Kenny",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "temple",
+        "meditation",
+        "calm"
+      ],
+      "durationSec": 109.265,
+      "loudnessLufs": -18.25,
+      "bgmVolume": 0.163,
+      "sha256": "2cb9f343f6363db6b17144d4b962d5753901862eddef1c370e9ce734646118a0",
+      "active": true
+    },
+    {
+      "id": "mayan-ritual",
+      "file": "mayan-ritual.mp3",
+      "title": "Mayan Ritual",
+      "artist": "Jimena Contreras",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "temple",
+        "dark_ambient"
+      ],
+      "durationSec": 164.0,
+      "loudnessLufs": -14.58,
+      "bgmVolume": 0.107,
+      "sha256": "4322ca4fd25a26ff4c5085e20c458dfb604962bcd357df414ca0cd8ec1e1d2a9",
+      "active": true
+    },
+    {
+      "id": "mysterious-sorrows",
+      "file": "mysterious-sorrows.mp3",
+      "title": "Mysterious Sorrows",
+      "artist": "Aakash Gandhi",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "calm"
+      ],
+      "durationSec": 146.0,
+      "loudnessLufs": -25.05,
+      "bgmVolume": 0.357,
+      "sha256": "8eb40bb3f5bf65c4315a1a5d3112c0a87d79d60a54c84cf6fd22dd662d112a34",
+      "active": true
+    },
+    {
+      "id": "natural-light",
+      "file": "natural-light.mp3",
+      "title": "Natural Light",
+      "artist": "Chris Haugen",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "meditation",
+        "calm"
+      ],
+      "durationSec": 240.581,
+      "loudnessLufs": -14.86,
+      "bgmVolume": 0.11,
+      "sha256": "61dcba9e64a48985bcf61bb8247c4b0fb1473a053a8cce10488d486207a88829",
+      "active": true
+    },
+    {
+      "id": "secret-conversations",
+      "file": "secret-conversations.mp3",
+      "title": "Secret Conversations",
+      "artist": "The 126ers",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "noir",
+        "calm"
+      ],
+      "durationSec": 172.726,
+      "loudnessLufs": -12.94,
+      "bgmVolume": 0.089,
+      "sha256": "91b48cdb53f4fc8e2a3c2c03f0a16f1022a53f9bf4fff3bf9067bcc9738d1cf4",
+      "active": true
+    },
+    {
+      "id": "spanish-moss",
+      "file": "spanish-moss.mp3",
+      "title": "Spanish Moss",
+      "artist": "Chris Haugen",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 123.181,
+      "loudnessLufs": -14.95,
+      "bgmVolume": 0.112,
+      "sha256": "6657db1103bad8715b33c9a52c558b38431bdd08da2f13c3429a50b335a35159",
+      "active": true
+    },
+    {
+      "id": "spine-chilling-cardiac-tension",
+      "file": "spine-chilling-cardiac-tension.mp3",
+      "title": "Spine Chilling Cardiac Tension",
+      "artist": "Biz Baz Studio",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 108.199,
+      "loudnessLufs": -9.1,
+      "bgmVolume": 0.057,
+      "sha256": "ca1cae7e5cb5191df4a65625c04c8f6f41ad39981472a3c3cf614a28abdae49d",
+      "active": true
+    },
+    {
+      "id": "the-attraction-of-evil",
+      "file": "the-attraction-of-evil.mp3",
+      "title": "The Attraction Of Evil",
+      "artist": "Hainbach",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 131.805,
+      "loudnessLufs": -9.95,
+      "bgmVolume": 0.063,
+      "sha256": "8a6b60de47764576d369c4c584c0dcf46bba2071e7ca2b00742af4fe8a66b5dd",
+      "active": true
+    },
+    {
+      "id": "the-stalker",
+      "file": "the-stalker.mp3",
+      "title": "The Stalker",
+      "artist": "Hainbach",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 137.999,
+      "loudnessLufs": -11.76,
+      "bgmVolume": 0.077,
+      "sha256": "4d3b67f62049c7c42fc13b50686f758a46f7ed29be0cff2b46a14515f3ccc102",
+      "active": true
+    },
+    {
+      "id": "they-can-feel-you",
+      "file": "they-can-feel-you.mp3",
+      "title": "They Can Feel You",
+      "artist": "Hainbach",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 187.999,
+      "loudnessLufs": -9.79,
+      "bgmVolume": 0.062,
+      "sha256": "2e559aa6b762f910921953e2e301c9aa54dd6bf7766cf5af721b3b4df4bfbcc8",
+      "active": true
+    },
+    {
+      "id": "underworld",
+      "file": "underworld.mp3",
+      "title": "Underworld",
+      "artist": "Myuu",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 179.974,
+      "loudnessLufs": -15.3,
+      "bgmVolume": 0.116,
+      "sha256": "e30d3effffd6db3e252e17599ed089815aa67fda60dd688a703917831bd5ff1f",
+      "active": true
+    },
+    {
+      "id": "worse",
+      "file": "worse.mp3",
+      "title": "Worse",
+      "artist": "The Tower of Light",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 203.526,
+      "loudnessLufs": -13.07,
+      "bgmVolume": 0.09,
+      "sha256": "7020ef3e06ade23f456c44fd4e031013bcdbd01e78175b9ce704ff8b7ed7c746",
+      "active": true
+    },
+    {
+      "id": "yoga-style",
+      "file": "yoga-style.mp3",
+      "title": "Yoga Style",
+      "artist": "Chris Haugen",
+      "sourceUrl": "https://studio.youtube.com/channel/UCyasdvLDqY9l-RzuGG5rPAw/music",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://support.google.com/youtube/answer/3376882",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "temple",
+        "meditation",
+        "calm"
+      ],
+      "durationSec": 163.305,
+      "loudnessLufs": -21.55,
+      "bgmVolume": 0.239,
+      "sha256": "4cc58a6b1c9289b4ae935e089f40a6a24f2ead3c47fb413bdf6bc691702c3d24",
+      "active": true
+    }
+  ]
+}

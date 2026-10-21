@@ -1,0 +1,243 @@
+{
+  "provider": "aws",
+  "region": "ap-southeast-1 (Singapore)",
+  "captured_on": "2026-09-29",
+  "captured_by": "operator",
+  "node_shape": "g4dn.2xlarge - 8 vCPU, 32 GiB RAM, 1 x NVIDIA T4 16 GiB (the smallest single-GPU G4dn size with enough system RAM for MPT + VieNeu + whisper)",
+  "values": {
+    "gpu_vram_gb": {
+      "value": 16,
+      "unit": "GB",
+      "source_url": "https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "g4dn.2xlarge 32.00 Intel Xeon P-8259L 8 4 2 1 x NVIDIA T4 GPU 16 GiB (1 x 16 GiB)"
+    },
+    "pg17_pitr": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-versions.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "PostgreSQL 17 versions (Some of these versions have reached the end of standard support or deprecated.) | https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PIT.html: \"You can restore a DB instance to a specific point in time, creating a new DB instance without modifying the source DB instance. ... RDS uploads transaction logs for DB instances to Amazon S3 every five minutes.\"",
+      "note": "Base backup + continuous log archive (E10): the automated backup is a storage-volume snapshot of the whole instance and the transaction logs are uploaded to S3 every five minutes, which is what the five-minute RPO reflects."
+    },
+    "block_volume_gates": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-encryption.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Use Amazon EBS encryption as a straight-forward encryption solution for your Amazon EBS resources associated with your Amazon EC2 instances. | EBS snapshots are $0.05 per GB-month in ap-southeast-1 (Storage Snapshot Amazon S3 GB Mo)",
+      "note": "Encrypted gp3 volumes ($0.096/GB-month) + snapshots ($0.05/GB-month) with a published GB-month price. Encryption is a per-volume setting (default-encrypt can be enabled account-wide)."
+    },
+    "block_volume_two_zones": {
+      "value": null,
+      "unit": "bool",
+      "source_url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Regions are separate geographic areas. Availability Zones are multiple, isolated locations within each Region.",
+      "note": "[OPEN] \u26a0\ufe0f UNKNOWN: the AWS docs state that a region has multiple isolated AZs in general, but no fetchable official page states the AZ count of ap-southeast-1 or that a specific volume type/size is orderable in each. Generic wording is not region-specific evidence, so this gate is null rather than true."
+    },
+    "media_egress_price": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "SKU SDHP4R7WGBVJPQPY (usagetype APS1-DataTransfer-Out-Bytes, transferType \"AWS Outbound\"): $0.120 per GB - first 10 TB / month data transfer out beyond the global free tier",
+      "note": "Published internet egress price for downloads from media.<domain> (T74). The human page is https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer."
+    },
+    "private_networking": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://docs.aws.amazon.com/vpc/latest/userguide/what-is-amazon-vpc.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "With Amazon Virtual Private Cloud (Amazon VPC), you can launch AWS resources in a logically isolated virtual network that you've defined."
+    },
+    "secret_manager": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSSecretsManager/current/ap-southeast-1/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-AWSSecretsManager-Secret: $0.40 per Secret; APS1-AWSSecretsManagerAPIRequest: $0.05 per 10000 API Requests"
+    },
+    "container_registry": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECR/current/ap-southeast-1/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-TimedStorage-ByteHrs: $0.10 per GB-month of data storage"
+    },
+    "telemetry_non_agpl": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://aws.amazon.com/cloudwatch/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Amazon CloudWatch is a monitoring and observability service ... collect and access all your performance and operational data in form of logs and metrics",
+      "note": "Provider-native managed backend (CloudWatch, plus Amazon Managed Service for Prometheus/Loki for OTLP); no self-hosted AGPL component (E12, F16, O6)."
+    },
+
+    "gpu_price_per_hour": {
+      "value": 1.052,
+      "unit": "USD/GPU-hour",
+      "source_url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/Asia%20Pacific%20%28Singapore%29/Linux/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "g4dn.2xlarge Asia Pacific Singapore Linux: price 1.0520000000, vCPU 8, Memory 32 GiB, Storage 225 GB NVMe SSD, rateCode 77E3SQ5ZB9PCPK8N.JRTCKXETXF.6YS6EN2CT7",
+      "note": "On-Demand Linux, ap-southeast-1. Human page: https://aws.amazon.com/ec2/pricing/on-demand/ (feed publication date 2026-09-25)."
+    },
+    "gpu_billing_granularity": {
+      "value": "per_second",
+      "unit": "enum",
+      "source_url": "https://aws.amazon.com/ec2/pricing/on-demand/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "On-Demand Instances let you pay for compute capacity by the hour or second (minimum of 60 seconds) with no long-term commitments. ... Each partial instance-hour consumed will be billed per-second for Linux"
+    },
+    "gpu_stop_start": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://aws.amazon.com/ec2/pricing/on-demand/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Pricing is per instance-hour consumed for each instance, from the time an instance is launched until it is terminated or stopped.",
+      "note": "A stopped instance is not billed for compute; the storage billed while stopped is 09.7.3-T1's snapshot/volume rule."
+    },
+    "monthly_at_duty_cycle": {
+      "value": 192.1215,
+      "unit": "USD/month",
+      "source_url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ec2-ondemand-without-sec-sel/Asia%20Pacific%20%28Singapore%29/Linux/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "price 1.0520000000 x 6 h/day x 30.4375 days = 192.1215 USD/month",
+      "note": "Derived by score.py from gpu_price_per_hour at criteria.json params duty_cycle_hours_per_day = 6."
+    },
+    "latency_to_vn_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - no instance is rented in this task; the exact command is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "latency_to_apis_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - curl -w '%{time_connect} %{time_total}' to api.openai.com and www.googleapis.com from a rented instance is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "block_volume_gb_month": {
+      "value": 0.096,
+      "unit": "USD/GiB-month",
+      "source_url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Asia Pacific (Singapore) / \"Storage General Purpose gp3 GB Mo\": price 0.0960000000, rateCode X8SY8CJFS8WV7VQN.JRTCKXETXF.6YS6EN2CT7",
+      "note": "EBS gp3 SSD; the volume carries provider encryption at rest (block_volume_gates)."
+    },
+    "volume_snapshot_gb_month": {
+      "value": 0.05,
+      "unit": "USD/GiB-month",
+      "source_url": "https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Asia Pacific (Singapore) / \"Storage Snapshot Amazon S3 GB Mo\": price 0.0500000000, rateCode 5JKF9WXGUTYXYKXH.JRTCKXETXF.6YS6EN2CT7",
+      "note": "Standard EBS snapshot tier; the archive tier is separate and not used."
+    },
+    "internet_egress_gb": {
+      "value": 0.12,
+      "unit": "USD/GB",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSDataTransfer/current/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-DataTransfer-Out-Bytes: $0.120 per GB - first 10 TB / month data transfer out beyond the global free tier (next tiers $0.085 / $0.082 / $0.080)",
+      "note": "First tier; 100 GB/month are free across services before this rate applies."
+    },
+    "managed_postgres_month": {
+      "value": 170.82,
+      "unit": "USD/month",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-southeast-1/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-InstanceUsage:db.m7g.large: $ 0.234 per RDS db.m7g.large Single-AZ instance hour (or partial hour) running PostgreSQL (x 730 h = 170.82 USD/month)",
+      "note": "2 vCPU / 8 GiB, Single-AZ, RDS PostgreSQL 17 with automated backups (PITR) included; storage and backup storage are extra."
+    },
+    "container_registry_price": {
+      "value": 0.10,
+      "unit": "USD/GiB-month",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECR/current/ap-southeast-1/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-TimedStorage-ByteHrs: $0.10 per GB-month of data storage"
+    },
+    "vpn_bastion": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://aws.amazon.com/vpn/pricing/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "AWS Client VPN pricing: Price AWS Client VPN endpoint association ... per hour; AWS Client VPN connection ... per hour"
+    },
+    "fqdn_egress": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://docs.aws.amazon.com/network-firewall/latest/developerguide/stateful-rule-groups-domain-names.html",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "AWS Network Firewall supports domain name stateful network traffic inspection. You can create allow lists and deny lists with domain names that the stateful rules engine looks for in network traffic.",
+      "note": "FQDN rules need AWS Network Firewall (an extra component and cost); the D11 design keeps per-unit nftables IP/port lists anyway, so this is an optional addition, never a dependency."
+    },
+    "telemetry_option": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://aws.amazon.com/cloudwatch/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Amazon CloudWatch is a monitoring and observability service ... collect and access all your performance and operational data in form of logs and metrics"
+    },
+    "private_ca_option": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSCertificateManager/current/ap-southeast-1/index.json",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "APS1-PaidPrivateCA: $400 monthly charge for AWS Private CA (General-purpose mode) operation in Asia Pacific (Singapore); APS1-PrivateCertificatesIssued: $0.75 per certificate for the first 1,000 certs",
+      "note": "Provider private CA EXISTS but at $400/CA/month it is disproportionate for two internal certificates; per T81 the owner-generated offline root is the applied fallback and no client pins a certificate."
+    },
+    "data_terms_region": {
+      "value": "partial",
+      "unit": "enum",
+      "source_url": "https://aws.amazon.com/compliance/gdpr-center/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "GDPR compliance when using AWS services: The European Union's General Data Protection Regulation (GDPR) protects European Union (EU) individuals' fundamental right to privacy and the protection of personal data.",
+      "note": "GDPR + AWS Data Processing Addendum are published; the Vietnam rule (Decree 53/2022 data-localisation for listed sectors) is not settled for a private studio - owner/TL question, recorded as a revisit trigger."
+    },
+    "vn_payment_options": {
+      "value": null,
+      "unit": "bool",
+      "source_url": "https://aws.amazon.com/tax-help/vietnam",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not verified: the AWS Vietnam tax-help page is JavaScript-rendered, so no quotable line could be read from it; only a search-result snippet (not a source) mentions the Circular 80/2021/TT-BTC VAT registration",
+      "note": "[OPEN] \u26a0\u2014 the payment answer for a Vietnam-based business was NOT verified from an official page, so it is null rather than an inference. The owner confirms the accepted card/bank method at account creation; the AWS Billing guide lists payment methods by country."
+    },
+    "owner_locked_eligible": {
+      "value": false,
+      "unit": "bool",
+      "source_url": "plans/features/11-worker-deployment/README.md#D21",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "DECISIONS.md:257 (section 3, Storage): \"no managed object storage or AWS account (owner O7 2026-09-27)\"; 11 README D21:308: \"No managed object storage and no AWS account is used.\"",
+      "note": "The owner locked this decision on 2026-09-27; it is a hard gate, not a preference, so AWS is scored but never eligible."
+    }
+  }
+}

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Application\NightTales.Application.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.Infrastructure\NightTales.Infrastructure.csproj" />
+    <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
+  </ItemGroup>
+
+  <!--
+    04.2.2-T2 (04 README D14): the voice-catalog fixtures are shared with the proxy's pytest suite and
+    with `expected.json`, so both readers are pinned to one table instead of each hard-coding its own.
+    They are copied next to the test assembly, which is where VoiceCatalogRulesTests reads them. The
+    committed catalogs themselves (`seed/voices.v1.json`) already flow in transitively from the
+    Infrastructure project's Content items.
+  -->
+  <ItemGroup>
+    <None Include="..\..\seed\fixtures\voices\*.json"
+          Link="fixtures\voices\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+    <!-- 05.3.2-T3 (05 README D8): the music-catalog fixtures, shared with check_catalog.py. -->
+    <None Include="..\..\seed\fixtures\music\*.json"
+          Link="fixtures\music\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

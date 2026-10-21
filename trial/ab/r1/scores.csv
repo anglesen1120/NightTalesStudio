@@ -1,0 +1,457 @@
+story_id,rater_id,rater_language,rater_native,dimension,score,notes,scored_at
+S01,ai-vi-1,vi,false,hook,3,AI: Record-page anomaly raises a question but no concrete image,2026-09-28
+S01,ai-vi-1,vi,false,pacing,2,AI: Same facts restated for most of the body and no build to the page twist,2026-09-28
+S01,ai-vi-1,vi,false,atmosphere,2,AI: Dossier abstraction only; almost no sensory detail to carry dread,2026-09-28
+S01,ai-vi-1,vi,false,natural_language,3,AI: Native but monotone: twenty-three 'ho so' repeats and heavy passive chains,2026-09-28
+S01,ai-vi-1,vi,false,originality,3,AI: Familiar reopened-missing-case premise; the swapped statement page is the one fresh element,2026-09-28
+S01,ai-vi-1,vi,false,length_fit,1,AI: 1038 units is twenty percent below the 1300 floor,2026-09-28
+S01,ai-vi-1,vi,false,factual_care,4,AI: No names or real-incident signal; record claims stay internally consistent but are asserted as filed fact,2026-09-28
+S02,ai-vi-1,vi,false,hook,4,AI: Chalk writing in a dark powerless corridor sets an unavoidable question,2026-09-28
+S02,ai-vi-1,vi,false,pacing,4,AI: Beats escalate to the pre-signed register; tempo shifts and a short aftermath,2026-09-28
+S02,ai-vi-1,vi,false,atmosphere,4,"AI: Dread from chalk dust, chair scrapes and empty corridors, nothing explicit",2026-09-28
+S02,ai-vi-1,vi,false,natural_language,4,AI: Spoken native narration with short tense sentences; a few stock transitions,2026-09-28
+S02,ai-vi-1,vi,false,originality,3,AI: Stock haunted school; the night guard's name already in the register is the non-default element,2026-09-28
+S02,ai-vi-1,vi,false,length_fit,1,AI: 694 units is far below the 1300 floor,2026-09-28
+S04,ai-vi-1,vi,false,hook,3,AI: Two identical crashes raise a clear question but the framing stays documentary,2026-09-28
+S04,ai-vi-1,vi,false,pacing,2,AI: Facts cycle without escalation; the shared number arrives flat and is repeated,2026-09-28
+S04,ai-vi-1,vi,false,atmosphere,2,AI: Night road named but never felt; no sensory anchor beyond wind and headlights,2026-09-28
+S04,ai-vi-1,vi,false,natural_language,3,AI: Native wording undermined by report register and chained 'duoc ghi nhan' constructions,2026-09-28
+S04,ai-vi-1,vi,false,originality,3,AI: Familiar same-caller-two-crashes legend; the repaved road erasing evidence is not default,2026-09-28
+S04,ai-vi-1,vi,false,length_fit,1,AI: 784 units is well below the 1300 floor,2026-09-28
+S04,ai-vi-1,vi,false,factual_care,5,"AI: Unnamed places, caller explicitly unidentified, no real-person or real-incident signal; internally consistent",2026-09-28
+S05,ai-vi-1,vi,false,hook,4,AI: The notebook in the writer's own hands plus the record mismatch raises a sharp question,2026-09-28
+S05,ai-vi-1,vi,false,pacing,3,AI: Clue sequence is logical but every finding is restated; little tempo change,2026-09-28
+S05,ai-vi-1,vi,false,atmosphere,3,AI: One good still-room beat; the rest is neutral procedural summary,2026-09-28
+S05,ai-vi-1,vi,false,natural_language,3,AI: Native and correct yet built from repeated 'theo ho so' openings and legal passives,2026-09-28
+S05,ai-vi-1,vi,false,originality,3,AI: Familiar wrongful-conviction shape; the continuous clerk notebook against the reworded statement is specific,2026-09-28
+S05,ai-vi-1,vi,false,length_fit,1,AI: 857 units is far below the 1300 floor,2026-09-28
+S05,ai-vi-1,vi,false,factual_care,4,AI: No names and no real-incident signal but the wrongful-conviction outcome is asserted as settled record,2026-09-28
+S06,ai-vi-1,vi,false,hook,3,AI: Two silent crashes ten years apart raise a question with no image to hold,2026-09-28
+S06,ai-vi-1,vi,false,pacing,2,AI: Twelve identical 'theo ho so' blocks; the phone number reveal has no build,2026-09-28
+S06,ai-vi-1,vi,false,atmosphere,2,AI: Coastal setting is stated; only two weak sensory lines in the whole story,2026-09-28
+S06,ai-vi-1,vi,false,natural_language,2,AI: Twelve paragraphs open with the same phrase; reads as a spoken report not narration,2026-09-28
+S06,ai-vi-1,vi,false,originality,3,AI: Familiar cursed-road legend; the shared incoming number is the one non-default element,2026-09-28
+S06,ai-vi-1,vi,false,length_fit,1,AI: 942 units is well below the 1300 floor,2026-09-28
+S06,ai-vi-1,vi,false,factual_care,4,AI: No names or real-incident signal and it stays open but facts are asserted as record,2026-09-28
+S08,ai-vi-1,vi,false,hook,3,AI: Two identical crashes raise a clear question in a plain documentary voice,2026-09-28
+S08,ai-vi-1,vi,false,pacing,2,AI: Flat loop of restated details; the shared number lands mid-story and is re-explained,2026-09-28
+S08,ai-vi-1,vi,false,atmosphere,2,AI: Sea wind and distant headlights only; the road never becomes a felt place,2026-09-28
+S08,ai-vi-1,vi,false,natural_language,3,AI: Native but repetitive; 'theo ho so' and 'duoc ghi nhan' dominate the register,2026-09-28
+S08,ai-vi-1,vi,false,originality,3,AI: Known same-caller road legend; the erased skid evidence after repaving is not default,2026-09-28
+S08,ai-vi-1,vi,false,length_fit,1,AI: 763 units is far below the 1300 floor,2026-09-28
+S08,ai-vi-1,vi,false,factual_care,4,AI: Unnamed provinces and no real-person signal yet narrative asserts the case facts as documented,2026-09-28
+S11,ai-vi-1,vi,false,hook,5,AI: Refilled bottle and small footprints in the dust make the next line unavoidable,2026-09-28
+S11,ai-vi-1,vi,false,pacing,4,"AI: Debt revealed through beats with tempo shifts; the 'I am the debtor' turn lands, then a slightly long coda",2026-09-28
+S11,ai-vi-1,vi,false,atmosphere,5,"AI: Dread from crickets, dust half-prints and a bottle on the passenger seat; nothing explicit",2026-09-28
+S11,ai-vi-1,vi,false,natural_language,5,AI: Spoken native rhythm; short ear-ready sentences and idiomatic asides throughout,2026-09-28
+S11,ai-vi-1,vi,false,originality,4,AI: Folk shrine-water motif but the narrator inherits the debt and the ghost repays nothing,2026-09-28
+S11,ai-vi-1,vi,false,length_fit,1,AI: 978 units is well below the 1300 floor,2026-09-28
+S15,ai-vi-1,vi,false,hook,4,AI: Refilled bottle and returning footprints plus the stated debt hook cleanly,2026-09-28
+S15,ai-vi-1,vi,false,pacing,4,AI: Father's unpaid promise drives the escalation; aftermath two to three short still beats,2026-09-28
+S15,ai-vi-1,vi,false,atmosphere,4,"AI: Cricket, damp stone and a bottle found full in a locked cab; no gore and no explicitness",2026-09-28
+S15,ai-vi-1,vi,false,natural_language,4,AI: Mostly natural spoken Vietnamese; a couple of reused phrases from the sibling story,2026-09-28
+S15,ai-vi-1,vi,false,originality,3,"AI: Same shrine-water premise as S11, distinguished only by the inherited family debt",2026-09-28
+S15,ai-vi-1,vi,false,length_fit,1,AI: 898 units is well below the 1300 floor,2026-09-28
+S17,ai-vi-1,vi,false,hook,5,AI: A lamp lighting itself while salt damp clings to the rail and waves recede,2026-09-28
+S17,ai-vi-1,vi,false,pacing,4,AI: Steady escalation to the seven-days-silent radio and his own name on the old log,2026-09-28
+S17,ai-vi-1,vi,false,atmosphere,5,"AI: Wet sleeve, damp chair print and retreating surf build dread without a single explicit image",2026-09-28
+S17,ai-vi-1,vi,false,natural_language,4,AI: Terse natural keeper's voice; a few explanatory lines slow the spoken flow,2026-09-28
+S17,ai-vi-1,vi,false,originality,4,AI: Lighthouse-loop trope but the light exists for whoever is trying to find the way back,2026-09-28
+S17,ai-vi-1,vi,false,length_fit,1,AI: 852 units is well below the 1300 floor,2026-09-28
+S19,ai-vi-1,vi,false,hook,5,AI: Incense bowl turned to the sold house plus an unkept promise opens two live questions,2026-09-28
+S19,ai-vi-1,vi,false,pacing,4,"AI: Discovery of box, key and debt gives real beats; the tail restates the same closure twice",2026-09-28
+S19,ai-vi-1,vi,false,atmosphere,4,"AI: Bowl creeping, ash line and dust marks carry quiet dread; no gore and no explicitness",2026-09-28
+S19,ai-vi-1,vi,false,natural_language,3,AI: Native voice but 'can cua so' is not writable Vietnamese and one summary line is garbled,2026-09-28
+S19,ai-vi-1,vi,false,originality,3,AI: Familiar ancestor-promise haunting; the bowl's physical pointing is the non-default mechanism,2026-09-28
+S19,ai-vi-1,vi,false,length_fit,3,"AI: 1218 units is six percent under the floor, inside tolerance, and the ending resolves",2026-09-28
+S24,ai-vi-1,vi,false,hook,4,AI: The turned incense bowl pointing at the sold house with an unpaid promise is clear,2026-09-28
+S24,ai-vi-1,vi,false,pacing,4,"AI: Key bunch, paper and chopsticks escalate well; the closing paragraph repeats the resolution",2026-09-28
+S24,ai-vi-1,vi,false,atmosphere,4,"AI: Damp stain, chalk line and creeping bowl offer solid sensory dread with nothing explicit",2026-09-28
+S24,ai-vi-1,vi,false,natural_language,3,AI: Native but several fragment sentences and an unclear line about who owes what,2026-09-28
+S24,ai-vi-1,vi,false,originality,3,AI: Same ancestor-promise haunting as S19; the caretaker's chopsticks are the only fresh angle,2026-09-28
+S24,ai-vi-1,vi,false,length_fit,4,AI: 1317 units sits inside the 1300-2080 band; repeated morning rotations pad the middle a little,2026-09-28
+S25,ai-vi-1,vi,false,hook,4,AI: Chair legs scraping a cement roof above his flat gives immediate concrete tension,2026-09-28
+S25,ai-vi-1,vi,false,pacing,4,AI: Nightly escalation to the rooftop chair and dust trail; the reveal stays withheld until the end,2026-09-28
+S25,ai-vi-1,vi,false,atmosphere,4,"AI: Cement dust on keys, damp frame and scraping wood do the work; never explicit",2026-09-28
+S25,ai-vi-1,vi,false,natural_language,4,AI: Natural spoken narration with short sentences and no written-register artifacts,2026-09-28
+S25,ai-vi-1,vi,false,originality,3,AI: Familiar moving-chair haunting; dust trail leading only outward is the non-default detail,2026-09-28
+S25,ai-vi-1,vi,false,length_fit,1,AI: 795 units is far below the 1300 floor,2026-09-28
+S27,ai-vi-1,vi,false,hook,3,AI: The continuous notebook absent from the trial file raises a clear question plainly,2026-09-28
+S27,ai-vi-1,vi,false,pacing,2,"AI: Facts are itemised as first, second, third, fourth details instead of rising in scene",2026-09-28
+S27,ai-vi-1,vi,false,atmosphere,2,AI: No sensory scene at all; the story stays inside an abstract file summary,2026-09-28
+S27,ai-vi-1,vi,false,natural_language,2,AI: Eight identical 'theo ho so' openings and a numbered detail list read as notes,2026-09-28
+S27,ai-vi-1,vi,false,originality,3,AI: Familiar wrongful-conviction frame; the unentered continuous notebook is a specific mechanism,2026-09-28
+S27,ai-vi-1,vi,false,length_fit,1,AI: 845 units is far below the 1300 floor,2026-09-28
+S27,ai-vi-1,vi,false,factual_care,4,AI: No names or real-incident signal but the wrongful verdict is asserted as documented fact,2026-09-28
+S28,ai-vi-1,vi,false,hook,5,AI: A lit house behind a decade-late promise and the key in his fist is immediate,2026-09-28
+S28,ai-vi-1,vi,false,pacing,4,"AI: Years of delay, dreams, return and ashes move the tension well; the coda runs long",2026-09-28
+S28,ai-vi-1,vi,false,atmosphere,4,"AI: Stale incense, bowl sounds and a lamp relighting build quiet guilt-driven dread",2026-09-28
+S28,ai-vi-1,vi,false,natural_language,4,AI: Warm natural spoken narration; end paragraphs restate what the scene already showed,2026-09-28
+S28,ai-vi-1,vi,false,originality,3,AI: Familiar unkept-promise homecoming ghost; the key carried for ten years is not default,2026-09-28
+S28,ai-vi-1,vi,false,length_fit,3,"AI: 1256 units is three percent under the floor, inside tolerance, and the ending resolves",2026-09-28
+S31,ai-vi-1,vi,false,hook,5,AI: The lamp still burning after the fuse was removed opens with unavoidable tension,2026-09-28
+S31,ai-vi-1,vi,false,pacing,4,"AI: Fuse, hatch, duplicate diary and trapped room escalate in order with clear tempo changes",2026-09-28
+S31,ai-vi-1,vi,false,atmosphere,4,"AI: Damp hatch writing, retreating sea and a fresh wet page; effective and never explicit",2026-09-28
+S31,ai-vi-1,vi,false,natural_language,4,AI: Natural spoken voice; two explanatory lines spell out what the scene already implied,2026-09-28
+S31,ai-vi-1,vi,false,originality,3,AI: Lighthouse-loop with a diary that writes ahead; familiar trope plus one distinct device,2026-09-28
+S31,ai-vi-1,vi,false,length_fit,1,AI: 905 units is far below the 1300 floor,2026-09-28
+S33,ai-vi-1,vi,false,hook,4,AI: The village house already lit with the key still in his coat poses the question fast,2026-09-28
+S33,ai-vi-1,vi,false,pacing,3,"AI: Delays, letter and death move forward but the reveal is a stated moral not a turn",2026-09-28
+S33,ai-vi-1,vi,false,atmosphere,3,"AI: Some good images of the lit doorway and stale incense, repeated too often",2026-09-28
+S33,ai-vi-1,vi,false,natural_language,4,AI: Natural spoken register; 'dem thu muoi sau ngay toi hua' is vague on first hearing,2026-09-28
+S33,ai-vi-1,vi,false,originality,3,AI: Near-duplicate mother-and-promise premise of S28 with no distinct new mechanism,2026-09-28
+S33,ai-vi-1,vi,false,length_fit,1,AI: 876 units is far below the 1300 floor,2026-09-28
+S34,ai-vi-1,vi,false,hook,4,AI: Chalk writing in a closed school at night plus dust and flickering lights,2026-09-28
+S34,ai-vi-1,vi,false,pacing,4,"AI: Name on board, register and two chairs escalate cleanly to the final phone call",2026-09-28
+S34,ai-vi-1,vi,false,atmosphere,4,"AI: Wet chalk, sealed door and lights dying behind him; concrete and non-explicit",2026-09-28
+S34,ai-vi-1,vi,false,natural_language,4,AI: Spoken native narration; the middle repeats the same nightly inspection twice,2026-09-28
+S34,ai-vi-1,vi,false,originality,3,AI: Stock haunted-school apparatus; the named-again-removed-class roll is the twist used twice,2026-09-28
+S34,ai-vi-1,vi,false,length_fit,1,AI: 1012 units is twenty-two percent below the 1300 floor,2026-09-28
+S35,ai-vi-1,vi,false,hook,4,AI: A dragging chair above an empty roof gives an instant concrete question,2026-09-28
+S35,ai-vi-1,vi,false,pacing,3,AI: Same nightly beat repeats; the ending hints at the earlier tenant without any real turn,2026-09-28
+S35,ai-vi-1,vi,false,atmosphere,3,AI: Cement dust and scraping wood work but the imagery is thin at this length,2026-09-28
+S35,ai-vi-1,vi,false,natural_language,4,AI: Natural spoken narration; several lines simply re-describe the same sound,2026-09-28
+S35,ai-vi-1,vi,false,originality,3,AI: Same rooftop-chair premise as S25 with nothing added,2026-09-28
+S35,ai-vi-1,vi,false,length_fit,1,AI: 687 units is nearly half the 1300 floor,2026-09-28
+S35,ai-vi-2,vi,false,hook,5,AI: Chair dragged on empty rooftop; concrete image plus tension in two sentences,2026-09-28
+S35,ai-vi-2,vi,false,pacing,4,AI: Beats rise steadily with tempo shifts; long coda weakens the peak,2026-09-28
+S35,ai-vi-2,vi,false,atmosphere,4,AI: Dread from sound and white dust; nothing explicit shown,2026-09-28
+S35,ai-vi-2,vi,false,natural_language,4,"AI: Native, short spoken sentences; reads cleanly aloud",2026-09-28
+S35,ai-vi-2,vi,false,originality,3,AI: Familiar moving-chair ghost; dust trail adds little novelty,2026-09-28
+S35,ai-vi-2,vi,false,length_fit,1,"AI: 687 units vs 1300 floor, far under band",2026-09-28
+S34,ai-vi-2,vi,false,hook,5,AI: Chalk writing in a dead school; immediate question and clear tension,2026-09-28
+S34,ai-vi-2,vi,false,pacing,4,AI: Strong escalation and reversal; ending tail runs long,2026-09-28
+S34,ai-vi-2,vi,false,atmosphere,5,"AI: Chalk, wet board and dying lights build quiet dread",2026-09-28
+S34,ai-vi-2,vi,false,natural_language,5,"AI: Native narrator voice; short sentences, ideal for TTS",2026-09-28
+S34,ai-vi-2,vi,false,originality,4,AI: School ghost but the childhood signature twist is ours,2026-09-28
+S34,ai-vi-2,vi,false,length_fit,1,"AI: 1012 units vs 1300 floor, far under band",2026-09-28
+S33,ai-vi-2,vi,false,hook,4,AI: Lit house without power; 'dua me ve' slightly muddies the setup,2026-09-28
+S33,ai-vi-2,vi,false,pacing,3,AI: Mid section repeats the promise loop and sags,2026-09-28
+S33,ai-vi-2,vi,false,atmosphere,4,AI: Melancholy lamp and absent mother; gentle rather than frightening,2026-09-28
+S33,ai-vi-2,vi,false,natural_language,4,AI: Natural Vietnamese with steady readable rhythm,2026-09-28
+S33,ai-vi-2,vi,false,originality,3,AI: Broken promise to a dead parent; very familiar furniture,2026-09-28
+S33,ai-vi-2,vi,false,length_fit,1,"AI: 876 units vs 1300 floor, far under band",2026-09-28
+S31,ai-vi-2,vi,false,hook,5,AI: Lamp still lit though the fuse was pulled; strong contradiction,2026-09-28
+S31,ai-vi-2,vi,false,pacing,4,AI: Rising tension into the underground room; reveal lands well,2026-09-28
+S31,ai-vi-2,vi,false,atmosphere,5,"AI: Salt, receding waves and writing below; strong dread",2026-09-28
+S31,ai-vi-2,vi,false,natural_language,4,AI: Native and speakable; a few abstract turns,2026-09-28
+S31,ai-vi-2,vi,false,originality,4,AI: Lighthouse and a journal writing ahead of events; fresh mechanism,2026-09-28
+S31,ai-vi-2,vi,false,length_fit,1,"AI: 905 units vs 1300 floor, far under band",2026-09-28
+S28,ai-vi-2,vi,false,hook,4,AI: Lit house and a key; clear scene but premise already familiar,2026-09-28
+S28,ai-vi-2,vi,false,pacing,3,AI: Long resolution and repeating years slow the middle,2026-09-28
+S28,ai-vi-2,vi,false,atmosphere,4,AI: Quiet village grief; atmospheric but rarely tense,2026-09-28
+S28,ai-vi-2,vi,false,natural_language,4,AI: Natural spoken Vietnamese; occasional repeated phrasing,2026-09-28
+S28,ai-vi-2,vi,false,originality,3,"AI: Promise, key and dead mother; familiar genre furniture",2026-09-28
+S28,ai-vi-2,vi,false,length_fit,3,AI: 1256 units within 15 percent of floor; ending resolves,2026-09-28
+S27,ai-vi-2,vi,false,hook,3,AI: Sealed notebook never entered in court; question raised but abstract,2026-09-28
+S27,ai-vi-2,vi,false,pacing,2,"AI: Flat enumeration, no build and no twist landing",2026-09-28
+S27,ai-vi-2,vi,false,atmosphere,2,AI: Abstract case summary; almost no scene or sensation,2026-09-28
+S27,ai-vi-2,vi,false,natural_language,2,AI: Stiff 'Theo ho so' repetitions; reads like a translated report,2026-09-28
+S27,ai-vi-2,vi,false,originality,2,AI: Forged-statement retelling; abstract and not distinctive,2026-09-28
+S27,ai-vi-2,vi,false,factual_care,4,AI: Synthetic court record; no real person and internally consistent,2026-09-28
+S27,ai-vi-2,vi,false,length_fit,1,"AI: 845 units vs 1300 floor, far under band",2026-09-28
+S25,ai-vi-2,vi,false,hook,4,"AI: Chair scraping at midnight; solid image, question comes quickly",2026-09-28
+S25,ai-vi-2,vi,false,pacing,4,AI: Ordered escalation with clear tempo change; solid structure,2026-09-28
+S25,ai-vi-2,vi,false,atmosphere,4,"AI: Sensor light, dust trail and moving chair; effective",2026-09-28
+S25,ai-vi-2,vi,false,natural_language,4,AI: Native and ear-friendly with clear simple syntax,2026-09-28
+S25,ai-vi-2,vi,false,originality,3,AI: Moving chair ghost; same trope as another story here,2026-09-28
+S25,ai-vi-2,vi,false,length_fit,1,"AI: 795 units vs 1300 floor, far under band",2026-09-28
+S24,ai-vi-2,vi,false,hook,4,AI: Rotated incense bowl pointing home; good image and open promise,2026-09-28
+S24,ai-vi-2,vi,false,pacing,3,AI: Beats in order but the closing explanation drags,2026-09-28
+S24,ai-vi-2,vi,false,atmosphere,4,AI: Domestic incense and bowls; subtle but occasionally flat,2026-09-28
+S24,ai-vi-2,vi,false,natural_language,4,AI: Native and natural; a few long explanatory sentences,2026-09-28
+S24,ai-vi-2,vi,false,originality,3,AI: Rotating incense bowl mechanism is not the default,2026-09-28
+S24,ai-vi-2,vi,false,length_fit,4,"AI: 1317 units inside band; ending resolves, slight middle padding",2026-09-28
+S19,ai-vi-2,vi,false,hook,4,AI: Rotated incense bowl toward old house; clear but explains itself fast,2026-09-28
+S19,ai-vi-2,vi,false,pacing,3,"AI: Slow, with repeated bowl-turning beats and a long close",2026-09-28
+S19,ai-vi-2,vi,false,atmosphere,4,"AI: Ash, bowls and dry wind; good, some repetition",2026-09-28
+S19,ai-vi-2,vi,false,natural_language,4,AI: Native and readable but repetitive sentence openings,2026-09-28
+S19,ai-vi-2,vi,false,originality,3,AI: Rotating bowl is fresh; the promise debt less so,2026-09-28
+S19,ai-vi-2,vi,false,length_fit,3,AI: 1218 units within 15 percent of floor; ending resolves,2026-09-28
+S17,ai-vi-2,vi,false,hook,5,AI: Self-lighting lighthouse lamp; sensory image and tension at once,2026-09-28
+S17,ai-vi-2,vi,false,pacing,4,AI: Escalation into the fogbound ending; twist lands near the peak,2026-09-28
+S17,ai-vi-2,vi,false,atmosphere,5,"AI: Fog, damp salt and missing sea; dread from absence",2026-09-28
+S17,ai-vi-2,vi,false,natural_language,4,AI: Native and speakable; clean spoken rhythm,2026-09-28
+S17,ai-vi-2,vi,false,originality,4,AI: Lighthouse future journal; mechanism not borrowed,2026-09-28
+S17,ai-vi-2,vi,false,length_fit,1,"AI: 852 units vs 1300 floor, far under band",2026-09-28
+S15,ai-vi-2,vi,false,hook,5,AI: Bottle left at shrine refilled with small footprints; strong,2026-09-28
+S15,ai-vi-2,vi,false,pacing,4,AI: Debt builds across trips; reveal at the father's altar works,2026-09-28
+S15,ai-vi-2,vi,false,atmosphere,4,"AI: Crickets, dust and small footprints; restrained and effective",2026-09-28
+S15,ai-vi-2,vi,false,natural_language,4,AI: Native and natural; good rhythm for reading aloud,2026-09-28
+S15,ai-vi-2,vi,false,originality,3,AI: Inherited water debt at a shrine; neat folk mechanism,2026-09-28
+S15,ai-vi-2,vi,false,length_fit,1,"AI: 898 units vs 1300 floor, far under band",2026-09-28
+S11,ai-vi-2,vi,false,hook,4,"AI: Refilled bottle and footprints; clear question, less fresh",2026-09-28
+S11,ai-vi-2,vi,false,pacing,4,AI: Steady escalation; the final release is a bit soft,2026-09-28
+S11,ai-vi-2,vi,false,atmosphere,4,AI: Roadside shrine and crickets; quieter than its twin,2026-09-28
+S11,ai-vi-2,vi,false,natural_language,4,AI: Natural Vietnamese; some repeated phrasing,2026-09-28
+S11,ai-vi-2,vi,false,originality,3,AI: Same shrine-debt mechanism; familiar but not default,2026-09-28
+S11,ai-vi-2,vi,false,length_fit,1,"AI: 978 units vs 1300 floor, far under band",2026-09-28
+S08,ai-vi-2,vi,false,hook,4,AI: Two crashes without brake marks; question clear but report-like,2026-09-28
+S08,ai-vi-2,vi,false,pacing,3,AI: Report-like beats; the phone-call clue is the only rise,2026-09-28
+S08,ai-vi-2,vi,false,atmosphere,3,"AI: Coastal wind and headlights; thin atmosphere, mostly documentary",2026-09-28
+S08,ai-vi-2,vi,false,natural_language,2,AI: Stiff 'Theo ho so' connectives; report register not spoken,2026-09-28
+S08,ai-vi-2,vi,false,originality,3,AI: Ten-year crash link via one phone number; decent premise,2026-09-28
+S08,ai-vi-2,vi,false,factual_care,4,AI: No real person or incident; claims framed 'theo ho so' and consistent,2026-09-28
+S08,ai-vi-2,vi,false,length_fit,1,"AI: 763 units vs 1300 floor, far under band",2026-09-28
+S06,ai-vi-2,vi,false,hook,3,AI: Old notebook held by its writer; muted and without a vivid image,2026-09-28
+S06,ai-vi-2,vi,false,pacing,2,AI: Repetitive record statements; no rise or tempo change,2026-09-28
+S06,ai-vi-2,vi,false,atmosphere,3,AI: Slow fan and still light; a few good touches only,2026-09-28
+S06,ai-vi-2,vi,false,natural_language,2,"AI: Repetitive stiff connectives; documentary register, not speakable",2026-09-28
+S06,ai-vi-2,vi,false,originality,2,AI: Forged-confession retelling; no distinctive element,2026-09-28
+S06,ai-vi-2,vi,false,factual_care,4,AI: Synthetic case with no real names; internally consistent,2026-09-28
+S06,ai-vi-2,vi,false,length_fit,1,"AI: 942 units vs 1300 floor, far under band",2026-09-28
+S05,ai-vi-2,vi,false,hook,4,AI: Replaced final statement page; clear mystery in two sentences,2026-09-28
+S05,ai-vi-2,vi,false,pacing,3,AI: Ordered but expository; the letter fails to lift tension,2026-09-28
+S05,ai-vi-2,vi,false,atmosphere,3,AI: Dusty archive mood; brief and underused,2026-09-28
+S05,ai-vi-2,vi,false,natural_language,3,AI: Mostly native but report-flavoured and repetitive,2026-09-28
+S05,ai-vi-2,vi,false,originality,3,AI: Replaced page in a cold case; familiar but serviceable,2026-09-28
+S05,ai-vi-2,vi,false,factual_care,4,AI: Synthetic missing-person file; no real-person signal and consistent,2026-09-28
+S05,ai-vi-2,vi,false,length_fit,1,"AI: 857 units vs 1300 floor, far under band",2026-09-28
+S04,ai-vi-2,vi,false,hook,4,AI: Two crashes on one road; clear but flat documentary framing,2026-09-28
+S04,ai-vi-2,vi,false,pacing,2,AI: Monotone record recounting with no tempo change,2026-09-28
+S04,ai-vi-2,vi,false,atmosphere,2,AI: Coastal road named but little sensory build,2026-09-28
+S04,ai-vi-2,vi,false,natural_language,2,AI: Stiff repeated 'Theo ho so'; reads as a translated report,2026-09-28
+S04,ai-vi-2,vi,false,originality,3,AI: Same crash-link premise as its twin; little new,2026-09-28
+S04,ai-vi-2,vi,false,factual_care,4,AI: Synthetic crashes; no real names or places and consistent,2026-09-28
+S04,ai-vi-2,vi,false,length_fit,1,"AI: 784 units vs 1300 floor, far under band",2026-09-28
+S02,ai-vi-2,vi,false,hook,4,AI: Chalk writing in an empty corridor; direct and tense,2026-09-28
+S02,ai-vi-2,vi,false,pacing,4,AI: Tight escalation to the roll call; short and effective,2026-09-28
+S02,ai-vi-2,vi,false,atmosphere,4,AI: Blinking corridor lights and chalk; effective school dread,2026-09-28
+S02,ai-vi-2,vi,false,natural_language,4,AI: Native and clean; speakable short sentences,2026-09-28
+S02,ai-vi-2,vi,false,originality,3,"AI: School ghost with roll call; familiar, twist lightly fresh",2026-09-28
+S02,ai-vi-2,vi,false,length_fit,1,"AI: 694 units vs 1300 floor, far under band",2026-09-28
+S01,ai-vi-2,vi,false,hook,4,AI: A statement page of a different paper; question raised plainly,2026-09-28
+S01,ai-vi-2,vi,false,pacing,2,AI: Restates facts without build; the closing question carries it,2026-09-28
+S01,ai-vi-2,vi,false,atmosphere,3,"AI: Dust and old paper; atmosphere is named, not built",2026-09-28
+S01,ai-vi-2,vi,false,natural_language,2,AI: Stiff report register and repeated connectives; TTS-flat,2026-09-28
+S01,ai-vi-2,vi,false,originality,3,AI: Replaced page and anonymous letter; standard cold-case furniture,2026-09-28
+S01,ai-vi-2,vi,false,factual_care,4,AI: Synthetic cold case; no real person or incident signal,2026-09-28
+S01,ai-vi-2,vi,false,length_fit,1,"AI: 1038 units vs 1300 floor, far under band",2026-09-28
+S03,ai-en-1,en,false,hook,4,AI: Strong shrine image opens well; repeated trips sag; cold bottle and dying engine land.,2026-09-28
+S03,ai-en-1,en,false,pacing,3,AI: Beats in order but middle repeats the same stop-and-leave cycle without new pressure.,2026-09-28
+S03,ai-en-1,en,false,atmosphere,4,"AI: Sound and absence carry dread: crickets stop, water goes cold, no gore used.",2026-09-28
+S03,ai-en-1,en,false,natural_language,4,AI: Native and spoken; one garbled sentence about the bottle being 'nearly empty'.,2026-09-28
+S03,ai-en-1,en,false,originality,3,AI: Familiar roadside-shrine debt folklore; refilling bottle is the one non-default mechanism.,2026-09-28
+S03,ai-en-1,en,false,length_fit,3,"AI: 854 units is 14.6% under the 1000 floor, just inside the ±15% tolerance band.",2026-09-28
+S07,ai-en-1,en,false,hook,3,AI: Opens with a clear question about the two crashes but the framing stays flat.,2026-09-28
+S07,ai-en-1,en,false,pacing,2,"AI: Pure record recitation; no build-up, no tempo change, no reveal peak.",2026-09-28
+S07,ai-en-1,en,false,atmosphere,2,AI: Report tone; almost no sensory detail or ordinary-dread texture.,2026-09-28
+S07,ai-en-1,en,false,natural_language,3,AI: Grammatically native but bureaucratic and repetitious: 'the records' recurs constantly.,2026-09-28
+S07,ai-en-1,en,false,originality,3,"AI: Same-number call before each crash is a familiar trope, mildly non-default detail.",2026-09-28
+S07,ai-en-1,en,false,length_fit,1,AI: Every claim hedged to the records; no real person or incident named; consistent.,2026-09-28
+S07,ai-en-1,en,false,factual_care,5,"AI: 611 units is 39% below the 1000 floor, far outside the band.",2026-09-28
+S09,ai-en-1,en,false,hook,4,AI: Opens on the bowl and a forgotten promise: concrete image plus unresolved tension.,2026-09-28
+S09,ai-en-1,en,false,pacing,4,"AI: Clean beat order with rising unease and a settled, paid-debt aftermath.",2026-09-28
+S09,ai-en-1,en,false,atmosphere,4,"AI: Ordinary dread from new wood, cold neck, and a bowl that turns in a shut room.",2026-09-28
+S09,ai-en-1,en,false,natural_language,5,AI: Reads as a native narrator; 'Keep the bowl until the old debt is returned' lands well.,2026-09-28
+S09,ai-en-1,en,false,originality,3,AI: Ancestor-altar debt is genre furniture; the self-turning bowl mechanism is the new piece.,2026-09-28
+S09,ai-en-1,en,false,length_fit,1,"AI: 779 units is 22% below the 1000 floor, well outside the band.",2026-09-28
+S10,ai-en-1,en,false,hook,4,AI: Lamp burning with the fuse pulled is an immediate concrete unexplained tension.,2026-09-28
+S10,ai-en-1,en,false,pacing,4,AI: Rising dread with a strong reveal; late flashback ordering slightly muddles the aftermath.,2026-09-28
+S10,ai-en-1,en,false,atmosphere,5,AI: Best atmosphere in the set: the sea going silent and self-writing log build dread.,2026-09-28
+S10,ai-en-1,en,false,natural_language,4,AI: Native and clean; a few abstract lines where the prose drifts instead of speaking.,2026-09-28
+S10,ai-en-1,en,false,originality,3,AI: Lighthouse plus self-writing log is classic furniture; the silent sea is some invention.,2026-09-28
+S10,ai-en-1,en,false,length_fit,3,"AI: 922 units sits 7.8% under the floor, inside the ±15% tolerance; ending resolves.",2026-09-28
+S12,ai-en-1,en,false,hook,5,"AI: Three sentences: last tenant, nightly drag, empty roof terrace. Unavoidable next sentence.",2026-09-28
+S12,ai-en-1,en,false,pacing,4,AI: Beats land in order and the chair's approach escalates; final flat echo runs long.,2026-09-28
+S12,ai-en-1,en,false,atmosphere,4,"AI: Warm chain, damp marks, and paint flakes build dread without gore or shouting.",2026-09-28
+S12,ai-en-1,en,false,natural_language,4,AI: Native narration with spoken rhythm; 'It faced the stairwell' is nicely restrained.,2026-09-28
+S12,ai-en-1,en,false,originality,3,AI: Haunted drag upstairs is familiar; the chair descending floor by floor is the twist.,2026-09-28
+S12,ai-en-1,en,false,length_fit,3,"AI: 940 units is 6% under the floor, inside the ±15% tolerance; ending resolves.",2026-09-28
+S13,ai-en-1,en,false,hook,3,"AI: Same coastal-crash question as its sibling, framed as reading reports; little pull.",2026-09-28
+S13,ai-en-1,en,false,pacing,2,AI: Restates the same facts far past the point of new information; no reveal peak.,2026-09-28
+S13,ai-en-1,en,false,atmosphere,2,"AI: Bare report tone, near-zero sensory or spatial texture.",2026-09-28
+S13,ai-en-1,en,false,natural_language,3,AI: Native but stilted hedging: 'according to the record' carries almost every paragraph.,2026-09-28
+S13,ai-en-1,en,false,originality,2,AI: Near-duplicate of the sibling crash story in the same pack; mechanism reused.,2026-09-28
+S13,ai-en-1,en,false,length_fit,1,"AI: All claims record-framed, no real person or incident, internally consistent.",2026-09-28
+S13,ai-en-1,en,false,factual_care,5,"AI: 662 units is 34% below the 1000 floor, far outside the band.",2026-09-28
+S14,ai-en-1,en,false,hook,3,AI: Replacement-page question appears early but the desk frame is inert.,2026-09-28
+S14,ai-en-1,en,false,pacing,2,AI: Short and expository; consecutive paragraphs repeat the paper and typeface point.,2026-09-28
+S14,ai-en-1,en,false,atmosphere,2,"AI: Almost no atmosphere: the file is described, never felt.",2026-09-28
+S14,ai-en-1,en,false,natural_language,3,"AI: Native wording, though clipped fragments read like notes rather than narration.",2026-09-28
+S14,ai-en-1,en,false,originality,2,AI: Duplicates the sibling replaced-page story in the pack; nothing new is added.,2026-09-28
+S14,ai-en-1,en,false,length_fit,1,AI: Claims stay file-framed with no real names or incidents; internally consistent.,2026-09-28
+S14,ai-en-1,en,false,factual_care,5,"AI: 526 units is 47% below the 1000 floor, far outside the band.",2026-09-28
+S16,ai-en-1,en,false,hook,4,AI: Full bottle and small footprints beside a left bottle open on real tension.,2026-09-28
+S16,ai-en-1,en,false,pacing,3,"AI: Beats exist and escalate, but the tale is compressed and thin between them.",2026-09-28
+S16,ai-en-1,en,false,atmosphere,4,"AI: Crickets stopping, sealed cap, small hand on the shrine frame: effective restraint.",2026-09-28
+S16,ai-en-1,en,false,natural_language,4,AI: Native and readable; a few lines are compressed to the point of awkwardness.,2026-09-28
+S16,ai-en-1,en,false,originality,2,AI: Near-duplicate of the sibling shrine-bottle story with the same debt mechanism.,2026-09-28
+S16,ai-en-1,en,false,length_fit,1,"AI: 658 units is 34% below the 1000 floor, far outside the band.",2026-09-28
+S18,ai-en-1,en,false,hook,4,AI: Bowl facing the sold house and a forgotten promise set a clear question.,2026-09-28
+S18,ai-en-1,en,false,pacing,3,"AI: Ordered beats, but the seven-morning counting motif is restated rather than deepened.",2026-09-28
+S18,ai-en-1,en,false,atmosphere,4,"AI: Cold neck, curtain test, rice grain and crack build quiet dread.",2026-09-28
+S18,ai-en-1,en,false,natural_language,4,AI: Native narrator voice; 'The promise had not followed us. I had.' is well said.,2026-09-28
+S18,ai-en-1,en,false,originality,2,AI: Near-duplicate of the sibling bowl story; only surface details change.,2026-09-28
+S18,ai-en-1,en,false,length_fit,1,"AI: 835 units is 16.5% below the 1000 floor, outside the band.",2026-09-28
+S20,ai-en-1,en,false,hook,4,AI: Weak archive lamp and a page that is not what it claims: good opening question.,2026-09-28
+S20,ai-en-1,en,false,pacing,3,AI: Beats present but the swapping is explained repeatedly without adding pressure.,2026-09-28
+S20,ai-en-1,en,false,atmosphere,3,"AI: Atmosphere thin; the reopened file is discussed, not experienced.",2026-09-28
+S20,ai-en-1,en,false,natural_language,4,AI: Native and clean; several sentences are near-verbatim repeats of earlier ones.,2026-09-28
+S20,ai-en-1,en,false,originality,2,AI: Duplicate of the sibling replaced-page story; no new mechanism or twist.,2026-09-28
+S20,ai-en-1,en,false,length_fit,1,"AI: Record-framed claims, no real person or incident named, internally consistent.",2026-09-28
+S20,ai-en-1,en,false,factual_care,5,"AI: 635 units is 37% below the 1000 floor, far outside the band.",2026-09-28
+S21,ai-en-1,en,false,hook,3,AI: Ceiling fan and mismatched statements raise a question but the frame drains tension.,2026-09-28
+S21,ai-en-1,en,false,pacing,2,AI: Same mismatch restated many times; no build-up and no reveal peak.,2026-09-28
+S21,ai-en-1,en,false,atmosphere,2,AI: Bare procedural tone; no sensory or spatial dread anywhere.,2026-09-28
+S21,ai-en-1,en,false,natural_language,3,AI: Native but repetitive; the closing clerk line repeats an earlier paragraph verbatim.,2026-09-28
+S21,ai-en-1,en,false,originality,3,"AI: Withdrawn-statement wording change is a decent true-crime mechanism, lightly handled.",2026-09-28
+S21,ai-en-1,en,false,length_fit,1,"AI: Largely consistent, but a withdrawn statement still grounding the conviction is unexplained.",2026-09-28
+S21,ai-en-1,en,false,factual_care,4,"AI: 685 units is 32% below the 1000 floor, far outside the band.",2026-09-28
+S22,ai-en-1,en,false,hook,5,"AI: Caretaker alone, chalk scraping in a locked room: two sentences make staying impossible.",2026-09-28
+S22,ai-en-1,en,false,pacing,4,AI: Strong rising beats; the mother's-name reveal lands at the natural peak.,2026-09-28
+S22,ai-en-1,en,false,atmosphere,4,"AI: Chalk, flickering corridor light, breathing at sealed windows: dread without gore.",2026-09-28
+S22,ai-en-1,en,false,natural_language,4,AI: Native narration; 'You were absent yesterday' is a spoken line done right.,2026-09-28
+S22,ai-en-1,en,false,originality,4,AI: Familiar school haunting lifted by the pre-school nickname twist and lesson rhythm.,2026-09-28
+S22,ai-en-1,en,false,length_fit,3,"AI: 902 units is 10% under the floor, inside the ±15% tolerance; ending resolves.",2026-09-28
+S23,ai-en-1,en,false,hook,4,AI: Lamp lit with the fuse pulled for a week is a clean unexplained opening.,2026-09-28
+S23,ai-en-1,en,false,pacing,3,AI: Beats in order; the salt-in-tin-box detail repeats before the reveal lands.,2026-09-28
+S23,ai-en-1,en,false,atmosphere,4,"AI: Silent sea, self-writing log, wet marks with no exit: sustained ordinary dread.",2026-09-28
+S23,ai-en-1,en,false,natural_language,4,AI: Native and controlled; 'Do not let it see the shore' is a strong spoken line.,2026-09-28
+S23,ai-en-1,en,false,originality,2,AI: Near-duplicate of the sibling lighthouse story; the pale shape adds little.,2026-09-28
+S23,ai-en-1,en,false,length_fit,3,"AI: 883 units is 12% under the floor, inside the ±15% tolerance.",2026-09-28
+S26,ai-en-1,en,false,hook,5,AI: Chair dragging on a terrace with no rooms: immediate and unavoidable.,2026-09-28
+S26,ai-en-1,en,false,pacing,3,AI: First half strong; the maintenance worker's exposition dump stalls the middle.,2026-09-28
+S26,ai-en-1,en,false,atmosphere,4,"AI: Old paint, glass trembling, tracks in dust: quiet dread, no gore.",2026-09-28
+S26,ai-en-1,en,false,natural_language,4,AI: Native and spoken; the closing un-told-chair line is a good narrator beat.,2026-09-28
+S26,ai-en-1,en,false,originality,2,AI: Duplicate of the sibling ceiling-chair story; mechanism and reveal reused.,2026-09-28
+S26,ai-en-1,en,false,length_fit,3,"AI: 870 units is 13% under the floor, inside the ±15% tolerance.",2026-09-28
+S29,ai-en-1,en,false,hook,4,"AI: Ten-year promise, a death, a lit house in dreams: clear question in three sentences.",2026-09-28
+S29,ai-en-1,en,false,pacing,4,AI: Emotional beat order holds and the return-to-village sequence earns its length.,2026-09-28
+S29,ai-en-1,en,false,atmosphere,3,"AI: Melancholy rather than dread; the lit house is warm, so fear stays mild.",2026-09-28
+S29,ai-en-1,en,false,natural_language,4,AI: Reads as a native narrator; the promise wording is repeated with variation.,2026-09-28
+S29,ai-en-1,en,false,originality,3,AI: Dying-parent promise is familiar; the warm lamp-and-key mechanism is ours.,2026-09-28
+S29,ai-en-1,en,false,length_fit,3,"AI: 903 units is 10% under the floor, inside the ±15% tolerance; resolves.",2026-09-28
+S30,ai-en-1,en,false,hook,4,AI: Wet-chalk smell from a closed classroom sets a clear question early.,2026-09-28
+S30,ai-en-1,en,false,pacing,3,"AI: Ordered beats, but the attendance twist is explained rather than dramatised.",2026-09-28
+S30,ai-en-1,en,false,atmosphere,4,"AI: Sealed windows, locked cupboard, desks turning: effective restrained dread.",2026-09-28
+S30,ai-en-1,en,false,natural_language,4,AI: Native narration with spoken cadence; one or two compressed lines stumble.,2026-09-28
+S30,ai-en-1,en,false,originality,2,AI: Duplicate of the sibling school-blackboard story; the roll-call twist is reused.,2026-09-28
+S30,ai-en-1,en,false,length_fit,1,"AI: 762 units is 24% below the 1000 floor, well outside the band.",2026-09-28
+S32,ai-en-1,en,false,hook,4,AI: Lit village house and a key in a drawer pose the question cleanly.,2026-09-28
+S32,ai-en-1,en,false,pacing,3,AI: Beats in order but the city-excuses middle restates the same delay repeatedly.,2026-09-28
+S32,ai-en-1,en,false,atmosphere,3,"AI: Incense and warm dust give mild dread; the tone leans elegiac, not horror.",2026-09-28
+S32,ai-en-1,en,false,natural_language,4,AI: Native and spoken; 'the promise walking home without me' closes well.,2026-09-28
+S32,ai-en-1,en,false,originality,2,AI: Duplicate of the sibling village-key story; second room and bills add little.,2026-09-28
+S32,ai-en-1,en,false,length_fit,1,"AI: 805 units is 19.5% below the 1000 floor, outside the band.",2026-09-28
+S36,ai-en-1,en,false,hook,3,AI: Notebook-versus-court-statement question appears early but the desk frame is static.,2026-09-28
+S36,ai-en-1,en,false,pacing,2,AI: Restates the wording-and-length mismatch in paragraph after paragraph with no turn.,2026-09-28
+S36,ai-en-1,en,false,atmosphere,2,"AI: Procedural and airless; no sensory detail, no ordinary dread.",2026-09-28
+S36,ai-en-1,en,false,natural_language,3,AI: Native but monotone; near-identical sentences recur throughout.,2026-09-28
+S36,ai-en-1,en,false,originality,3,"AI: Wording-length mismatch is a fair true-crime mechanism, lightly and repetitively handled.",2026-09-28
+S36,ai-en-1,en,false,length_fit,1,AI: Mostly consistent; withdrawn-statement logic again left unclear.,2026-09-28
+S36,ai-en-1,en,false,factual_care,4,"AI: 827 units is 17% below the 1000 floor, outside the band.",2026-09-28
+S36,ai-en-2,en,false,hook,4,"AI: Notebook image under a fan plus an explicit unanswered question; three sentences, not two.",2026-09-28
+S36,ai-en-2,en,false,pacing,1,"AI: Twenty near-identical record paragraphs; no beats, no tempo change, no twist.",2026-09-28
+S36,ai-en-2,en,false,atmosphere,3,"AI: Quiet archival mood from stored paper, but narration stays flat procedural.",2026-09-28
+S36,ai-en-2,en,false,natural_language,2,"AI: Endless 'according to the record' hedging; written-report register, poor for listening.",2026-09-28
+S36,ai-en-2,en,false,originality,2,AI: Generic wrongful-conviction furniture; only the one-day signing shift is distinct.,2026-09-28
+S36,ai-en-2,en,false,length_fit,1,"AI: 827 units, 17% below the 1000 floor; ending resolves but band missed.",2026-09-28
+S36,ai-en-2,en,false,factual_care,5,AI: No real person or incident; claims hedged to the record and internally consistent.,2026-09-28
+S32,ai-en-2,en,false,hook,4,"AI: Burning windows and a carried key; clear guilt question, but three sentences.",2026-09-28
+S32,ai-en-2,en,false,pacing,4,"AI: Steady arc: excuses, death, dreams, return, release; tempo shifts, tight aftermath.",2026-09-28
+S32,ai-en-2,en,false,atmosphere,4,"AI: Ordinary dread from incense, a cold key, a vanished shawl; no gore.",2026-09-28
+S32,ai-en-2,en,false,natural_language,5,"AI: Native, spare, spoken-aloud sentences; one idea each; nothing jarring.",2026-09-28
+S32,ai-en-2,en,false,originality,3,AI: Familiar mother-promise haunting; debtor-becomes-carrier twist is not the default.,2026-09-28
+S32,ai-en-2,en,false,length_fit,1,"AI: 805 units, 19.5% below floor; resolves cleanly but band missed.",2026-09-28
+S30,ai-en-2,en,false,hook,5,AI: Wet chalk smell and writing blackboard in two sentences; listener must stay.,2026-09-28
+S30,ai-en-2,en,false,pacing,4,AI: Beats climb from ledger warning to Present; desk-scrape tempo shift lands.,2026-09-28
+S30,ai-en-2,en,false,atmosphere,4,AI: Flickering corridor light and dust do the work; nothing explicit needed.,2026-09-28
+S30,ai-en-2,en,false,natural_language,5,"AI: Clean, plain, listenable; spare sentences, spoken rhythm, no clutter.",2026-09-28
+S30,ai-en-2,en,false,originality,4,AI: Haunted school is familiar; attendance-taking mechanism and name entry are ours.,2026-09-28
+S30,ai-en-2,en,false,length_fit,1,"AI: 762 units, 24% below floor; ending resolves but band missed.",2026-09-28
+S29,ai-en-2,en,false,hook,4,"AI: Dead mother, lit house, pocket key; clear tension, but three sentences.",2026-09-28
+S29,ai-en-2,en,false,pacing,3,"AI: Padded middle of rent, trains, excuses; dream and lamp beats do land.",2026-09-28
+S29,ai-en-2,en,false,atmosphere,4,"AI: Incense, warm lamp without flame, waiting chair; quiet, non-explicit dread.",2026-09-28
+S29,ai-en-2,en,false,natural_language,4,"AI: Native and speakable; a few literary constructions read written, not spoken.",2026-09-28
+S29,ai-en-2,en,false,originality,3,AI: Same inherited-promise haunting; lamp still warm and deed discovery not default.,2026-09-28
+S29,ai-en-2,en,false,length_fit,3,"AI: 903 units, within 15% of floor; ending resolves.",2026-09-28
+S26,ai-en-2,en,false,hook,4,"AI: Chair dragging above a locked empty terrace; uneasy, but three sentences.",2026-09-28
+S26,ai-en-2,en,false,pacing,4,"AI: Sound escalates to glass test, loose chain, chair at the door; aftermath brief.",2026-09-28
+S26,ai-en-2,en,false,atmosphere,4,"AI: Scrape rhythm, warm chain, paint dust and tracks; ordinary detail carries dread.",2026-09-28
+S26,ai-en-2,en,false,natural_language,5,"AI: Plain native narration; short speakable sentences, one idea at a time.",2026-09-28
+S26,ai-en-2,en,false,originality,3,AI: Standard haunted-building dragging chair; outward tracks and chain rattle not default.,2026-09-28
+S26,ai-en-2,en,false,length_fit,3,"AI: 870 units, within 15% of floor; ending resolves.",2026-09-28
+S23,ai-en-2,en,false,hook,4,"AI: Self-lighting lamp with the fuse pulled; strong tension, but three sentences.",2026-09-28
+S23,ai-en-2,en,false,pacing,4,AI: Log entries build to self-writing page and shoreline figure; reveal at the peak.,2026-09-28
+S23,ai-en-2,en,false,atmosphere,5,"AI: Dread from vanishing sea sound, salt, wet marks; nothing explicit; listener supplies fear.",2026-09-28
+S23,ai-en-2,en,false,natural_language,4,AI: Native and listenable; a few stately written phrasings resist the ear.,2026-09-28
+S23,ai-en-2,en,false,originality,4,AI: Lighthouse logs are furniture; self-writing record and 'do not let it see' are ours.,2026-09-28
+S23,ai-en-2,en,false,length_fit,3,"AI: 883 units, within 15% of floor; ending resolves.",2026-09-28
+S22,ai-en-2,en,false,hook,4,"AI: Chalk heard from a locked classroom; clear unease, but three sentences.",2026-09-28
+S22,ai-en-2,en,false,pacing,3,"AI: Escalates well, yet chronology wobbles after 'since then' with a stray next morning.",2026-09-28
+S22,ai-en-2,en,false,atmosphere,4,"AI: Dust, damp plaster, flickering corridor light; atmosphere never leans on gore.",2026-09-28
+S22,ai-en-2,en,false,natural_language,4,AI: Native and mostly speakable; occasional written constructions slow the telling.,2026-09-28
+S22,ai-en-2,en,false,originality,4,AI: Haunted classroom familiar; private childhood name and reversing clock are ours.,2026-09-28
+S22,ai-en-2,en,false,length_fit,3,"AI: 902 units, within 15% of floor; ending resolves.",2026-09-28
+S21,ai-en-2,en,false,hook,3,"AI: Statement mismatch raises a clear question, but the framing stays abstract.",2026-09-28
+S21,ai-en-2,en,false,pacing,1,"AI: Two facts restated twenty-four times; no progression, no tempo change, no twist.",2026-09-28
+S21,ai-en-2,en,false,atmosphere,2,"AI: Ceiling fan and settled paper; mostly flat administrative register, little mood.",2026-09-28
+S21,ai-en-2,en,false,natural_language,2,"AI: 'According to the record' hedging throughout; report register, unnatural for audio.",2026-09-28
+S21,ai-en-2,en,false,originality,2,AI: Generic wrongful-conviction material; only the one-day signing shift is distinct.,2026-09-28
+S21,ai-en-2,en,false,length_fit,1,"AI: 685 units, 31.5% below floor; ending resolves but band missed.",2026-09-28
+S21,ai-en-2,en,false,factual_care,4,"AI: No real names; hedging wavers, saying 'not merely shorter' then 'longer or shorter'.",2026-09-28
+S20,ai-en-2,en,false,hook,4,"AI: Archive lamp and a swapped page; concrete tension, though shallow.",2026-09-28
+S20,ai-en-2,en,false,pacing,2,"AI: Repeats the missing hour and swapped page; small spread of facts, no real build.",2026-09-28
+S20,ai-en-2,en,false,atmosphere,3,"AI: Weak archive lamp and the river market's hush; mild, thin mood.",2026-09-28
+S20,ai-en-2,en,false,natural_language,2,"AI: Formulaic 'the file says' clauses; flat report cadence, awkward read aloud.",2026-09-28
+S20,ai-en-2,en,false,originality,2,AI: Familiar cold-case furniture; the unsigned letter and swapped page default-ish.,2026-09-28
+S20,ai-en-2,en,false,length_fit,1,"AI: 635 units, 36.5% below floor; ending resolves but band missed.",2026-09-28
+S20,ai-en-2,en,false,factual_care,5,"AI: Synthetic, no real person or incident, timeline internally consistent.",2026-09-28
+S18,ai-en-2,en,false,hook,4,"AI: Bowl facing a sold house each morning; clear tension, three sentences.",2026-09-28
+S18,ai-en-2,en,false,pacing,3,"AI: Arc reaches the debt and cracked bowl, but the aftermath repeats itself twice.",2026-09-28
+S18,ai-en-2,en,false,atmosphere,4,"AI: Turning bowl, cold neck, single rice grain; quiet ancestral dread, nothing explicit.",2026-09-28
+S18,ai-en-2,en,false,natural_language,4,AI: Native and listenable; a few abstract sentences read as written prose.,2026-09-28
+S18,ai-en-2,en,false,originality,3,AI: Ancestral-promise haunting; bowl cracking as payment is the one fresh element.,2026-09-28
+S18,ai-en-2,en,false,length_fit,1,"AI: 835 units, 16.5% below floor; ending resolves but band missed.",2026-09-28
+S16,ai-en-2,en,false,hook,4,"AI: Refilled bottle and small footprints; uneasy and concrete, three sentences.",2026-09-28
+S16,ai-en-2,en,false,pacing,4,"AI: Prints, brass cup, then another driver's debt named; reveal lands and resolves.",2026-09-28
+S16,ai-en-2,en,false,atmosphere,4,"AI: Silenced crickets, self-lighting lamp, prints in dust; dread stays ordinary.",2026-09-28
+S16,ai-en-2,en,false,natural_language,4,AI: Native and speakable; a few flat expository sentences slow tense moments.,2026-09-28
+S16,ai-en-2,en,false,originality,4,AI: Shrine water debt is furniture; inheriting a stranger's unpaid debt is not.,2026-09-28
+S16,ai-en-2,en,false,length_fit,1,"AI: 658 units, 34% below floor; ending resolves but band missed.",2026-09-28
+S14,ai-en-2,en,false,hook,3,"AI: Replacement page flagged early, but the question stays vague and bloodless.",2026-09-28
+S14,ai-en-2,en,false,pacing,1,"AI: Restates the swapped page and missing hour throughout; no build, no reveal.",2026-09-28
+S14,ai-en-2,en,false,atmosphere,2,AI: Dry desk and unchanged river town; almost no sensory or mood work.,2026-09-28
+S14,ai-en-2,en,false,natural_language,2,"AI: Repeating 'the file says' scaffolding; written report style, weak for narration.",2026-09-28
+S14,ai-en-2,en,false,originality,2,AI: Cold-case page swap with unsigned letter; entirely familiar material.,2026-09-28
+S14,ai-en-2,en,false,length_fit,1,"AI: 526 units, 47% below floor; ending resolves but band badly missed.",2026-09-28
+S14,ai-en-2,en,false,factual_care,5,AI: No real person or incident; claims framed as file record and consistent.,2026-09-28
+S13,ai-en-2,en,false,hook,4,"AI: Two clear-night crashes and an unidentified caller; concrete, question asked.",2026-09-28
+S13,ai-en-2,en,false,pacing,2,AI: Details accumulate slowly but the same three facts cycle; no reveal at all.,2026-09-28
+S13,ai-en-2,en,false,atmosphere,3,"AI: Dark coastal road and distant headlights; mild mood, mostly procedural.",2026-09-28
+S13,ai-en-2,en,false,natural_language,2,"AI: Relentless 'the reports say' framing; hears like a form, not a narrator.",2026-09-28
+S13,ai-en-2,en,false,originality,3,AI: Familiar cold-case shape; shared pre-crash phone number is a non-default mechanism.,2026-09-28
+S13,ai-en-2,en,false,length_fit,1,"AI: 662 units, 34% below floor; ending resolves but band missed.",2026-09-28
+S13,ai-en-2,en,false,factual_care,5,AI: No real person or incident; every claim hedged to reports and consistent.,2026-09-28
+S12,ai-en-2,en,false,hook,4,"AI: Chair dragged on a roof terrace above the room; concrete unease, three sentences.",2026-09-28
+S12,ai-en-2,en,false,pacing,4,"AI: Sound escalates to flakes, marks, caretaker's short leg, then the corridor; aftermath short.",2026-09-28
+S12,ai-en-2,en,false,atmosphere,4,"AI: One short leg catching paint, warm chain, damp marks; aural dread, no gore.",2026-09-28
+S12,ai-en-2,en,false,natural_language,5,"AI: Native, listenable, well-shaped spoken sentences; no clumsy phrasing.",2026-09-28
+S12,ai-en-2,en,false,originality,4,AI: Haunted-building chair is furniture; the short-legged scrape signature is ours.,2026-09-28
+S12,ai-en-2,en,false,length_fit,3,"AI: 940 units, within 15% of floor; ending resolves.",2026-09-28
+S10,ai-en-2,en,false,hook,5,"AI: Lamp lighting itself after fuse removal, in two sentences; tension immediate.",2026-09-28
+S10,ai-en-2,en,false,pacing,3,"AI: Log and footsteps escalate, but the aftermath loops back in time confusingly.",2026-09-28
+S10,ai-en-2,en,false,atmosphere,4,"AI: Withdrawing sea sound, wet stone, salt in the drawer; strong ordinary dread.",2026-09-28
+S10,ai-en-2,en,false,natural_language,4,AI: Native and speakable; occasional stately written sentence resists the ear.,2026-09-28
+S10,ai-en-2,en,false,originality,4,AI: Lighthouse-log haunting; the durable log and 'sea goes silent' rule are ours.,2026-09-28
+S10,ai-en-2,en,false,length_fit,3,"AI: 922 units, within 15% of floor; ending resolves.",2026-09-28
+S09,ai-en-2,en,false,hook,4,"AI: Bowl turned toward the sold house and a forgotten promise; tense, three sentences.",2026-09-28
+S09,ai-en-2,en,false,pacing,4,"AI: Bowl tests, grandmother's note, the admitted debt, the return; arc resolves.",2026-09-28
+S09,ai-en-2,en,false,atmosphere,4,"AI: Incense, cold neck, closed curtains, unlit window; quiet non-explicit dread.",2026-09-28
+S09,ai-en-2,en,false,natural_language,4,"AI: Native and listenable; a few explanatory sentences sound written, not spoken.",2026-09-28
+S09,ai-en-2,en,false,originality,3,AI: Inherited bowl debt is familiar; 'we took something not ours' is the one turn.,2026-09-28
+S09,ai-en-2,en,false,length_fit,1,"AI: 779 units, 22% below floor; ending resolves but band missed.",2026-09-28
+S07,ai-en-2,en,false,hook,4,"AI: Two crashes, ten years, no brake marks; concrete and questioning.",2026-09-28
+S07,ai-en-2,en,false,pacing,2,"AI: Same three matches restated with little new; no twist, ending unresolved by design.",2026-09-28
+S07,ai-en-2,en,false,atmosphere,2,"AI: Dark coastal road sets place, but the cadence stays administrative throughout.",2026-09-28
+S07,ai-en-2,en,false,natural_language,2,"AI: 'The records place' repeated; report phrasing, not native narration for the ear.",2026-09-28
+S07,ai-en-2,en,false,originality,3,AI: Familiar cold-case pairing; the shared caller number is the non-default mechanism.,2026-09-28
+S07,ai-en-2,en,false,length_fit,1,"AI: 611 units, 39% below floor; ending resolves but band badly missed.",2026-09-28
+S07,ai-en-2,en,false,factual_care,5,"AI: No real person or incident; claims hedged to records, internally consistent.",2026-09-28
+S03,ai-en-2,en,false,hook,3,AI: Bottle and quiet crickets set unease; no question is raised early.,2026-09-28
+S03,ai-en-2,en,false,pacing,4,"AI: Promise, forgetting, refilled bottle, dead engine, debt settled; beats earn places.",2026-09-28
+S03,ai-en-2,en,false,atmosphere,4,"AI: Silenced crickets, cold sealed bottle, prints in dust; dread from ordinary things.",2026-09-28
+S03,ai-en-2,en,false,natural_language,3,"AI: Mostly native; one garbled sentence about the sealed, nearly empty bottle.",2026-09-28
+S03,ai-en-2,en,false,originality,3,AI: Roadside-shrine debt is furniture; the remembered-off promise and metal cup are ours.,2026-09-28
+S03,ai-en-2,en,false,length_fit,3,"AI: 854 units, within 15% of floor; ending resolves.",2026-09-28

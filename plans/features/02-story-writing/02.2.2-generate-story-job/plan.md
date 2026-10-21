@@ -27,7 +27,7 @@ Two rule changes from the high-level plan are load-bearing here and are taken fr
 | O7 | `omni-moderation-latest` is free; 13 categories; no text-length limit found ⚠️ | ✅/⚠️ README O7 (moderation guide) |
 | P1 | `09.5.2-T1` plans `ICreditLedger` with a metering-only P implementation; `09 §5.1` and `12.2.1` call the same port `ICreditService` → CR-2 renames it | ✅ README P1; `../../../09-backend-api.md` §5.1 L309 still says `ICreditService` — follow D1, CR-2 fixes the plan text |
 | P3 | `00 §7` returns a failed generation to the previous state; the true-crime guard sits on `draft → story_generating` | ✅ README P3; `../../../00-overview.md` L313–318 |
-| P6 | Reserve upper bound: input ≤ UTF-8 bytes of the prompt, output ≤ `max_output_tokens`; tiers Short/Standard/Long | ✅ README P6; `../../../12-billing-credits.md` 12.1.1 |
+| P6 | Reserve upper bound: input ≤ UTF-8 bytes of the prompt, output ≤ `max_output_tokens`; tiers Short/Standard/Long | ✅ README P6; `02.2.4-T1` (`price_versions` P subset, metering only — plan 12, the former price/cost authority, is deleted by DEC 10.14) |
 | F04 | The high-level "second invalid output → `story_review` with `story_invalid_output`" breaks `00 §7` from `draft` | ✅ README F04 → the error lives on the run; the episode returns to `previous_episode_status` |
 | F06 | The limit needs a definition of "day" and of what counts, plus a per-attempt record to show errors | ✅ README F06 → D2 `generation_runs` + the rolling 24 h rule |
 | F16 | The worst case is 4 calls (writer + review + revision + review #2); a 120 s p95 is unrealistic for Long | ✅ README F16/CR-6 → §7.4 latency budget; Long is measured, not gated |
@@ -154,7 +154,7 @@ Transition table (this is the authority for the unit tests in `02.2.2-T1`):
 |---|---|---|---|---|---|
 | T1 | `draft` | `RequestStoryGeneration` | `story_generating` | an approved fact sheet exists when `topic = true_crime` (checked by the **handler** through `IFactSheetGuard`, §4 U1 step 5) | `StoryGenerationRequested` |
 | T2 | `story_review` | `RequestStoryGeneration` | `story_generating` | same; the previous version stays current until the new one is saved | `StoryGenerationRequested` |
-| T3 | `story_generating` | `RequestStoryGeneration` | — | 409 `episode_invalid_state` (the run index gives 409 `story_generation_in_progress` for a *new* request racing an active run) | — |
+| T3 | `story_generating` | `RequestStoryGeneration` | — | 409 `story_generation_in_progress` (02 CR-30: the handler reports an episode that is already generating with its own code; the run index gives the same 409 for a *new* request racing an active run) | — |
 | T4 | any other (`story_approved`, `rendering`, `video_review`, `ready`, `scheduled`, `published`, `failed`, `cancelled`) | `RequestStoryGeneration` | — | 409 `episode_invalid_state` | — |
 | T5 | `story_generating` | `MarkGenerationStage` | `story_generating` (no status change) | the episode is generating; the stage order is enforced by `GenerationRun.AdvanceStage` (forward-only, §3.4) | `StoryGenerationStageChanged` |
 | T6 | `story_generating` | `CompleteStoryGeneration` | `story_review` | `versionIds` non-empty and contains `currentStoryVersionId`; the run is in stage `saving` | `StoryGenerated` (Carries `StoryVersionId = currentStoryVersionId`, `Revised = versionIds.Count > 1`) |
@@ -252,7 +252,7 @@ No request body. `lengthTier` and `brief` are episode columns set at creation (0
 |---|---|---|
 | 1 | `db.Episodes` load by id; missing or not the caller's → 404 (09.2.3 L91, never 403) | `episode_not_found` 404 |
 | 2 | `Trigger != User` requires a system context (D1 `SystemContext`); a user setting `autopilot` is rejected | `forbidden` 403 |
-| 3 | state check — `episode.Status ∈ {draft, story_review}` | 409 `episode_invalid_state` |
+| 3 | state check — `episode.Status ∈ {draft, story_review}`; `story_generating` → 409 `story_generation_in_progress` (02 CR-30) | 409 `episode_invalid_state` for every other status |
 | 4 | **true-crime guard hook** — `IFactSheetGuard.EnsureApprovedAsync(episode.Id, series.Topic, ct)` (owner 02.5.3; TL ruling). The handler needs only the verdict; it stores `ApprovedFactSheet.FactSheetId` as `input_fact_sheet_id` (null for a non-true-crime episode with no sheet) | 409 `fact_sheet_required` |
 | 5 | **daily limit** (02.4.2-T1, §4 U6) | 429 `story_generation_limit` + `Retry-After` |
 | 6 | active-run check — explicit query for the fastest error, the partial unique index is the guarantee | 409 `story_generation_in_progress` |
@@ -334,14 +334,14 @@ public sealed class MeteringOnlyCreditLedger : ICreditLedger
 | 1 | `writing` | `progress.StartAsync`; `IStoryWriter.WriteAsync(req, ct)` with `req = StoryWriteRequestFactory.Build(run, episode, series, length, bible, facts, avoidPlots)` | see §7.2's outcome table (retry once on `InvalidOutput`, then fail) |
 | 2 | `checking` | `StoryDraftValidator.Validate(content, rules)` then `StoryQualityChecker.Check(content, ctx)` — pure, no retry, no writer call | validator `Reject` cannot happen here (step 1 already rejected those); `Blocking`/`Advisory` go into `audit.v1.local.issues` (D22) |
 | 3 | `checking` | `IContentModerator.CheckAsync([title, body, description, tags…], ModerationStage.Draft, ct)` (§4 U5) | blocking category → recorded + approval blocked downstream; non-blocking → advisory hint. **Not** a run failure (D12 L328) |
-| 4 | `reviewing` | `IStoryWriter.ReviewAsync(reviewReq, ct)` — only when `Story:SelfReview:Enabled` (default **true**) | `InvalidOutput`/`Moderated`/provider errors map as in §7.2 |
+| 4 | `reviewing` | `IStoryWriter.ReviewAsync(reviewReq, ct)` — only when `Story:Review:Enabled` (default **true**; 02 §10 T113) | `InvalidOutput`/`Moderated`/provider errors map as in §7.2 |
 | 5 | `revising` | `IStoryWriter.ReviseAsync(revReq, ct)` — **only when ≥ 1** review issue is `blocking` **and** `objective`; then steps 2–4 run **once more** on the revision (review #2, no further revision) | review #2's issues are recorded in `audit.v1.revision.review_after` |
 | 6 | `scoring` | `SimilarityScorer.Score(storyText, corpus, options)` with the corpus from `ISimilarityCorpusProvider.LoadAsync(episodeId, lang, ct)` (D21/02.5.6) | advisory only; the score is stored, the block happens at approve |
 | 7 | `saving` | build `StoryVersion` rows (`generated`, plus `revised` with `parent_version_id`), derive `body`/`keywords`/`word_count`, insert, write `audit_report` + `similarity_score`; `progress.CompleteAsync` → settle + outbox `StoryGenerated` | a DB failure → `FailAsync` (`story_generation_failed`) and the reservation is refunded |
 
 The **one invalid-output retry** is step 1's own loop, and only there: a second `InvalidOutput` fails the run `story_invalid_output`. The retry sets `RunContext.Attempt + 1` and `StoryWriteRequest.Correction = new WriterCorrection(ruleIds)`; the assembler emits that as the data-object key `correction: { previous_attempt_failed_rules: [...] }` — **never** the invalid text (02.2.3/D6). No retry is taken from step 2 or from `ReviseAsync` (02.6.2 owns the "revision `Reject` → keep the pre-revision version" rule).
 
-`Story:SelfReview:Enabled` (default `true`) exists so this plan can ship before 02.6.1: with the flag off, steps 4–5 are skipped and the run goes `writing → checking → scoring → saving`. The flag is read once per run; the value actually used is recorded in `generation_runs.models` so a later quality investigation can tell the two pipelines apart.
+`Story:Review:Enabled` (default `true`; shipped by 02.6.1-T1, 02 §10 T113) exists so this plan can ship before 02.6.1: with the flag off, steps 4–5 are skipped and the run goes `writing → checking → scoring → saving`. The flag is read once per run; the value actually used is recorded in `generation_runs.models` so a later quality investigation can tell the two pipelines apart.
 
 `StoryWriteRequestFactory` (Application `Features/Stories/Generation`) is the only place that calls `IBibleSnapshotProvider.GetForWriterAsync(seriesId, ct)` and `IStructurePlanProvider.GetForEpisodeAsync(episodeId, ct)` (peer contracts, §10). It also sets `RunContext.PriceVersion = priceCatalog.GetActive(run.QueuedAt).Version` (string, D21; 12 CR-17) so every step prices its own call consistently with the reserve.
 
@@ -454,12 +454,12 @@ post:
 
 ## 6. UI
 
-Reference stories — this backend designs no screen: **10.5.2** (new episode + generate, S), **10.5.3** (story editor, L), **10.5.10** (hints/highlights/conflicts, L), **10.8.4** (paused-processing states, S). What this plan must supply:
+Reference stories — this backend designs no screen: **10.5.2** (new episode + generate, S), **10.5.3** (story editor, L), **10.5.10** (hints/highlights/conflicts, L). What this plan must supply:
 
 | UI state | Backend source | Notes |
 |---|---|---|
 | generating (live) | `EpisodeUpdated` → `generation.stage` | 10.5.2 "after click the page shows the generating state live (SignalR) and becomes the editor when done" |
-| paused | `processingPaused` on `GET /episodes/{id}` / `EpisodeUpdated` | 10.8.4: "Processing is paused. Your credits are reserved, not charged yet" — shown instead of an error |
+| paused | `processingPaused` on `GET /episodes/{id}` / `EpisodeUpdated` | shown instead of an error; the copy names the pause only — no credits copy in P (DEC 10.14: cost metering is owner-only) |
 | failed | `generation.errorCode` + `moderationCategories` | the run is the only place the code lives (F04/F06); the UI must also offer "Try again" from `draft`/`story_review` |
 
 Copy keys the UI needs (vi/en), all under the `story.generation.*` namespace; the backend returns **codes**, the UI resolves the key (no prose from the API, D19):
@@ -476,7 +476,7 @@ Copy keys the UI needs (vi/en), all under the `story.generation.*` namespace; th
 | `story.generation.error.story_generation_failed` | `Không tạo được kịch bản. Vui lòng thử lại.` | `The story could not be generated. Please try again.` |
 | `story.generation.error.story_generation_limit` | `Đã đạt giới hạn 5 lần tạo mỗi ngày cho tập này. Còn {{seconds}} giây.` | `This episode reached its 5 generations for today. {{seconds}}s left.` |
 | `story.generation.error.spend_cap_reached` | `Đã chạm hạn mức chi tiêu. Vui lòng thử lại sau.` | `The spending cap was reached. Please try again later.` |
-| `story.generation.paused.provider_funds_exhausted` | `Tạm dừng xử lý. Tín dụng đã được giữ, chưa trừ.` | `Processing is paused. Your credits are reserved, not charged yet.` |
+| `story.generation.paused.provider_funds_exhausted` | `Tạm dừng xử lý. Vui lòng thử lại sau.` | `Processing is paused. Please try again later.` |
 | `story.generation.moderation.brief` | `Ý tưởng chưa phù hợp. Hãy bỏ các chi tiết bị đánh dấu và thử lại.` | `The idea is not suitable. Remove the flagged details and try again.` |
 | `story.generation.moderation.child_safety` | `Không được có nội dung liên quan đến trẻ em.` | `Content involving minors is not allowed.` |
 | `story.generation.moderation.graphic_violence` | `Giảm mô tả bạo lực chi tiết.` | `Reduce graphic violence.` |
@@ -610,7 +610,7 @@ For every row: branch (a) → `status = failed`, `error_code` = the kind's gener
 | `IFactSheetGuard` | port records declared by 02.2.2-T2, implementation 02.5.5-T1 (folder `02.5.3-fact-sheet/`, TL ruling; 02 CR-24) | §4 U1 step 4 / §4 U4 step 0 |
 | `IBibleSnapshotProvider` / `IStructurePlanProvider` | 02.6.3 / 02.8.1 (BibleIdeasPlan) | both nullable; absent → the data object omits the key |
 | `ISimilarityCorpusProvider` / `SimilarityScorer` | 02.5.6 (CheckpointSimilarityPlan) | a corpus failure degrades to `similarityScore = null` and a `similarity_unavailable` local advisory issue, never a failed run |
-| `IStoryWriter.ReviewAsync` / `ReviseAsync` | 02.6.1/02.6.2 | §7.2; `Story:SelfReview:Enabled = false` skips both |
+| `IStoryWriter.ReviewAsync` / `ReviseAsync` | 02.6.1/02.6.2 | §7.2; `Story:Review:Enabled = false` skips both (02 §10 T113) |
 
 ## 8. Security and privacy
 
@@ -664,9 +664,10 @@ Application unit (`tests/NightTales.Application.UnitTests/Features/Stories/`), w
 | `Pipeline_ModeratedDraft_FailsModerated_Counted_Refunded` | §7.2 + one `moderation_events` row |
 | `Pipeline_BriefFlagged_FailsBeforeAnyPaidCall` | `FakeTextClient.Calls == 0` |
 | `Pipeline_BlockingCategoryInDraft_DoesNotFailTheRun_FlagsApproval` | D12 L328 |
-| `Pipeline_BlockingObjectiveIssue_RunsExactlyOneRevisionAndReviewTwo` | 02.6.2's rule: one revision, then review #2, then stop |
+| ~~`Pipeline_BlockingObjectiveIssue_RunsExactlyOneRevisionAndReviewTwo`~~ | moved to 02.6.2-T1 with step 5 (02 §10 T113) |
+| `Pipeline_BlockingObjectiveIssue_NoReviser_KeepsGeneratedVersion` | no `ReviseAsync` yet: the issues are recorded in `audit_report`, the generated version is kept, no `revising` stage (02 §10 T113) |
 | `Pipeline_AdvisoryOnlyIssue_SkipsRevision` | no `revising` stage |
-| `Pipeline_SelfReviewDisabled_SkipsReviewAndRevision` | `Story:SelfReview:Enabled = false` |
+| `Pipeline_ReviewDisabled_SkipsReviewAndRevision` | `Story:Review:Enabled = false` (02 §10 T113) |
 | `Pipeline_BudgetGuardDeniesAtSecondDispatch_PausesQueued_NoRefund` | §7.2 |
 | `Pipeline_ProviderFundsExhausted_StaysQueued_WithPauseReason` | §7.2 + 12.8.3 |
 | `Pipeline_DeadlineExceeded_FailsGenerationFailed_Refunded` | per-run timeout |
@@ -674,7 +675,7 @@ Application unit (`tests/NightTales.Application.UnitTests/Features/Stories/`), w
 | `Job_RunningOwnedByAnotherWorker_Returns` | crash/idempotency |
 | `StoryWriteRequestFactory_SetsPriceVersionFromQueuedAt` | D21 — the string `PriceVersion` (12 CR-17) |
 
-Integration (`tests/NightTales.Api.IntegrationTests/`, `WebApplicationFactory` + Testcontainers PostgreSQL):
+Integration (`tests/NightTales.Api.IntegrationTests/`, `WebApplicationFactory` + real PostgreSQL 17 via `PostgresFixture`):
 
 | Name | Asserts |
 |---|---|
@@ -694,7 +695,7 @@ Integration (`tests/NightTales.Api.IntegrationTests/`, `WebApplicationFactory` +
 | `Generate_AnotherTenantsEpisode_Returns404` | the generated cross-tenant table (09.2.3 L95) |
 | `Generate_ConcurrentTwoCalls_OnlyOneRun` | the FOR UPDATE lock + the unique index |
 | `Sweeper_RunningPastDeadline_FailsNotCounted_ReturnsEpisodeToPreviousStatus` | §7.3 (a), F04 |
-| `Sweeper_QueuedOver12h_CancelsRefundsAndEmails` | §7.3 (b), 12.8.3 |
+| `Sweeper_QueuedOver12h_CancelsAndRefunds` | §7.3 (b); the 12.8.3 e-mail is a hand-over (02 §10 T113(e)) |
 | `Sweeper_CoversEveryKind` | five seeded runs, one per kind, all swept (D2 L139) |
 | `Sweeper_SeriesLevelRun_FailsWithoutTouchingAnEpisode` | `episode_id IS NULL` |
 | `MeteringOnlyCreditLedger_WritesNoLedgerRows_SettleAndRefundAreNoOps` | D1/P1 |
@@ -711,7 +712,7 @@ Manual / M1: `OPENAI_LIVE_TESTS=1` runs one real `WriteAsync` + one `ReviewAsync
 |---|---|---|---|---|
 | 02.2.2-T1 | `story_versions` + `generation_runs` + `Episode` methods + migration | M 1.0 | 09.2.2 (initial migration), 09.5.1 (`Episode` aggregate), 02.1.1-T0 (D3/D4 types) | T2, T3, 02.5.3-T2, 02.8.1-T1 |
 | 02.2.2-T2 | `GenerateStoryCommand` + endpoint + idempotency + `IBudgetGuard` + `ICreditLedger` | S 0.5 | T1, 09.1.3 (behaviours), 02.2.4-T1 (`IStoryCostEstimator`), 02.4.2-T1; 02.5.5-T1 soft (CR-24) | 02.3.1-T1, 02.5.5-T1 (port, CR-24) |
-| 02.2.2-T3 | `GenerateStoryJob` + stages + settle/refund + timeout + `StaleGenerationSweeperJob` | M 1.0 | T1, T2, 02.2.1-T2 (`IStoryWriter`), 02.2.3-T2 (assembler), 02.4.1-T1 | 02.3.2-T1, 02.6.1-T1, 12.2.4-T1 (12: story command wiring; 09.5.2-T1 withdrawn, 09 W2 CR-3) |
+| 02.2.2-T3 | `GenerateStoryJob` + stages + settle/refund + timeout + `StaleGenerationSweeperJob` | M 1.0 | T1, T2, 02.2.1-T2 (`IStoryWriter`), 02.2.3-T2 (assembler), 02.4.1-T1, 02.6.1-T1 (`ReviewAsync`) | 02.3.2-T1 (09.5.2-T1 withdrawn, 09 W2 CR-3; 12.2.4-T1 deleted by DEC 10.14) |
 | 02.4.1-T1 | `IContentModerator` + `OpenAiContentModerator` + refusal mapping + `moderation_events` | S 0.5 | T1 (`error_code` column), 02.2.4-T1 (`IUsageMeter`) | T3, 02.8.2-T2 |
 | 02.4.2-T1 | Rolling-24 h generation limit + 429 + `Retry-After` + row lock | XS 0.25 | T1 (`generation_runs` + the counting rule) | T2 (calls it) |
 | **Total** | | **3.25 d** | | |
@@ -734,7 +735,7 @@ Items **1–6 and 8** below were **resolved by the TL on 2026-09-24** (README §
 
 ## 11. Rollout
 
-- **Feature flags:** none of its own. `Story:SelfReview:Enabled` (default **true**) is the only toggle and it exists to decouple this plan from 02.6.1/02.6.2; `Budget:Enabled` (default true) is the guard's kill-switch for tests only. `source_finder` (02.7) is unrelated.
+- **Feature flags:** none of its own. `Story:Review:Enabled` (default **true**; 02 §10 T113) is the only toggle and it exists to decouple this plan from 02.6.1/02.6.2; `Budget:Enabled` (default true) is the guard's kill-switch for tests only. `source_finder` (02.7) is unrelated.
 - **Migration order:** `02.2.2-T1`'s `AddGenerationRunsAndStoryVersionProvenance` ships first and alone (expand only, no backfill, no `DROP`); T2/T3 then depend on the table. `09.2.2-T2`'s CI check must run it against both an empty DB and the seeded previous schema.
 - **Order of implementation:** T1 → 02.4.2-T1 (it is a query + a check, and T2 calls it) → T2 → 02.4.1-T1 → T3. T3 is the first task that can be exercised end-to-end; until 02.2.1-T2 lands, `FakeTextClient` (D20) stands in for the adapter.
 - **Monitoring (D19):** `story_generation_duration_seconds{tier,stage}`, `openai_tokens_total{operation,model,kind}`, `openai_cost_usd_total{operation}`, `story_invalid_output_total`, `moderation_flags_total{stage,category}`, plus `story_generation_runs_total{kind,status,trigger}` and `story_generation_soft_timeout_total`. Alerts: `story_generation_failed` rate > 10 % over 15 min (P1 to the owner), any `spend_cap_reached`/`provider_funds_exhausted` (P1, 12.8.3), sweeper finding more than 3 stale runs in one pass (P2 — usually a Worker outage), and `moderation_flags_total{stage="brief"}` spiking (P3, abuse signal).

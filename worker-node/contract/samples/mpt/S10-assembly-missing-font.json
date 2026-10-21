@@ -1,0 +1,25 @@
+{
+  "schema": "mpt-sample.v1",
+  "scenario": "S10-assembly-missing-font",
+  "date": "2026-09-26",
+  "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+  "task_id": "17f5ee64-243e-43d5-836f-e329f2349e51",
+  "setup": "font_name='missing-font-xyz.ttf', subtitle_enabled=true (raw body, no preset override)",
+  "verdict": "moviepy TextClip raises ValueError on a missing font during the video stage. failed_stage surfaces as 'pipeline' (NOT 'video'): _mark_task_failed caught the uncaught exception (task.py L1732-1739). The adapter must map pipeline->render_assembly_failed/render_node_error, and MUST match on failed_stage, never on error text.",
+  "task": {
+    "status": 200,
+    "message": "success",
+    "data": {
+      "task_id": "17f5ee64-243e-43d5-836f-e329f2349e51",
+      "state": -1,
+      "progress": 75,
+      "videos": null,
+      "combined_videos": null,
+      "failed_stage": "pipeline",
+      "error": "ValueError: Invalid font <mpt_root>/resource/fonts/missing-font-xyz.ttf, pillow failed to use it with error cannot open resource",
+      "cross_post_state": null,
+      "cross_post_results": null,
+      "cross_post_error": null
+    }
+  }
+}

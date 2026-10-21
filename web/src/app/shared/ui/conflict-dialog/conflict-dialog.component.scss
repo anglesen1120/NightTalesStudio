@@ -1,0 +1,92 @@
+:host {
+  display: block;
+}
+
+.conflict-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-4);
+  width: min(520px, 100%);
+  padding: var(--nts-space-5);
+  border: 1px solid var(--nts-color-outline);
+  border-radius: var(--nts-radius-dialog);
+  background: var(--nts-color-surface);
+  color: var(--nts-color-on-surface);
+  box-shadow: var(--nts-elevation-2);
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--nts-type-title-size);
+  line-height: var(--nts-type-title-line);
+}
+
+.conflict-dialog__body {
+  min-width: 0;
+  color: var(--nts-color-on-surface-muted);
+}
+
+p,
+ul {
+  max-width: var(--nts-measure);
+  margin: 0;
+}
+
+ul {
+  margin-top: var(--nts-space-3);
+  padding-inline-start: var(--nts-space-5);
+}
+
+/* The heading is a label for its own list, so it stays in the muted body colour and only groups the items below. */
+.conflict-dialog__detail-heading {
+  margin: var(--nts-space-3) 0 0;
+  font-size: inherit;
+  font-weight: var(--nts-type-label-weight);
+}
+
+li + li {
+  margin-top: var(--nts-space-1);
+}
+
+.conflict-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--nts-space-2);
+  flex-wrap: wrap;
+}
+
+button {
+  min-height: var(--nts-control-h);
+  padding-inline: var(--nts-space-3);
+  border: 1px solid var(--nts-color-control-outline);
+  border-radius: var(--nts-radius-control);
+  background: transparent;
+  color: var(--nts-color-on-surface);
+  font-weight: var(--nts-type-label-weight);
+}
+
+button:hover {
+  border-color: var(--nts-color-on-surface);
+  background: var(--nts-color-surface-variant);
+}
+
+.conflict-dialog__primary {
+  border-color: var(--nts-color-primary);
+  background: var(--nts-color-primary);
+  color: var(--nts-color-on-primary);
+}
+
+.conflict-dialog__primary:hover {
+  border-color: var(--nts-color-on-surface);
+  background: var(--nts-color-primary);
+}
+
+@media (max-width: 767px) {
+  .conflict-dialog {
+    padding: var(--nts-space-4);
+  }
+
+  .conflict-dialog__actions button {
+    flex: 1 1 120px;
+  }
+}

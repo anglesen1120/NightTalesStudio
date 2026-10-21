@@ -7,11 +7,11 @@
 
 ## 1. Scope
 
-**Stories.** 09.3.4 profile (Must · S 0.5); 09.3.5 abuse limits (Must · S 0.5); 09.3.6-T1 the `audit_logs` + `AuditBehavior` half of the activity log (Must · M 1.0 — 02 CR-3 split: **T1 = P**, `GET /me/activity`/`GET /episodes/{id}/activity` = 09.3.6-T2, S). Total **2.0 d** (B9).
+**Stories.** 09.3.4 profile (Must · S 0.5); 09.3.5 abuse limits (Must · S 0.5); 09.3.6-T1 the `audit_logs` + `AuditBehavior` half of the activity log (Must · M 1.0 — 02 CR-3 split: **T1 = P**; the projection half (`GET /me/activity`, `GET /episodes/{id}/activity`) was phase S, dropped by DEC 10.14). Total **2.0 d** (B9).
 
 **In scope.** `GET`/`PATCH /me` over the Identity user (`display_name`, `ui_locale` vi/en, read-only `email`, MFA state, role); the rate-limit policies `auth`/`paid`/`hub` with the 429 `rate_limited` + `Retry-After` response and the forwarded-header trust rule; the `audit_logs` table + migration, `[Audited]`/`[NotAudited]`, `AuditBehavior` in pipeline slot 6 inside the UnitOfWork transaction, the `IAuditData` projection, the `IAuditWriter` port for auth handlers/jobs/CLI, the architecture test and the ordered retention rule list consumed by 09.7.3-T1.
 
-**Out of scope.** `GET /me/activity`, `GET /episodes/{id}/activity` and the 10 `/account/activity` screen (09.3.6-T2, S); sessions/MFA enrolment/re-auth (09.3.2-T1, 09.10.4-T1); password reset (09.3.3-T1); registration (09.3.1-T1/T3); admin endpoints (09.9.x); feature flags (09.9.2-T2); CAPTCHA and progressive login delay (09.3.1/09.3.3 own the counter; this folder only supplies the 429 shape); ingress limits (11) and the 429 UI (10).
+**Out of scope.** `GET /me/activity`, `GET /episodes/{id}/activity` and the 10 `/account/activity` screen (phase S, dropped by DEC 10.14); sessions/MFA enrolment/re-auth (09.3.2-T1, 09.10.4-T1); password reset (09.3.3-T1); registration (09.3.1-T1/T3); admin endpoints (09.9.x); feature flags (09.9.2-T2); CAPTCHA and progressive login delay (09.3.1/09.3.3 own the counter; this folder only supplies the 429 shape); ingress limits (11) and the 429 UI (10).
 
 ## 2. Confirmed facts
 
@@ -27,7 +27,7 @@
 | G8 | `retryAfterSeconds` in the error metadata ⇒ the `Retry-After` header; codes from `ErrorCatalogue`; `rate_limited` is catalogued 429 | Part A D7; `09 §5.4` L424 ✅ |
 | G9 | D14: `/api/v1`, `IEndpointGroup`, camelCase JSON, snake_case enums, cursor `{ items, nextCursor }`; D15 lists ETags for episodes/series only | Part A D14, D15 ✅ |
 | G10 | D10: `IUserOwned` + the `"tenant"` filter; cross-user reads only through `ISystemWorkQuery` + `ISystemContext.For`; other users' rows answer 404, never 403 | Part A D10 ✅ |
-| G11 | P has no public sign-up and 09.3.6-T2 is S ⇒ `/me/activity` does not exist in P | W17 ✅ |
+| G11 | P has no public sign-up and the projection was phase S (dropped, DEC 10.14) ⇒ `/me/activity` does not exist | W17 ✅ |
 | G12 | `audit_logs` + `AuditBehavior` are **P** because 02.3.3 (attestation) and 02.8.2 (autopilot approvals) write rows in P | `../02-story-writing/README.md` F05/CR-3/L349 ✅ |
 | G13 | `IAuditWriter` is already assumed by 02.6.3-T2 step 7 (a Worker job writes through the port) and 11.3.3-T1 (T5 tuple) | 02.6.3-T2 L101; `../11-worker-deployment/README.md` T5 ✅ |
 
@@ -47,13 +47,13 @@ CREATE TABLE audit_logs (
   CONSTRAINT ck_audit_logs_user_visible_has_subject CHECK (visibility <> 'user' OR subject_user_id IS NOT NULL)
 );
 CREATE INDEX ix_audit_logs_subject_created ON audit_logs (subject_user_id, created_at DESC);   -- BD15 / 00 §6
-CREATE INDEX ix_audit_logs_entity ON audit_logs (entity_type, entity_id) WHERE entity_id IS NOT NULL;  -- [INFERENCE] 09.3.6-T2
+CREATE INDEX ix_audit_logs_entity ON audit_logs (entity_type, entity_id) WHERE entity_id IS NOT NULL;  -- [INFERENCE] the activity projection (dropped, DEC 10.14)
 CREATE INDEX ix_audit_logs_created_id ON audit_logs (created_at, id);   -- [RULED — README §B10 WT47] retention sweep deletes by keyset
 ```
 
 No FK from `audit_logs` to `users` — rows outlive the account (13 §5.4 hashes the stored id). Nullable `subject_user_id`, three cases [DECISION]: a user acting on his own account writes `actor_user_id = subject_user_id`, `visibility = user`; an admin acting on another account writes both ids, `visibility` from the attribute; a system row (11.3.3's `render_node.state_changed`, webhook/refund writers) and a **failed login or CAPTCHA challenge on an unknown e-mail** write `subject_user_id = null` with `visibility = internal` and **no plain address in `data`** — the attempted address is stored hashed, the way `email_messages.to_hash` hashes a recipient. A failed login on a **known** account writes that user as `subject_user_id` with `visibility = user`, so it appears in `GET /me/activity` (09 §4 L145). The `CHECK` makes "user-visible row without a subject" unrepresentable; the `(subject_user_id, created_at DESC)` index still serves the feed because a user filter never matches a null key; and the retention rules need no null branch — a null-subject row is always `visibility = internal`, so rule 3 (24 months) matches it before rule 4.
 
-`HasEnumCheck` for `actor_type`/`category`/`visibility`; `data` `jsonb`; `Guid` PK `ValueGeneratedNever`; snake_case (D8). `AuditLog` is **not** `IUserOwned`: it carries `subject_user_id` **and** `actor_user_id`, which one tenant filter cannot express, and the retention sweep reads across users — rows are read with an explicit predicate, and the only P HTTP reader (09.3.6-T2) filters `subject_user_id = ICurrentUser.Id AND visibility = User` [DECISION, D10's explicit-predicate path for non-aggregate rows].
+`HasEnumCheck` for `actor_type`/`category`/`visibility`; `data` `jsonb`; `Guid` PK `ValueGeneratedNever`; snake_case (D8). `AuditLog` is **not** `IUserOwned`: it carries `subject_user_id` **and** `actor_user_id`, which one tenant filter cannot express, and the retention sweep reads across users — rows are read with an explicit predicate, and the only P HTTP reader (the S `09.3.6-T2` activity-feed projection is deleted by DEC 10.14, so no P endpoint reads it yet) filters `subject_user_id = ICurrentUser.Id AND visibility = User` [DECISION, D10's explicit-predicate path for non-aggregate rows].
 
 **Write path.**
 
@@ -121,7 +121,7 @@ First match wins; `Retain = null` = never delete. 09.7.3-T1 deletes through this
 | UC1 | User | `GET /me` | 200 `displayName`, `email`, `uiLocale`, `role`, `mfaEnabled`, `lastLoginAt`; never `securityStamp`, `passwordHash`, `lastTotpStep` |
 | UC2 | User | `PATCH /me { "uiLocale": "vi" }` | 200 with the new profile; later requests read the DB (claims carry no locale) |
 | UC3 | User | `PATCH /me { "displayName": "  " }` | 400 `validation_failed`, field `displayName`; no audit row |
-| UC4 | User | `PATCH /me { "email": "…" }` | 400 `validation_failed`, field `email` — address change is 09.3.1-T3/admin |
+| UC4 | User | `PATCH /me { "email": "…" }` | 400 `validation_failed`, field `email` — address change is out of scope (the e-mail verify/change tasks were phase S, dropped by DEC 10.14) |
 | UC5 | Attacker | 11 `POST /auth/login` in a minute from one IP | the 11th is 429 `rate_limited` + `Retry-After`, unauthenticated |
 | UC6 | Attacker | Spoofs `X-Forwarded-For` from a non-LB peer | ignored: the partition key stays the peer IP |
 | UC7 | User | An `[Audited]` command whose handler fails | 0 rows (rollback); on success exactly 1 row with the attribute's visibility |
@@ -169,7 +169,7 @@ options.AddPolicy(RateLimitPolicies.Hub, ctx => RateLimitPartition.GetFixedWindo
 - Mounting: `auth` on 09.3.2-T1's `/api/v1/auth` group; `paid` on the cost-incurring POSTs of 02 (02.2.2-T2 applies its own line — the `soft` edge), 09.6.1-T1 and 06; `hub` on 09.8.1-T2's `POST /hubs/ticket`. `/me` carries no policy (BD14 lists three) [DECISION].
 - A missing `sub` on a user-keyed policy falls back to `anon:<hash of the peer IP>`, so an anonymous call can never share one global bucket [DECISION].
 
-Events: none — a profile change raises no outbox and no SignalR event [DECISION]; the audit row is the record. Audit itself has no route; **`action` is the stable wire `messageKey`** for 09.3.6-T2 and the vi/en UI, frozen once released [DECISION].
+Events: none — a profile change raises no outbox and no SignalR event [DECISION]; the audit row is the record. Audit itself has no route; **`action` is the stable wire `messageKey`** for the activity projection (dropped, DEC 10.14) and the vi/en UI, frozen once released [DECISION].
 
 ## 6. UI
 
@@ -186,7 +186,7 @@ Reference `../../10-web-ui.md`: the `/account` screen (profile + language, L206,
 
 | Threat | Control |
 |---|---|
-| Audit rows used as a content store | `data` comes only from `IAuditData`; no story text, tokens, secrets or addresses; 09.3.6-T2 allow-lists keys per `action`; a reviewer reads every new command's `IAuditData` |
+| Audit rows used as a content store | `data` comes only from `IAuditData`; no story text, tokens, secrets or addresses; keys per `action` are allow-listed (the projection task is dropped by DEC 10.14); a reviewer reads every new command's `IAuditData` |
 | PII in a row (IP, user agent) | written only for security events (auth/session writers); ordinary commands leave both null; `user_agent` ≤ 300 chars |
 | Cross-tenant read | the only P reader filters `subject_user_id = ICurrentUser.Id AND visibility = User`; the retention sweep runs under D10's allow-list |
 | Rows outliving a deleted account (13 §5.4) | no FK to `users`; deletion hashes the stored id instead of cascading |
@@ -197,7 +197,7 @@ Reference `../../10-web-ui.md`: the `/account` screen (profile + language, L206,
 
 ## 9. Test plan
 
-Harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), Testcontainers PostgreSQL, `FakeClock`, hand-written fakes — no mocking library (D13). Rate-limit tests inject low limits through config overrides so nothing sleeps. The per-test method tables are in each task file; the suites are:
+Harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`; 09 W3 CR-35), `FakeClock`, hand-written fakes — no mocking library (D13). Rate-limit tests inject low limits through config overrides so nothing sleeps. The per-test method tables are in each task file; the suites are:
 
 - `NightTales.Api.IntegrationTests` — `MeEndpointsTests` (own profile only, 401 unauthenticated, no security fields, locale persists, 400s for long/empty/`email`, one audit row), `RateLimitTests` + `ForwardedHeadersTests` + `RateLimitingOptionsTests` (11th request 429 with `rate_limited` + `Retry-After`, rejection never reaches the handler, per-user not per-IP partition, sliding-window smoothing, hub cap, `anon:<iphash>` fallback, disabled = pass-through, spoofed header ignored, `XForwardedHost` never trusted, bad CIDR fails startup), `AuditWriteTests` (row commits with the change, handler error rolls both back, operator tuple, row outlives user delete).
 - `NightTales.Application.UnitTests` — `AuditBehaviorTests` (one row on success, none on error, one row for a keyed replay, actor-type derivation, `data` only from `IAuditData`), `AuditRetentionRulesTests` (first match wins, 730/365 windows).
@@ -209,8 +209,8 @@ Harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), Testcont
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 09.3.4-T1 | `GET`/`PATCH /me` (display name, UI locale, e-mail read-only, MFA state) | BE | S (0.5) | 09.3.2-T1, 09.9.2-T2 (soft, `features`; 10 CR-10) | 10.2.6-T1 (10 CR-8) |
-| 09.3.5-T1 | Rate-limit policies `auth`, `paid`, `hub`, `anon`; 429 `rate_limited` with `Retry-After`; forwarded-header rule | BE | S (0.5) | 09.3.2-T1 | 02.2.2-T2 soft, 09.3.3-T2, 09.10.8-T1 (09 W3 CR-17), 13.3.4-T1 |
-| 09.3.6-T1 | `audit_logs` migration, `[Audited]`/`[NotAudited]`, `AuditBehavior`, `IAuditWriter`, architecture test, retention rule list | BE | M (1.0) | 09.1.3-T2, 09.2.4-T1 | 09.2.6-T2, 09.7.3-T1, 11.3.3-T1, 09.3.6-T2, 09.9.1-T1 (09 W3 CR-17) |
+| 09.3.5-T1 | Rate-limit policies `auth`, `paid`, `hub`, `anon`; 429 `rate_limited` with `Retry-After`; forwarded-header rule | BE | S (0.5) | 09.3.2-T1 | 02.2.2-T2 soft |
+| 09.3.6-T1 | `audit_logs` migration, `[Audited]`/`[NotAudited]`, `AuditBehavior`, `IAuditWriter`, architecture test, retention rule list | BE | M (1.0) | 09.1.3-T2, 09.2.4-T1 | 09.2.6-T2, 09.7.3-T1, 11.3.3-T1 |
 
 Total **2.0 d** (high-level S+S+S = 1.5; +0.5 because audit grew to M — architecture test, `IAuditWriter`, system-event writers; B9).
 
@@ -221,7 +221,7 @@ Total **2.0 d** (high-level S+S+S = 1.5; +0.5 because audit grew to M — archit
 - [OPEN] CR requested of 09.7.3-T1: its audit delete hardcodes the windows and has **no rule-1 predicate** (`09.7.3-T1-retention-sweep-job.md` L54–62, its `plan.md` L173–183) — a `category='billing'`, `visibility='user'` row older than 12 months would be deleted, contradicting 09 §4 L147 once plan 12 lands. It must consume `AuditRetentionRules.Ordered` and carry the payment-linked rule.
 - [OPEN] Reserved `[Audited]` names live in 09.4.1 plan L66 and 09.5.1 plan L118, but B8.1 gives 09.3.6-T1 no `Depends on`/`Blocks` edge to those tasks: the attributes are applied by their owners (09.4.1-T1, 09.5.1-T1, and 02's commands already carry theirs) in their own change sets, and this task ships **no allow-list** — a command without an attribute must fail the build. If the TL wants that sequencing enforced, the edges have to be added to B8.1.
 - [RESOLVED 2026-09-24] [RULED — README §B10 WT18, WT44] Closed-DTO enforcement is a **per-endpoint strict binding filter on `PATCH /me`** (09.3.4-T1) — not a global `JsonUnmappedMemberHandling.Disallow`, so 02/06 and every other endpoint keep their current contract.
-- [OPEN] BD14 covers `auth`/`paid`/`hub` only: anonymous traffic outside `/auth/*` (health probes excluded, `POST /reports` in 13.3.4-T1) has **no** in-process policy. Recommend one `anon` policy (300/min per resolved IP) or an explicit statement that ingress (11) covers it.
+- [OPEN] BD14 covers `auth`/`paid`/`hub` only: anonymous traffic outside `/auth/*` (health probes excluded, the former `POST /reports` of 13.3.4-T1, dropped by DEC 10.14) has **no** in-process policy. Recommend one `anon` policy (300/min per resolved IP) or an explicit statement that ingress (11) covers it.
 - [OPEN] Slot 6 must be the **innermost** behaviour in 09.1.3-T2's `MediatorPipeline.Behaviors` for the same-transaction guarantee; the ordering test belongs to 09.1.3-T2, and this task's `AuditedCommand_RowCommitsWithChange` fails if the slot moves outwards.
 - [OPEN] `xmin` on `audit_logs` is configured for D8 consistency although the table is insert-only; drop it if EF demands version handling on a table with no update path.
 - ⚠️ G5's numbers (24/24/12 months) are pending the legal review in 13.6; they live in one place (`AuditRetentionRules`).

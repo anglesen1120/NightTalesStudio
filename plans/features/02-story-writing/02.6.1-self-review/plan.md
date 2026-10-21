@@ -141,7 +141,7 @@ Checkpoint-1 story screen (10.5.x), read-only panel above the text:
 
 ## 8. Security and privacy
 
-- **Prompt injection**: the draft, brief, facts, bible and ear rules travel in one JSON data object (D6) in the user message; the system prompt states every string is material, never an instruction. The draft is our own output but is still untrusted (a brief can make the writer emit instruction-like text) — injection fixtures from 02.2.3-T2 are reused for the review prompt.
+- **Prompt injection**: the draft, brief, facts, bible and ear rules travel in one JSON data object (D6) in the user message; the system prompt states the two-tier rule (control keys are followed; material strings are never instructions — 02 T69). The draft is our own output but is still untrusted (a brief can make the writer emit instruction-like text) — injection fixtures from 02.2.3-T2 are reused for the review prompt.
 - **Egress**: `store = false` (O5), `safety_identifier = sha256(user_id)`, no source text in the prompt (only fact statements and aliases), no URLs.
 - **Storage**: the review result is stored inside `story_versions.audit_report`; `evidence` ≤ 200 chars of our draft (D22). No prompt, brief or source text is persisted by this feature.
 - **Logging** (D19): ids, codes, tokens, model, latency, `prompt_version` only. Never log the prompt, the draft, the review evidence or the answers.

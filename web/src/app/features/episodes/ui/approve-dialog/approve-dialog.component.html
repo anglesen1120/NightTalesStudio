@@ -1,0 +1,25 @@
+<button class="approval-backdrop" type="button" tabindex="-1" [disabled]="busy()" [attr.aria-label]="'core.ui.dialog.close' | transloco" (mousedown)="$event.preventDefault()" (click)="cancel()"></button>
+<nts-confirm-dialog titleKey="episodes.approve.title" bodyKey="episodes.approve.body" confirmLabelKey="episodes.approve.confirm" [pending]="busy()" [confirmDisabled]="confirmDisabled() && !busy() && !retryPending()" [confirmHeld]="busy() || retryPending()" [scrollableBody]="true" (confirmed)="approved.emit()" (cancelled)="cancel()">
+  <div dialog-body class="approval-body">
+    <p class="approval-note">{{ 'episodes.approve.note' | transloco }}</p>
+    @if (hintCount() > 0) {
+      <p class="approval-hint">{{ 'episodes.approve.hint' | transloco: { count: hintCount() } }}</p>
+    }
+    @if (attestation(); as statement) {
+      @if (statement.required) {
+        <nts-attestation-block [attestation]="statement" [accepted]="accepted()" [invalid]="checkboxInvalid()" (acceptedChange)="acceptedChange.emit($event)" />
+      }
+    }
+    @if (blocked() && blocked()?.code !== 'story_attestation_required') {
+      <div class="approval-blocked" role="alert">
+        <p>{{ blockedKey() | transloco }}</p>
+        @if (researchHref(); as href) {
+          <a class="approval-blocked__research" [routerLink]="href">{{ 'episodes.approve.blocked.researchLink' | transloco }}</a>
+        }
+      </div>
+    }
+    @if (retryAfterSec(); as seconds) {
+      <nts-retry-countdown [seconds]="seconds" messageKey="episodes.approve.retry" />
+    }
+  </div>
+</nts-confirm-dialog>

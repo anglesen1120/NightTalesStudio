@@ -1,0 +1,7 @@
+Subject: New sign-in from an unseen device
+
+Hello {{displayName}},
+
+This NightTales account was just signed in to from a device we have not seen before: {{device}}, IP address {{ip}}, at {{at}}.
+
+If this was not you, change your password and revoke the session at {{securityUrl}}.
