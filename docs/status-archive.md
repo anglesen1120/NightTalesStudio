@@ -1494,3 +1494,9 @@ Also replaced (verbatim), the `Next (backend)` sentence of the Session 67 Resume
 Replaced Resume header (Session 73 bullet, PR open state), verbatim:
 
 - **Backend (Session 73, PR #265 open, not merged; `feature/06.4.1-T1-s73` from `develop` `3e168ca5`):**
+
+## Session 75 (10.7.1-T0), archived 2026-10-21
+
+Replaced Resume bullet (Web Session 54 closed), verbatim:
+
+- **Web (Session 54 closed):** **10.5.3-T2** self-review issues panel + score table, "Automatically corrected once" badge, drift note and similarity highlights merged as #227 (`f9a37b26`, tip `d0f2f429`, code tip `3c7e66f4`, `feature/10.5.3-T2-s54`, from `develop` `cb491bbf`; web lane; FE only, no `web/openapi.json` change). Coordinator decision A (deferred owner review): counts and inline rows only from `qualityHints`; model-review issues only in the "why" panel because the server does not flatten them (new §Open tasks row `qualityHints-model-review-flatten`). Closes the `story-review.page.scss` budget row; the 4-GET gate read stays open. Local web gate exit 0 on `3c7e66f4`, T2 gates closed; CI refused: CI-01 (`build-test` jobs `117412350028`, `117412349894`, 0 steps, billing annotation), owner treats as pass. Accepted lows: §Open tasks `L1-S54`, `L2-S54`.
