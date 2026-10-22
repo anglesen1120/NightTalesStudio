@@ -23,11 +23,13 @@ namespace NightTales.Api.IntegrationTests.Health;
 /// <remarks>
 /// Every host here starts without the hosted <c>StorageHealthProbe</c> (<see cref="NewFactory"/>): the
 /// harness configures an unreachable <c>Storage:ServiceUrl</c>, so that prober publishes
-/// <c>storage_unavailable</c> on its first tick (~1.2 s after start-up, measured) and would overwrite the
-/// <see cref="IStorageHealthCache"/> value a test publishes — the report then depends on which writer
-/// landed last, which is the flake this class used to show. A test that asserts a published health value
-/// owns the cache; the prober itself is exercised by <c>StorageHealthTests</c>, which drives
-/// <see cref="StorageHealthProbe.ProbeAsync"/> directly.
+/// <c>storage_unavailable</c> on its first tick (~1.2 s after start-up, measured) and overwrites the
+/// <see cref="IStorageHealthCache"/> value a test publishes, which makes the report depend on which writer
+/// landed last — a proven way this class can fail. It is not a confirmed cause of the fast failures seen
+/// on 2026-10-22: those rows took 509/696 ms (the ticket's numbers, no log kept), before that first tick,
+/// and no local run since — 18 of them, 6 under CPU load — has reproduced them. A test that asserts a
+/// published health value owns the cache; the prober itself is exercised by <c>StorageHealthTests</c>,
+/// which drives <see cref="StorageHealthProbe.ProbeAsync"/> directly.
 /// </remarks>
 [Trait("Category", "Integration")]
 public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest(database)
@@ -124,6 +126,13 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         report.GetProperty("status").GetString().ShouldBe("degraded");
+
+        // The component, not just the aggregate: without this the test would also pass on a report whose
+        // only degraded check is `nodes` (the class database has no node rows). The wire cannot show the
+        // cause — `StorageHealth.NotChecked` is stale-degraded too and the report carries no error code —
+        // so removing the Publish above still leaves this test green (measured 2026-10-23); the assertion
+        // pins the component, not the cause.
+        CheckStatus(report, "storage").ShouldBe("degraded");
     }
 
     private static void PublishHealthyStorage(ApiFactory factory, FakeClock clock) =>
