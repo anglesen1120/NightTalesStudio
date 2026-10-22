@@ -1640,3 +1640,19 @@ Rows removed or replaced in `STATUS.md`, verbatim:
 Replaced Resume Migrations bullet fragment (S77, 02.8.3-T2 migration appended), verbatim:
 
 - `AddPlatformIncidentsMigrationTests` owns `migrations[^1]` (was `AddAutopilotRunsStateAndSlotMigrationTests`, which now finds its own migration by name)
+
+## Session 77 close-out (2026-10-23)
+
+Rows replaced in `STATUS.md`, verbatim:
+
+Resume bullet:
+
+- **Backend (Session 77, 02.8.3-T2 PR #284 open, REMOTE gate lane):** autopilot endpoints + series authorization: `GET/PUT /series/{id}/autopilot`, `POST/DELETE …/authorization`, `POST …/pause`, `…/resume`, `GET …/runs` (all `youtube_publish`-gated; PUT needs `If-Match` `"sa-<xmin>"`), `AuthorizationTextRenderer` (`autopilot-auth.v1`, vi + en, sha256 digest), covered-field revoke, `revoked_reason` column (additive migration, coordinator Q1=A), archive revokes. **Next:** coordinator merges; then 02.8.3-T3/T4 and the `default_channel_id` write path (S77-1). Gate: `GATE_RC=0 on 7c65a147` (remote, Ubuntu arm64, full run; later commits docs only).
+
+Open-tasks row:
+
+| 02.8.3-T2 autopilot endpoints + series authorization | in review (PR #284, Session 77, `feature/02.8.3-T2-s77`, from `develop` `541570c0`; backend lane, REMOTE gate; tier T3, size S; additive migration `revoked_reason`) | Seven routes under `/series/{id}/autopilot`, authorization text + accept/revoke, covered-field revoke, archive hook, S71-6/7/16/17/19/21/41/48 hand-overs. QA + code/perf/security reviews + delta closed (`local://` findings triaged by one `judge_batch`). Gate: `GATE_RC=0 on 7c65a147` (remote, Ubuntu arm64, full run; later commits docs only). Open items S77-1…S77-8 and the XML-summary nit (row below). |
+
+Session-log row:
+
+| 2026-10-22 | Session 77 (02.8.3-T2 PR #284 open) | Autopilot endpoints and series authorization (T3, REMOTE gate lane). Coordinator decisions Q1 = A (`revoked_reason` additive migration) and Q2 = A (`series_topic_locked` kept) are deferred owner review. Gate: `GATE_RC=0 on 7c65a147` (remote, Ubuntu arm64, full run; later commits docs only). |
