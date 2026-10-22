@@ -238,8 +238,8 @@ Each use case states trigger → API → states → errors. All errors go throug
 
 | Method | Route | Used by | Notes |
 |---|---|---|---|
-| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per scalar status; five parallel calls cover the five P statuses below |
-| `GET` | `/api/v1/series?cursor=&limit=&includeArchived=` | 10.4.2-T1 | `{ items, nextCursor }`, limit ≤ 100 (B1) |
+| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per scalar status; five parallel calls cover the five P statuses below; numbered pages + `totalCount` pending 10 CR-57 |
+| `GET` | `/api/v1/series?cursor=&limit=&includeArchived=` | 10.4.2-T1 | `{ items, nextCursor }`, limit ≤ 100 (B1); numbered pages + `totalCount` pending 10 CR-57 |
 | `POST` | `/api/v1/series` | 10.4.2-T1 | 201 + `Location` + `ETag` (B1) |
 | `GET` `PATCH` `DELETE` | `/api/v1/series/{id}` | 10.4.2-T1 | `PATCH` needs `If-Match: "se-<xmin>"` (B1/B2) |
 | `GET` | `/api/v1/voices?language=` | 10.4.2-T2 | `{ items }`, cacheable, ETag/304 (B4) |
@@ -259,6 +259,8 @@ Each use case states trigger → API → states → errors. All errors go throug
 **[OPEN-1]** `GET /api/v1/series/{id}/publications?status=awaiting_consent` does not exist (00 §8 lists only `/episodes/{id}/publications` and the per-publication consent/PATCH/DELETE routes, `00-overview.md:362`; 02.8.3/plan.md:344 adds no list route either). Request: **CR to 00 §8** to add a series-scoped publications read (cursor). Until then the veto list is derived from the run log — `AutopilotRunDto` carries `EpisodeId`/`PublicationId` (`02.8.3-T2:49-52`) — and hydrates per episode, with at most 20 rows (`autopilot.veto.maxRows`, §6).
 
 **[RESOLVED-2]** Source snapshot `00e7d5d` exposes a scalar episode `status` filter. The dashboard uses the five-call contract above; no comma-separated fallback remains.
+
+**[OPEN-3]** The approved dashboard redesign reads more than the shipped dashboard: ten data points are missing from the contract (10 CR-56, `DASH-1`–`DASH-10` in `../../../00-overview.md` §8; the backend statement is `../../../09-backend-api.md` §10). The aggregated publication schedule it needs (`DASH-8`, one list across episodes for the "Upcoming" table) generalises [OPEN-1] from one series to the whole account — whichever read lands must serve both, or say why not. Nothing is decided and nothing here changes: the five-call `Promise.all` above stays the shipped behaviour until plan 09 details the shapes.
 
 **Events (D8).** Consumed: `EpisodeUpdated` (per-episode subscription via `RealtimeService.subscribeEpisode(episodeId, handler)`, WR7) → the run-log row refetches its episode/publication cell and, coalesced within 250 ms, the whole page once; `resync` after a (re)connect/visibility → the same coalesced refetch, but only if the tab has a live subscription. No `AutopilotRunUpdated` in P (B18/[OPEN] in 02.8.1 §5) → polling (§7). The hub token never appears in a URL and the ticket is never logged (D8).
 

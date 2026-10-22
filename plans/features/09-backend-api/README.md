@@ -314,6 +314,12 @@ public abstract class AggregateRoot : Entity
   - response `{ items, nextCursor }`;
   - the cursor is opaque base64url JSON `{ "c": createdAt, "i": id }`, ordered `(created_at DESC, id DESC)` as a keyset;
   - an invalid cursor → 400 `validation_failed` (field `cursor`).
+- Numbered pages for owner-facing list screens (10 CR-57, owner decision 2026-10-22; wire shape [OPEN]):
+  - The series list, `/episodes` and every other owner list that shows a pager need numbered pages with a total ("Showing 21–40 of 245", pages `1 2 3 … 13`, rows per page 20/50/100, first/prev/next/last), not "load more". Today's keyset returns `{ items, nextCursor }` and carries no total, so it cannot render the "of N" or jump to a page.
+  - Two shapes are open: (a) offset paging `?page=&pageSize=` → `{ items, page, pageSize, totalCount }`, or (b) keep the cursor request and add `totalCount` plus a page offset — a cursor alone cannot address page 7 directly.
+  - Tradeoff to settle when detailing: keyset is stable under inserts and needs no `COUNT`; offset paging needs a deterministic total order (`created_at DESC, id DESC` + `OFFSET/LIMIT`) and a second `COUNT(*)` over the **same filtered owner-scoped query** (no cross-tenant scan; the extra cost is one aggregate per request, not per row), and page contents can shift when rows are inserted between requests.
+  - Caps and errors: `pageSize` keeps the existing ceiling (default 20, 1–100, otherwise 400 `validation_failed`); if (a) is chosen, a non-integer or `page < 1` → 400 `validation_failed` (field `page`; under (b) the offset field is undecided); whether a page past the last one answers 200 with an empty page and the real `totalCount` or 400 is [OPEN].
+  - Scope: the two named screens are in. Whether the autopilot run log, the veto list and the planned activity history (10 CR-56 DASH-9) also switch is [OPEN] — they use "load more" today.
 - The OpenAPI document is generated at build to `src/NightTales.Api/openapi.json` (09.1.5-T1; 09.9.5 owns the contract diff).
 
 **D15 ETags [DECISION].** In addition to 02 D9:
@@ -353,6 +359,8 @@ public abstract class AggregateRoot : Entity
 - `episode_conflict` 412 (stale `If-Match` on `DELETE /episodes/{id}`, 09.5.1)
 - `service_unavailable` 503 (D5)
 - `idempotency_key_required` 400 is already catalogued (02 CR-8)
+
+**Open contract gaps for the dashboard (10 CR-56, owner decision 2026-10-22) [OPEN].** Ten data points the approved dashboard design needs are missing from this contract: DASH-1 tile trigger/timing, DASH-2 list-level step outside render, DASH-3 list-level percent for those statuses, DASH-4 run ETA, DASH-5 run elapsed time, DASH-6 run started-by, DASH-7 list-level `nextActions` + waiting-since, DASH-8 an aggregated publication schedule across episodes, DASH-9 a reloadable activity history (needs an explicit DEC 10.14 amendment: 09.3.6 states there is no HTTP feed over `audit_logs` and the user-facing feed was dropped with 09.3.6-T2), DASH-10 cancel a run during story generation. Nothing is decided — the endpoint list in `plans/00-overview.md` §8 is unchanged, the full statement is `plans/09-backend-api.md` §10, and this wave's task table and estimates stay as they are. Detail them in a later wave before any dashboard task reads them.
 
 ## 4. Change requests to other files
 
