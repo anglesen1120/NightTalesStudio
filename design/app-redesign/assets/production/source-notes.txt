@@ -1,0 +1,13 @@
+Night Tales Studio Phase 3 media provenance
+Reused existing local test task, not generated for this design.
+Task: .nts/src/mpt/storage/tasks/61331a5a-fc18-4319-8c5b-b5e0042bcd85
+midnight-town.mp4: existing final output, 1920x1080, 30.030 s, 11,387,030 bytes. English narration and burned-in English captions.
+midnight-town.en.vtt: lossless timestamp-format conversion of original subtitle.srt. Additional track is optional to avoid duplicate burned-in subtitles.
+scene-1.png: openai-image-1155d0d1f291.png,1536x1024
+scene-2.png: openai-image-6a96d427ddb3.png,1536x1024
+scene-3.png: openai-image-89f602a797fe.png,1536x1024
+scene-4.png: openai-image-72b1a45ccfdc.png,1370x1148
+scene-5.png: openai-image-45c895912385.png,1536x1024
+Fictional old-town atmosphere, no claimed real place. No external media hotlinks.
+Vietnamese story is an editorial translation of the original English script. Version metadata and review flags are clearly labelled fixtures.
+Legal copy is carried from web/src/content/legal unchanged in wording; owner identity/contact placeholders remain explicitly disclosed.
