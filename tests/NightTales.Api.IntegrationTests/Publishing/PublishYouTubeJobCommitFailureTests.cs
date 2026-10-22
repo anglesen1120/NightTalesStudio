@@ -43,7 +43,8 @@ public sealed class PublishYouTubeJobCommitFailureTests(TestDatabase database) :
         // releases the unit and lets Hangfire retry — the safe direction." The create already reached Google, but its
         // session is unrecoverable (the cipher rolled back with the transaction), so the row must be retried and the
         // unit this run reserved must not be stranded on an upload nobody can resume.
-        await using var harness = await StartAsync(refuseCommitNumber: 2);
+        // Commit 1 is the prepare, 2 the session-create claim (SEC-8) and 3 the session-URI commit this test refuses.
+        await using var harness = await StartAsync(refuseCommitNumber: 3);
         var world = await SeedReadyAsync(harness);
 
         await ShouldAskForARetryAsync(harness, world.PublicationId);
@@ -94,6 +95,33 @@ public sealed class PublishYouTubeJobCommitFailureTests(TestDatabase database) :
             "a retry is Hangfire's, not a reschedule");
         harness.Google.SessionCreateCalls.ShouldBe(0, "the run never reached the insert");
         harness.Google.ProbeCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task RefusedCommitAtTheSessionUriStep_OnTheLastAttempt_EndsTheRowAndReleasesTheUnit()
+    {
+        // F2/SEC-2: nothing follows the sixth attempt, so the refusal must not leave the row `uploading` with nothing
+        // left to run it. The row gets the verdict plan §7 assigns to spent attempts, and the unit that bought a session
+        // nobody can address goes back (YR19's exception for a create that reached Google — QA D1).
+        await using var harness = await StartAsync(refuseCommitNumber: 3);
+        var world = await SeedReadyAsync(harness);
+
+        var thrown = await Should.ThrowAsync<PublishAttemptException>(
+            () => harness.RunAttemptAsync(world.PublicationId, attempt: 6, maxAttempts: 6, Ct));
+
+        thrown.Code.ShouldBe(
+            PublishAttemptException.InfrastructureCode,
+            "the refusal is still reported as an infrastructure failure of the attempt");
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe(
+            "failed",
+            "the attempts are spent, so the row must not be left with a state nothing will ever pick up");
+        (await harness.ErrorCodeAsync(world.PublicationId)).ShouldBe(PublicationErrorCodes.UploadFailed);
+        (await harness.QuotaUnitsAsync(harness.QuotaDayToday())).ShouldBe(
+            0,
+            "the create bought a session the row cannot address, so the unit goes back");
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.QuotaReservedDayKey)).ShouldBeEmpty();
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.UploadCreateIssuedAtKey)).ShouldBeEmpty();
+        harness.Google.SessionCreateCalls.ShouldBe(1);
     }
 
     /// <summary>Runs the attempt and asserts the one outcome a refused commit may produce: another attempt.</summary>

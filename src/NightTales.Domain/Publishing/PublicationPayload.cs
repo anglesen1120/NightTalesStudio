@@ -56,11 +56,58 @@ public static class PublicationPayload
     public const string HeldByIncidentIdKey = "heldByIncidentId";
 
     /// <summary>
+    /// When the run that holds this row's reservation issued its <c>videos.insert</c> session create
+    /// (<c>uploadCreateIssuedAt</c>, plan §3.2, YR19): the persistent fact the release rule reads, because "Google may
+    /// have counted this insert" outlives the attempt that made the call. Written by
+    /// <see cref="Publication.ClaimUploadSessionCreate"/> before the call leaves the process and removed together with
+    /// <see cref="QuotaReservedDayKey"/> — the two describe one reservation.
+    /// </summary>
+    public const string UploadCreateIssuedAtKey = "uploadCreateIssuedAt";
+
+    /// <summary>
+    /// Until when this row's session create belongs to one run (<c>uploadSessionCreateLeaseUntil</c>, plan §Performance,
+    /// SEC-8): a short server-only claim stamped just before the Google call and cleared as soon as its outcome is
+    /// observed, so a second run cannot open a second session for the same reservation. It is a lease by time, never a
+    /// lock: a run that dies holding it blocks nobody for longer than the create's own timeout.
+    /// </summary>
+    public const string UploadSessionLeaseKey = "uploadSessionCreateLeaseUntil";
+
+    /// <summary>
+    /// The sticky upload plan (<c>upload</c>, plan §3 F13) 06.2.4-T1 writes when the row is consented and this job
+    /// reads <em>verbatim</em>: the privacy Google is asked for, the scheduled instant it may carry, and the
+    /// pre-audit flag — never the live <c>YouTubeOptions.AuditStatus</c> or the row's current columns, so a plan
+    /// decided before an approval does not drift into a different request.
+    /// </summary>
+    public const string UploadKey = "upload";
+
+    /// <summary>
+    /// Until when one run owns this row's <em>streaming</em> window (<c>uploadStreamLeaseUntil</c>, plan §Performance,
+    /// SEC-4): a second run that finds a live lease writes nothing instead of streaming into the same resumable
+    /// session. Renewed from the upload's own progress callback while the bytes flow, so a run that dies stops
+    /// renewing and the lease expires by time.
+    /// </summary>
+    public const string UploadStreamLeaseUntilKey = "uploadStreamLeaseUntil";
+
+    /// <summary>
+    /// Which run holds <see cref="UploadStreamLeaseUntilKey"/> (<c>uploadStreamLeaseOwner</c>, SEC-4): without it a
+    /// renew or a release from a late writer could not tell "mine" from "the run that took over after my lease
+    /// expired", and a stale run would re-take a window it no longer owns.
+    /// </summary>
+    public const string UploadStreamLeaseOwnerKey = "uploadStreamLeaseOwner";
+
+    /// <summary>
     /// The processing block <c>{ startedAt, deadlineAt, polls }</c> written by
     /// <see cref="Publication.MarkProcessing"/> for 06.2.5-T1's poller: <c>deadlineAt</c> is the instant its claim
     /// condition compares against, and <c>polls</c> the count of checks already spent on the video.
     /// </summary>
     public const string ProcessingKey = "processing";
+
+    /// <summary>
+    /// The pre-audit flag 06.2.1-T1 stamps at create time (<c>preAudit</c>, 06 README D12), read here only: the
+    /// sticky plan copies it, because a pre-audit row goes to YouTube as <c>private</c> with no scheduled instant
+    /// whatever its column says (plan §3 F13).
+    /// </summary>
+    public const string PreAuditKey = "preAudit";
 
     /// <summary>
     /// The raw Google <c>reason</c> of the last failure (plan §3.2), already sanitised by the caller to a short
@@ -77,6 +124,12 @@ public static class PublicationPayload
 
     /// <summary>The <c>polls</c> key inside <see cref="ProcessingKey"/>.</summary>
     private const string ProcessingPollsKey = "polls";
+
+    /// <summary>The <c>privacyStatus</c> key inside <see cref="UploadKey"/>.</summary>
+    private const string UploadPrivacyStatusKey = "privacyStatus";
+
+    /// <summary>The <c>publishAt</c> key inside <see cref="UploadKey"/>, present only when the plan schedules one.</summary>
+    private const string UploadPublishAtKey = "publishAt";
 
     /// <summary>The one accepted spelling of <see cref="QuotaReservedDayKey"/>'s value (plan §3.2).</summary>
     private const string QuotaReservedDayFormat = "yyyy-MM-dd";
@@ -193,6 +246,36 @@ public static class PublicationPayload
         day.ToString(QuotaReservedDayFormat, CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// Writes one top-level instant key of the document (<see cref="UploadCreateIssuedAtKey"/>,
+    /// <see cref="UploadSessionLeaseKey"/>) in the same UTC round-trip form the processing block uses, so two readers of
+    /// one instant parse it the same way.
+    /// </summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <param name="key">The key to write.</param>
+    /// <param name="instant">The instant to store.</param>
+    /// <returns>The document to store.</returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is <see langword="null"/> or blank.</exception>
+    public static string? WithInstant(string? json, string key, DateTimeOffset instant) =>
+        WithKey(json, key, FormatInstant(instant));
+
+    /// <summary>Reads one top-level instant key of the document.</summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <param name="key">The key to read.</param>
+    /// <returns>
+    /// The instant, or <see langword="null"/> when the key is absent, another JSON kind, another format, or the document
+    /// is unreadable — the same "absent means nothing is claimed" rule the day key follows.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is <see langword="null"/> or blank.</exception>
+    public static DateTimeOffset? ReadInstant(string? json, string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        return TryParseObject(json, out var payload) && TryReadInstant(payload[key], out var instant)
+            ? instant
+            : null;
+    }
+
+    /// <summary>
     /// Writes the <see cref="ProcessingKey"/> block of a row that just moved to <c>processing</c> (plan §3.2): the
     /// instant the upload finished, the instant 06.2.5-T1's poller gives up claiming the row, and a fresh poll count.
     /// </summary>
@@ -236,6 +319,73 @@ public static class PublicationPayload
             startedAt,
             deadlineAt,
             block[ProcessingPollsKey] is JsonValue polls && polls.TryGetValue<int>(out var count) ? count : 0);
+    }
+
+    /// <summary>Reads the sticky upload plan of a row (<see cref="UploadKey"/>).</summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <returns>
+    /// The plan, or <see langword="null"/> when the key is absent, of another JSON kind, carries no readable
+    /// <c>privacyStatus</c>, or the document is unreadable — the caller then derives one from the row's own columns
+    /// (<see cref="Publication.EnsureUploadPlan"/>) instead of sending a request nobody planned.
+    /// </returns>
+    public static UploadPlan? ReadUpload(string? json)
+    {
+        if (!TryParseObject(json, out var payload)
+            || payload[UploadKey] is not JsonObject plan
+            || plan[UploadPrivacyStatusKey] is not JsonValue privacy
+            || !privacy.TryGetValue<string>(out var privacyStatus)
+            || string.IsNullOrWhiteSpace(privacyStatus))
+        {
+            return null;
+        }
+
+        return new UploadPlan(
+            privacyStatus,
+            TryReadInstant(plan[UploadPublishAtKey], out var publishAt) ? publishAt : null,
+            plan[PreAuditKey] is JsonValue preAudit && preAudit.TryGetValue<bool>(out var isPreAudit) && isPreAudit);
+    }
+
+    /// <summary>Writes the sticky upload plan (<see cref="UploadKey"/>) and leaves every other key as it was.</summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <param name="plan">The plan to store.</param>
+    /// <returns>The document to store.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="plan"/> is <see langword="null"/>.</exception>
+    public static string? WithUpload(string? json, UploadPlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+
+        // `publishAt` is present only when the plan carries one: the key's absence is what "no scheduled instant"
+        // means to the request builder, exactly as it does for `quotaReservedDay` (the writers never store a null).
+        var block = new JsonObject
+        {
+            [UploadPrivacyStatusKey] = plan.PrivacyStatus,
+            [PreAuditKey] = plan.PreAudit,
+        };
+
+        if (plan.PublishAt is { } publishAt)
+        {
+            block[UploadPublishAtKey] = FormatInstant(publishAt);
+        }
+
+        return Set(json, UploadKey, block);
+    }
+
+    /// <summary>Reads one boolean key of the document (<see cref="PreAuditKey"/>).</summary>
+    /// <param name="json">The stored document, or <see langword="null"/>.</param>
+    /// <param name="key">The key to read.</param>
+    /// <returns>
+    /// The value, or <see langword="false"/> when the key is absent, another JSON kind, or the document is
+    /// unreadable — a row nobody stamped is not pre-audit, which is the state 06.2.1-T1 leaves a normal create in.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is <see langword="null"/> or blank.</exception>
+    public static bool ReadFlag(string? json, string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        return TryParseObject(json, out var payload)
+            && payload[key] is JsonValue value
+            && value.TryGetValue<bool>(out var flag)
+            && flag;
     }
 
     /// <summary>Sets one key on a parsed-or-new document.</summary>
@@ -328,4 +478,13 @@ public static class PublicationPayload
     /// <param name="DeadlineAt">When the poller stops claiming the row (UTC).</param>
     /// <param name="Polls">The number of checks already spent on the video.</param>
     public sealed record Processing(DateTimeOffset StartedAt, DateTimeOffset DeadlineAt, int Polls);
+
+    /// <summary>
+    /// The stored shape of <see cref="UploadKey"/> (plan §3 F13): the privacy Google is asked for, the scheduled
+    /// instant the request carries (or none), and whether the plan was made before the API project's audit.
+    /// </summary>
+    /// <param name="PrivacyStatus">The <c>status.privacyStatus</c> the insert sends, verbatim.</param>
+    /// <param name="PublishAt">The <c>status.publishAt</c> the insert sends, verbatim, or <see langword="null"/> for none.</param>
+    /// <param name="PreAudit">Whether the plan was made pre-audit: <c>private</c> and never a scheduled instant.</param>
+    public sealed record UploadPlan(string PrivacyStatus, DateTimeOffset? PublishAt, bool PreAudit);
 }

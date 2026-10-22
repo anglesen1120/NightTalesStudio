@@ -452,12 +452,16 @@ public sealed class PublishYouTubeJobTests(TestDatabase database) : IntegrationT
         await using var harness = await StartAsync();
         var world = await SeedReadyAsync(harness, tokenExpiresIn: TimeSpan.Zero);
 
+        // Either run may lose: the one that finds the other's session-create claim standing (SEC-8) creates nothing and
+        // asks for another attempt, which the harness tolerates here because the row is what this test asserts.
         await Task
-            .WhenAll(harness.RunAsync(world.PublicationId, Ct), harness.RunAsync(world.PublicationId, Ct))
+            .WhenAll(
+                RunTolerantlyAsync(harness, world.PublicationId, attempt: 1),
+                RunTolerantlyAsync(harness, world.PublicationId, attempt: 1))
             .WaitAsync(TimeSpan.FromSeconds(120), Ct);
 
         harness.Google.RefreshCalls.ShouldBe(1, "the refresh token is presented once, whatever the race does");
-        harness.Google.SessionCreateCalls.ShouldBe(1, "the row lock serialises the two runs into one upload");
+        harness.Google.SessionCreateCalls.ShouldBe(1, "the claim on the row serialises the two runs into one upload");
         // Both runs may stream: the loser's probe can land before the winner's chunks are acknowledged, so it resumes
         // from that offset and re-sends the same byte ranges into the same session — idempotent by the byte-range
         // contract, and one video, which the id assertion below proves. A fresh session per run would be the defect.
@@ -548,20 +552,129 @@ public sealed class PublishYouTubeJobTests(TestDatabase database) : IntegrationT
     [Fact]
     public async Task Publish_BuildsTheRequestFromTheStickyUploadPlan_NotFromLiveOptions()
     {
-        // F13: `platform_payload.upload` is read verbatim — the plan's `private` wins over an approved audit status,
-        // and the D8 declaration the row carries travels with it.
+        // F13/CODE-3: `platform_payload.upload` is read verbatim, and it is the ONLY source of the privacy and the
+        // scheduled instant. An approval that lands after the plan was written leaves `privacy = public` and a future
+        // `publish_at` on the row; the request must still follow the pre-audit plan (private, no instant), because
+        // that plan is what the user's upload was decided on.
         await using var harness = await StartAsync(auditStatus: YouTubeAuditStatuses.Approved);
-        var world = await SeedReadyAsync(harness);
+        var userId = await harness.CreateUserAsync(Ct);
+        var channel = await harness.SeedChannelAsync(userId, ct: Ct);
+        var episode = await harness.SeedEpisodeAsync(userId, harness.Blobs.DefaultLength, ct: Ct);
+        var publicationId = await harness.SeedPublicationAsync(
+            userId,
+            episode.EpisodeId,
+            channel.Id,
+            platformPayloadJson: """{"upload":{"privacyStatus":"private","preAudit":true},"preAudit":true,"requestedPrivacy":"public"}""",
+            privacy: "public",
+            publishAt: PublishYouTubeJobHarness.Start.AddDays(2),
+            ct: Ct);
 
-        await harness.RunAsync(world.PublicationId, Ct);
+        await harness.RunAsync(publicationId, Ct);
 
         var create = harness.Google.LastSessionCreate;
         create.ShouldNotBeNull();
-        create!.PrivacyStatus.ShouldBe("private", "the sticky plan, not the live AuditStatus, decides the privacy");
-        create.PublishAt.ShouldBeNull("the plan carried no publishAt, so none must be sent");
+        create!.PrivacyStatus.ShouldBe("private", "the sticky plan, not the row's live privacy, decides the privacy");
+        create.PublishAt.ShouldBeNull("the plan carried no publishAt, so a future publish_at column must not add one");
         create.ContainsSyntheticMedia.ShouldBe(true, "the row's D8 declaration reaches the request");
         create.DeclaredLength.ShouldBe(PublishYouTubeJobHarness.PayloadLength);
         create.Title.ShouldBe(PublishYouTubeJobHarness.EpisodeTitle, "the metadata is sent, just never logged");
+    }
+
+    [Fact]
+    public async Task Publish_SendsThePostAuditPlanVerbatim_EvenWhenTheRowStillCarriesPreAuditColumns()
+    {
+        // The other half of F13: once a plan says public + an instant, that is what travels — the row's own
+        // pre-audit `private` column must not override the plan it was replaced by.
+        const string instant = "2026-11-01T10:00:00.0000000+00:00";
+        await using var harness = await StartAsync(auditStatus: YouTubeAuditStatuses.Approved);
+        var userId = await harness.CreateUserAsync(Ct);
+        var channel = await harness.SeedChannelAsync(userId, ct: Ct);
+        var episode = await harness.SeedEpisodeAsync(userId, harness.Blobs.DefaultLength, ct: Ct);
+        var publicationId = await harness.SeedPublicationAsync(
+            userId,
+            episode.EpisodeId,
+            channel.Id,
+            platformPayloadJson: """{"upload":{"privacyStatus":"public","publishAt":"2026-11-01T10:00:00.0000000+00:00","preAudit":false},"preAudit":true,"requestedPrivacy":"public"}""",
+            privacy: "private",
+            ct: Ct);
+
+        await harness.RunAsync(publicationId, Ct);
+
+        var create = harness.Google.LastSessionCreate;
+        create.ShouldNotBeNull();
+        create!.PrivacyStatus.ShouldBe("public");
+
+        var sent = create.PublishAt.ShouldNotBeNull("the plan's instant is sent");
+        DateTimeOffset.Parse(sent, CultureInfo.InvariantCulture).ShouldBe(DateTimeOffset.Parse(instant, CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task Publish_WithoutAStickyPlan_DerivesOneFromTheRowAndPersistsIt()
+    {
+        // CODE-3's fallback on a branch that has no 06.2.4-T1 writer yet: a row with no `upload` key still uploads,
+        // and the plan it used is persisted in the same claim transaction, so a retry of the row cannot send a
+        // different request than the first attempt did.
+        await using var harness = await StartAsync(auditStatus: YouTubeAuditStatuses.Approved);
+        var userId = await harness.CreateUserAsync(Ct);
+        var channel = await harness.SeedChannelAsync(userId, ct: Ct);
+        var episode = await harness.SeedEpisodeAsync(userId, harness.Blobs.DefaultLength, ct: Ct);
+        var publishAt = PublishYouTubeJobHarness.Start.AddDays(3);
+        var publicationId = await harness.SeedPublicationAsync(
+            userId,
+            episode.EpisodeId,
+            channel.Id,
+            platformPayloadJson: """{"preAudit":false,"requestedPrivacy":"public"}""",
+            privacy: "public",
+            publishAt: publishAt,
+            ct: Ct);
+
+        await harness.RunAsync(publicationId, Ct);
+
+        var create = harness.Google.LastSessionCreate;
+        create.ShouldNotBeNull();
+        create!.PrivacyStatus.ShouldBe("private", "an instant is only accepted with a private upload (API rule)");
+        DateTimeOffset
+            .Parse(create.PublishAt.ShouldNotBeNull(), CultureInfo.InvariantCulture)
+            .ShouldBe(publishAt);
+
+        (await harness.PayloadKeyKindAsync(publicationId, "upload")).ShouldBe(
+            "object",
+            "the derived plan is persisted, so the next attempt reads the same decision");
+        var stored = PublicationPayload.ReadUpload(await harness.PlatformPayloadAsync(publicationId));
+        stored.ShouldNotBeNull();
+        stored!.PrivacyStatus.ShouldBe("private");
+        stored.PublishAt.ShouldBe(publishAt);
+        stored.PreAudit.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Publish_Resume_OpensOnlyTheSliceGoogleStillNeeds()
+    {
+        // PERF-2/CR-17: the probe says Google already holds a prefix, so the resume opens the store at that offset
+        // instead of reading the object from byte 0 and discarding it.
+        await using var harness = await StartAsync();
+        var world = await SeedReadyAsync(harness);
+        const long prefix = 2 * PublishYouTubeJobHarness.ChunkSizeBytes;
+
+        harness.Google.Scenario = UploadScenario.DropChunksAfter(2);
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 1);
+
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe("uploading", "a transport failure keeps the session");
+        var sessionUri = new Uri(harness.Google.LastSessionCreate!.Location);
+        harness.Google.HeldBytes(sessionUri).ShouldBe(prefix, "the session holds exactly the two accepted chunks");
+
+        harness.Google.Scenario = UploadScenario.None;
+        harness.Blobs.ResetReads();
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 2);
+
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe("processing");
+        harness.Google.SessionCreateCalls.ShouldBe(1, "a resume reuses the session");
+        harness.Blobs.RangeOpens.ShouldBe([prefix], "the store is opened at the offset the probe reported");
+        harness.Blobs.FirstByteRead.ShouldBe(prefix, "no byte of the uploaded prefix is read a second time");
+
+        var resumed = harness.Google.Chunks.Where(chunk => !chunk.IsProbe && chunk.Start >= prefix).ToList();
+        resumed.ShouldNotBeEmpty();
+        resumed[0].Start.ShouldBe(prefix, "the first range the resume declares starts where the session stopped");
     }
 
     [Fact]

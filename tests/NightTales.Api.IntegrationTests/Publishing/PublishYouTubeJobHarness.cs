@@ -6,6 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Publishing;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Features.Publishing.Jobs;
@@ -752,6 +754,7 @@ internal sealed class PublishYouTubeJobHarness : IAsyncDisposable
 internal sealed class RecordingBlobStore : IBlobStore
 {
     private readonly Dictionary<string, long> _objects = new(StringComparer.Ordinal);
+    private readonly List<long> _rangeOpens = [];
     private int _openReads;
     private int _disposals;
 
@@ -770,6 +773,29 @@ internal sealed class RecordingBlobStore : IBlobStore
 
     /// <summary>A length the store reports regardless of the row, or null to report the seeded one.</summary>
     internal long? LengthOverride { get; set; }
+
+    /// <summary>
+    /// The <c>fromByte</c> of every ranged open, in order (PERF-2): a resume must ask the store for the slice Google
+    /// still needs instead of reading the whole object and discarding the prefix.
+    /// </summary>
+    internal IReadOnlyList<long> RangeOpens
+    {
+        get
+        {
+            lock (_objects)
+            {
+                return [.. _rangeOpens];
+            }
+        }
+    }
+
+    /// <summary>
+    /// The lowest absolute byte offset this store ever handed out, or null when nothing was read: a resume that reads
+    /// from byte 0 shows up here as 0 however the caller later positions the stream.
+    /// </summary>
+    internal long? FirstByteRead => Interlocked.Read(ref _firstByteReadOffset);
+
+    private long _firstByteReadOffset = -1;
 
     /// <summary>The largest read the caller asked for, so "streamed, not buffered" stays assertable.</summary>
     internal long MaxRequestedBytes { get; private set; }
@@ -791,22 +817,8 @@ internal sealed class RecordingBlobStore : IBlobStore
     }
 
     /// <inheritdoc />
-    public Task<ErrorOr<BlobObject>> OpenReadAsync(string bucket, string key, CancellationToken cancellationToken)
-    {
-        Interlocked.Increment(ref _openReads);
-
-        long length;
-        lock (_objects)
-        {
-            length = LengthOverride ?? (_objects.TryGetValue(key, out var seeded) ? seeded : DefaultLength);
-        }
-
-        var content = new DisposalCountingStream(
-            new MeasuringStream(Payload(length), this),
-            () => Interlocked.Increment(ref _disposals));
-
-        return Task.FromResult<ErrorOr<BlobObject>>(new BlobObject(content, "video/mp4", length));
-    }
+    public Task<ErrorOr<BlobObject>> OpenReadAsync(string bucket, string key, CancellationToken cancellationToken) =>
+        OpenAsync(key, fromByte: 0, ranged: false);
 
     /// <inheritdoc />
     public Task<ErrorOr<BlobObject>> OpenReadAsync(
@@ -814,7 +826,68 @@ internal sealed class RecordingBlobStore : IBlobStore
         string key,
         long fromByte,
         CancellationToken cancellationToken) =>
-        OpenReadAsync(bucket, key, cancellationToken);
+        OpenAsync(key, fromByte, ranged: true);
+
+    /// <summary>
+    /// Opens one seeded object, optionally as the slice from <paramref name="fromByte"/> on — the shape the production
+    /// store answers a ranged read with: a body that starts at that byte while <see cref="BlobObject.Length"/> stays
+    /// the whole object's size.
+    /// </summary>
+    /// <param name="key">The object key.</param>
+    /// <param name="fromByte">The first byte of the slice.</param>
+    /// <param name="ranged">Whether the caller asked for a slice (recorded either way).</param>
+    /// <returns>The opened object.</returns>
+    private Task<ErrorOr<BlobObject>> OpenAsync(string key, long fromByte, bool ranged)
+    {
+        Interlocked.Increment(ref _openReads);
+
+        long length;
+        lock (_objects)
+        {
+            length = LengthOverride ?? (_objects.TryGetValue(key, out var seeded) ? seeded : DefaultLength);
+
+            if (ranged)
+            {
+                _rangeOpens.Add(fromByte);
+            }
+        }
+
+        // The store's body is one seekable stream over the whole object, pre-positioned at the requested byte and
+        // reporting the object's full length — the shape the S3 range read reports (a `ContentRange` total), which
+        // the handler's positioning fallback tolerates because the position is already the requested one.
+        var payload = Payload(length);
+        payload.Seek(fromByte, SeekOrigin.Begin);
+
+        var content = new DisposalCountingStream(
+            new MeasuringStream(payload, this, origin: 0),
+            () => Interlocked.Increment(ref _disposals));
+
+        return Task.FromResult<ErrorOr<BlobObject>>(new BlobObject(content, "video/mp4", length));
+    }
+
+    /// <summary>Forgets the ranged opens and the lowest byte handed out, so a test can assert one resume only.</summary>
+    internal void ResetReads()
+    {
+        lock (_objects)
+        {
+            _rangeOpens.Clear();
+            Interlocked.Exchange(ref _firstByteReadOffset, -1);
+        }
+    }
+
+    /// <summary>Records the lowest absolute byte offset handed out (the PERF-2 assertion).</summary>
+    /// <param name="absoluteOffset">The absolute offset the stream is about to serve.</param>
+    private void RecordFirstByte(long absoluteOffset)
+    {
+        var current = Interlocked.Read(ref _firstByteReadOffset);
+
+        if (current >= 0 && current <= absoluteOffset)
+        {
+            return;
+        }
+
+        Interlocked.CompareExchange(ref _firstByteReadOffset, absoluteOffset, current);
+    }
 
     /// <inheritdoc />
     public Task<ErrorOr<BlobInfo>> PutAsync(
@@ -865,7 +938,7 @@ internal sealed class RecordingBlobStore : IBlobStore
     /// <summary>Records the largest read the caller asked for while passing every read through.</summary>
     /// <param name="inner">The stream that holds the bytes.</param>
     /// <param name="owner">The store the measurement belongs to.</param>
-    private sealed class MeasuringStream(Stream inner, RecordingBlobStore owner) : Stream
+    private sealed class MeasuringStream(Stream inner, RecordingBlobStore owner, long origin) : Stream
     {
         /// <inheritdoc />
         public override bool CanRead => inner.CanRead;
@@ -893,6 +966,7 @@ internal sealed class RecordingBlobStore : IBlobStore
         public override int Read(byte[] buffer, int offset, int count)
         {
             owner.Record(count);
+            owner.RecordFirstByte(origin + inner.Position);
 
             return inner.Read(buffer, offset, count);
         }
@@ -901,6 +975,7 @@ internal sealed class RecordingBlobStore : IBlobStore
         public override int Read(Span<byte> buffer)
         {
             owner.Record(buffer.Length);
+            owner.RecordFirstByte(origin + inner.Position);
 
             return inner.Read(buffer);
         }
@@ -909,6 +984,7 @@ internal sealed class RecordingBlobStore : IBlobStore
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
             owner.Record(buffer.Length);
+            owner.RecordFirstByte(origin + inner.Position);
 
             return inner.ReadAsync(buffer, cancellationToken);
         }
@@ -921,6 +997,7 @@ internal sealed class RecordingBlobStore : IBlobStore
             CancellationToken cancellationToken)
         {
             owner.Record(count);
+            owner.RecordFirstByte(origin + inner.Position);
 
             return inner.ReadAsync(buffer, offset, count, cancellationToken);
         }
@@ -1106,3 +1183,159 @@ internal sealed class CapturingJobLogs : ILoggerProvider
 /// <param name="Message">The rendered message.</param>
 /// <param name="Exception">The rendered exception, or an empty string.</param>
 internal sealed record CapturedJobLog(int EventId, LogLevel Level, string Category, string Message, string Exception);
+
+/// <summary>
+/// Watches whether a database transaction is open while an outbound Google call runs (06.2.3-T2 §Performance, SEC-8,
+/// QA D3): the run's unit of work reports its begin/end here, and a decorator over
+/// <see cref="IYouTubeClient"/> records the depth it saw when <c>videos.insert</c> was called, so "no transaction — and
+/// so no publication lock — is held across the create" becomes an assertion instead of a claim.
+/// </summary>
+internal sealed class TransactionProbe
+{
+    private int _open;
+    private int _violations;
+
+    /// <summary>How many transactions are open right now.</summary>
+    internal int Open => Volatile.Read(ref _open);
+
+    /// <summary>How many session creates ran with a transaction open: always zero in a correct run.</summary>
+    internal int Violations => Volatile.Read(ref _violations);
+
+    /// <summary>Records a transaction opening.</summary>
+    internal void Enter() => Interlocked.Increment(ref _open);
+
+    /// <summary>Records a transaction ending.</summary>
+    internal void Exit() => Interlocked.Decrement(ref _open);
+
+    /// <summary>Records what the depth was when a session create was issued.</summary>
+    internal void RecordSessionCreate()
+    {
+        if (Open > 0)
+        {
+            Interlocked.Increment(ref _violations);
+        }
+    }
+}
+
+/// <summary>
+/// Forwards <see cref="IUnitOfWork"/> to the real implementation and reports every begin and end to a
+/// <see cref="TransactionProbe"/>.
+/// </summary>
+internal sealed class ProbingUnitOfWork(IUnitOfWork inner, TransactionProbe probe) : IUnitOfWork
+{
+    private bool _open;
+
+    /// <inheritdoc />
+    public async Task BeginAsync(CancellationToken cancellationToken)
+    {
+        await inner.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+        _open = true;
+        probe.Enter();
+    }
+
+    /// <inheritdoc />
+    public async Task<ErrorOr<Success>> CommitAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await inner.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Close();
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task RollbackAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await inner.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Close();
+        }
+    }
+
+    private void Close()
+    {
+        if (!_open)
+        {
+            return;
+        }
+
+        _open = false;
+        probe.Exit();
+    }
+}
+
+/// <summary>
+/// Forwards <see cref="IYouTubeClient"/> to the real client and tells a <see cref="TransactionProbe"/> when a session
+/// create is issued, so the test can assert that no transaction was open at that moment.
+/// </summary>
+internal sealed class ProbingYouTubeClient(IYouTubeClient inner, TransactionProbe probe) : IYouTubeClient
+{
+    /// <inheritdoc />
+    public string BuildAuthorizationUrl(
+        OAuthClient client,
+        OAuthAuthorizationRequest request,
+        string state,
+        string? codeChallenge) => inner.BuildAuthorizationUrl(client, request, state, codeChallenge);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<OAuthTokens>> ExchangeCodeAsync(
+        OAuthClient client,
+        string code,
+        string? codeVerifier,
+        string redirectUri,
+        CancellationToken ct) => inner.ExchangeCodeAsync(client, code, codeVerifier, redirectUri, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<OAuthTokens>> RefreshAsync(OAuthClient client, string refreshToken, CancellationToken ct) =>
+        inner.RefreshAsync(client, refreshToken, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<RevokeOutcome>> RevokeAsync(string token, CancellationToken ct) =>
+        inner.RevokeAsync(token, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<GoogleChannel>> GetMyChannelAsync(string accessToken, CancellationToken ct) =>
+        inner.GetMyChannelAsync(accessToken, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<Uri>> StartUploadAsync(
+        string accessToken,
+        VideoInsertRequest request,
+        long length,
+        CancellationToken ct)
+    {
+        probe.RecordSessionCreate();
+
+        return inner.StartUploadAsync(accessToken, request, length, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<ErrorOr<UploadResult>> ResumeUploadAsync(
+        string accessToken,
+        Uri sessionUri,
+        Stream content,
+        long length,
+        IProgress<long>? progress,
+        CancellationToken ct) => inner.ResumeUploadAsync(accessToken, sessionUri, content, length, progress, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<UploadProbe>> ProbeUploadAsync(
+        string accessToken,
+        Uri sessionUri,
+        long length,
+        CancellationToken ct) => inner.ProbeUploadAsync(accessToken, sessionUri, length, ct);
+
+    /// <inheritdoc />
+    public Task<ErrorOr<IReadOnlyList<YouTubeVideoStatus>>> GetVideosAsync(
+        string accessToken,
+        IReadOnlyList<string> ids,
+        CancellationToken ct) => inner.GetVideosAsync(accessToken, ids, ct);
+}

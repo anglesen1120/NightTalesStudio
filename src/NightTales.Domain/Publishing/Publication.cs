@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using ErrorOr;
 using NightTales.Domain.Common;
 
@@ -233,6 +234,52 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// release a unit.
     /// </summary>
     public DateOnly? QuotaReservedDay => PublicationPayload.ReadQuotaDay(PlatformPayloadJson);
+
+    /// <summary>
+    /// When the run that holds this row's reservation issued its <c>videos.insert</c> session create
+    /// (<c>platform_payload.uploadCreateIssuedAt</c>, plan §3.2, YR19), or <see langword="null"/> when no create was
+    /// issued against the current reservation. It is what makes the release decision survive the attempt that made the
+    /// call: a later attempt sees it without ever having called Google itself.
+    /// </summary>
+    public DateTimeOffset? UploadCreateIssuedAt =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadCreateIssuedAtKey);
+
+    /// <summary>
+    /// Whether a create was issued against the row's current reservation (YR19's release predicate): either the marker
+    /// is stamped, or a session is stored — a session URI only exists because an insert answered it.
+    /// </summary>
+    public bool HasUploadCreateIssued => UploadCreateIssuedAt is not null || UploadSessionEnc is not null;
+
+    /// <summary>
+    /// Until when one run owns this row's session create (<c>platform_payload.uploadSessionCreateLeaseUntil</c>, plan
+    /// §Performance, SEC-8), or <see langword="null"/> when no claim is held. Compared against the caller's clock, never
+    /// by itself: the Domain may not read one.
+    /// </summary>
+    public DateTimeOffset? UploadSessionLeaseUntil =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadSessionLeaseKey);
+
+    /// <summary>
+    /// The sticky upload plan the insert is built from (<c>platform_payload.upload</c>, plan §3 F13), or
+    /// <see langword="null"/> when the row carries none — 06.2.4-T1 has not written it yet, so
+    /// <see cref="EnsureUploadPlan"/> derives one from the row's own columns before the request is built.
+    /// </summary>
+    public PublicationPayload.UploadPlan? UploadPlan =>
+        PublicationPayload.ReadUpload(PlatformPayloadJson);
+
+    /// <summary>
+    /// Which run owns this row's streaming window (<c>platform_payload.uploadStreamLeaseOwner</c>, SEC-4), or
+    /// <see langword="null"/> when no run claims one.
+    /// </summary>
+    public Guid? UploadStreamLeaseOwner =>
+        PublicationPayload.ReadGuid(PlatformPayloadJson, PublicationPayload.UploadStreamLeaseOwnerKey);
+
+    /// <summary>
+    /// Until when the run named by <see cref="UploadStreamLeaseOwner"/> owns this row's streaming window
+    /// (<c>platform_payload.uploadStreamLeaseUntil</c>, SEC-4). Compared against the caller's clock, never by itself:
+    /// a lease that has passed is stale and may be taken over.
+    /// </summary>
+    public DateTimeOffset? UploadStreamLeaseUntil =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadStreamLeaseUntilKey);
 
     /// <summary>
     /// The id of the open <see cref="PlatformIncident"/> holding the row (<c>platform_payload.heldByIncidentId</c>,
@@ -638,7 +685,68 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
             PublicationPayload.UploadSessionEncKey,
             protectedSessionUri);
 
+        // The create's outcome is now recorded, so the claim that preceded it ends in the same write (SEC-8).
+        ClearUploadSessionLease();
+
         return Result.Success;
+    }
+
+    /// <summary>
+    /// Claims this row's next <c>videos.insert</c> session create for one run (plan §Performance, SEC-8): stamps
+    /// <c>platform_payload.uploadCreateIssuedAt</c> — the persistent "a create has been issued against this
+    /// reservation" fact the release rule reads — and a lease until <paramref name="leaseUntil"/>, so a second run
+    /// backs off instead of opening a second session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a lock.</b> The two keys are written in a short transaction that commits <em>before</em> the Google call
+    /// and hold nothing across it: the row lock of a transaction is not involved, and a run that dies holding the lease
+    /// blocks nobody for longer than the create's own timeout plus the caller's margin.
+    /// </para>
+    /// <para>
+    /// <b>The caller reads the lease.</b> <see cref="UploadSessionLeaseUntil"/> is compared against the caller's clock;
+    /// this member only writes what the caller computed, because the Domain may not read a timeout option.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The job's clock reading: the stamp of the marker.</param>
+    /// <param name="leaseUntil">When the claim expires if its outcome is never observed.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c>.
+    /// </returns>
+    public ErrorOr<Success> ClaimUploadSessionCreate(DateTimeOffset now, DateTimeOffset leaseUntil)
+    {
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var payload = PublicationPayload.WithInstant(
+            PlatformPayloadJson,
+            PublicationPayload.UploadCreateIssuedAtKey,
+            now);
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            payload,
+            PublicationPayload.UploadSessionLeaseKey,
+            leaseUntil);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Gives up this row's claim on the session create (<c>platform_payload.uploadSessionCreateLeaseUntil</c>):
+    /// the outcome of the create was observed — attached, refused or lost — so the next attempt may claim again.
+    /// </summary>
+    /// <remarks>
+    /// <b>The marker stays.</b> Ending the lease says "nobody is calling Google right now"; it says nothing about whether
+    /// a call was made, which is what <see cref="UploadCreateIssuedAt"/> keeps until the reservation is given up.
+    /// Removing an absent key leaves the document byte-identical.
+    /// </remarks>
+    public void ClearUploadSessionLease()
+    {
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadSessionLeaseKey);
     }
 
     /// <summary>
@@ -657,6 +765,216 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
             PlatformPayloadJson,
             PublicationPayload.UploadSessionEncKey);
     }
+
+    /// <summary>
+    /// The sticky plan the insert is built from (<c>platform_payload.upload</c>, plan §3 F13): the one already stored,
+    /// or — while 06.2.4-T1 is not shipped and the row carries none — one derived from the row's own columns and
+    /// <em>persisted here</em>, so every later attempt of this row sends the same request the first one planned.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why a plan at all.</b> The privacy and the scheduled instant are decided when the row is planned, not when
+    /// the bytes flow: a pre-audit row goes to YouTube as <c>private</c> with no <c>publishAt</c>, and an approval
+    /// that lands afterwards must not turn the same row into a public one mid-flight. Reading the live
+    /// <see cref="Privacy"/>/<see cref="PublishAt"/> columns would do exactly that.
+    /// </para>
+    /// <para>
+    /// <b>The fallback rule is 06.2.4-T1's, copied not invented</b> (its <c>PlanUpload</c>, 06.2.4 plan §4 UC1):
+    /// pre-audit ⇒ <c>private</c> and no instant; <c>public</c> with an instant more than one minute ahead ⇒
+    /// <c>private</c> plus that instant (YouTube's own scheduled-publishing shape); anything else ⇒ the column's
+    /// privacy and no instant. When 06.2.4-T1 ships it writes the key at consent time and this derivation never
+    /// runs again for that row.
+    /// </para>
+    /// <para>
+    /// <b>Bookkeeping, not a transition.</b> No event, no stamp: the plan is an input of the upload, and the write
+    /// rides in the caller's locked transaction.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The job's clock reading, the instant the one-minute lead is measured from.</param>
+    /// <returns>
+    /// The plan to build the request from; or 409 <c>publication_invalid_state</c> when the row carries none and is
+    /// not <c>scheduled</c>/<c>uploading</c>.
+    /// </returns>
+    public ErrorOr<PublicationPayload.UploadPlan> EnsureUploadPlan(DateTimeOffset now)
+    {
+        if (UploadPlan is { } stored)
+        {
+            return stored;
+        }
+
+        if (Status is not (PublicationStatus.Scheduled or PublicationStatus.Uploading))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var preAudit = PublicationPayload.ReadFlag(PlatformPayloadJson, PublicationPayload.PreAuditKey);
+        var planned = PlanUploadPayload(preAudit, now);
+
+        PlatformPayloadJson = PublicationPayload.WithUpload(PlatformPayloadJson, planned);
+
+        return planned;
+    }
+
+    /// <summary>
+    /// Whether a run other than the caller's currently owns this row's streaming window
+    /// (<c>platform_payload.uploadStreamLeaseUntil</c>, SEC-4). A lease whose instant has passed is stale and reads
+    /// as "nobody", which is how a run that died releases its window without writing anything.
+    /// </summary>
+    /// <param name="now">The caller's clock reading.</param>
+    /// <returns>Whether a live lease is held.</returns>
+    public bool HasLiveUploadStreamLease(DateTimeOffset now) =>
+        UploadStreamLeaseUntil is { } until && until > now;
+
+    /// <summary>
+    /// Claims this row's streaming window for one run (plan §Performance, SEC-4): the owner id and the instant the
+    /// claim expires, written together, so a second run can see that bytes are already flowing into this row's
+    /// session and write nothing instead of streaming into the same session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Refused while another run's lease is live.</b> A lease that has passed is stale — the run that held it
+    /// stopped renewing — and is taken over by the caller, which is the only recovery a crashed run needs.
+    /// </para>
+    /// <para>
+    /// <b>Not a lock.</b> The two keys are written in a short transaction that holds no row lock across the stream;
+    /// the caller stamps this in the same transaction that claims the session create, before the stream opens.
+    /// </para>
+    /// </remarks>
+    /// <param name="owner">The calling run's own id, the value every later renew and release compares against.</param>
+    /// <param name="now">The job's clock reading.</param>
+    /// <param name="leaseUntil">When the claim expires if it is never renewed.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c> and for a live
+    /// lease another run holds.
+    /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="owner"/> is <see cref="Guid.Empty"/>.</exception>
+    public ErrorOr<Success> ClaimUploadStreamLease(Guid owner, DateTimeOffset now, DateTimeOffset leaseUntil)
+    {
+        ArgumentOutOfRangeException.ThrowIfEqual(owner, Guid.Empty);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        if (UploadStreamLeaseOwner is { } holder && holder != owner && HasLiveUploadStreamLease(now))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var payload = PublicationPayload.WithKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseOwnerKey,
+            owner.ToString("D", CultureInfo.InvariantCulture));
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            payload,
+            PublicationPayload.UploadStreamLeaseUntilKey,
+            leaseUntil);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Pushes this row's streaming lease out while the bytes still flow (SEC-4): a run that is streaming keeps the
+    /// window, and a run that stopped renewing lets it expire.
+    /// </summary>
+    /// <param name="owner">The calling run's own id.</param>
+    /// <param name="leaseUntil">The new expiry, as the caller computed it.</param>
+    /// <returns>
+    /// Whether the write happened: a lease another run now owns is left alone, which is what stops a late writer
+    /// from re-taking a window it lost.
+    /// </returns>
+    public bool RenewUploadStreamLease(Guid owner, DateTimeOffset leaseUntil)
+    {
+        if (UploadStreamLeaseOwner != owner)
+        {
+            return false;
+        }
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseUntilKey,
+            leaseUntil);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Gives up this row's streaming window (<see cref="UploadStreamLeaseUntil"/>) when the calling run still owns
+    /// it: the outcome of the stream is being recorded in the same transaction, so the next attempt may stream.
+    /// </summary>
+    /// <param name="owner">The calling run's own id.</param>
+    public void ReleaseUploadStreamLease(Guid owner)
+    {
+        if (UploadStreamLeaseOwner != owner)
+        {
+            return;
+        }
+
+        ClearUploadStreamLease();
+    }
+
+    /// <summary>
+    /// Removes the streaming lease (<c>uploadStreamLeaseOwner</c> and <c>uploadStreamLeaseUntil</c>) whatever it
+    /// says. Used by the transitions a stream cannot outlive — every outcome of the row — so a late release by a run
+    /// that already lost the lease cannot leave the keys behind on a terminal row.
+    /// </summary>
+    public void ClearUploadStreamLease()
+    {
+        var payload = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseOwnerKey);
+
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            payload,
+            PublicationPayload.UploadStreamLeaseUntilKey);
+    }
+
+    /// <summary>
+    /// The plan one row implies when nothing has planned it yet: 06.2.4-T1's <c>PlanUpload</c> rule, applied to the
+    /// columns this aggregate already holds (see <see cref="EnsureUploadPlan"/> for why it lives here).
+    /// </summary>
+    /// <param name="preAudit">Whether 06.2.1-T1 stamped the row pre-audit.</param>
+    /// <param name="now">The instant the one-minute lead is measured from.</param>
+    /// <returns>The plan to store.</returns>
+    private PublicationPayload.UploadPlan PlanUploadPayload(bool preAudit, DateTimeOffset now)
+    {
+        if (preAudit)
+        {
+            // An unaudited API project only publishes private videos, and a scheduled instant is refused: the row is
+            // private whatever the submitted privacy was (F13, 06 README D12).
+            return new PublicationPayload.UploadPlan(UploadPlanPrivate, null, PreAudit: true);
+        }
+
+        if (!string.Equals(Privacy, UploadPlanPublic, StringComparison.Ordinal))
+        {
+            // Private/unlisted: YouTube takes the visibility as it is, and a scheduled instant only means something
+            // for a public video (06.2.4-T1's G3 fix).
+            return new PublicationPayload.UploadPlan(Privacy, null, PreAudit: false);
+        }
+
+        if (PublishAt is { } publishAt && publishAt > now.Add(UploadPlanLeadTime))
+        {
+            // YouTube's scheduled publishing: private now, public at the instant. An instant closer than the lead
+            // time is not a schedule anymore, so it is dropped instead of refused at insert time.
+            return new PublicationPayload.UploadPlan(UploadPlanPrivate, publishAt, PreAudit: false);
+        }
+
+        return new PublicationPayload.UploadPlan(Privacy, null, PreAudit: false);
+    }
+
+    /// <summary>The <c>public</c> wire value of <c>publications.privacy</c> (G6).</summary>
+    private const string UploadPlanPublic = "public";
+
+    /// <summary>The <c>private</c> wire value of <c>publications.privacy</c> (G6), and the one a scheduled insert uses.</summary>
+    private const string UploadPlanPrivate = "private";
+
+    /// <summary>
+    /// How far ahead a scheduled instant must be to travel with the insert (06.2.4-T1's boundary): an instant this
+    /// close is "as soon as possible", which YouTube expresses by omitting <c>publishAt</c>.
+    /// </summary>
+    private static readonly TimeSpan UploadPlanLeadTime = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Records the Pacific quota day the row's unit is reserved on (<c>platform_payload.quotaReservedDay</c>, plan
@@ -696,6 +1014,12 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
             PublicationPayload.QuotaReservedDayKey,
             PublicationPayload.FormatQuotaDay(quotaDay));
 
+        // A fresh unit buys a fresh insert: nothing was issued against it yet, and no run holds its claim (YR27-3's
+        // restart reserves again before it opens the new session).
+        ClearQuotaReservationMarker();
+        ClearUploadSessionLease();
+        ClearUploadStreamLease();
+
         return Result.Success;
     }
 
@@ -710,9 +1034,26 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// </remarks>
     public void ClearQuotaReservation()
     {
-        PlatformPayloadJson = PublicationPayload.WithoutKey(
+        var payload = PublicationPayload.WithoutKey(
             PlatformPayloadJson,
             PublicationPayload.QuotaReservedDayKey);
+
+        // The marker describes one reservation ("a create was issued against this unit"), so it goes with it (YR19):
+        // a row that holds no day must never look like one whose insert Google counted.
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            payload,
+            PublicationPayload.UploadCreateIssuedAtKey);
+
+        // The reservation and the streaming window end together: the run that released the unit is done with the row.
+        ClearUploadStreamLease();
+    }
+
+    /// <summary>Removes the <c>uploadCreateIssuedAt</c> marker alone, without touching the day that names the unit.</summary>
+    private void ClearQuotaReservationMarker()
+    {
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadCreateIssuedAtKey);
     }
 
     /// <summary>
@@ -866,6 +1207,9 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
         PlatformPayloadJson = WithGoogleReason(googleReason);
         UpdatedAt = now;
 
+        // The run that failed here is no longer streaming, so its window ends with the verdict (SEC-4).
+        ClearUploadStreamLease();
+
         Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
 
         return Result.Success;
@@ -924,6 +1268,9 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
         PlatformPayloadJson = payload;
         UpdatedAt = now;
 
+        // Nothing will stream this row again, so the streaming window ends with it (SEC-4).
+        ClearUploadStreamLease();
+
         Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
 
         return Result.Success;
@@ -970,6 +1317,9 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
             PublicationPayload.HeldByIncidentIdKey,
             incidentId.ToString());
         UpdatedAt = now;
+
+        // The hold ends this run's stream; the held row is re-run by its deferred wake, which claims a new window.
+        ClearUploadStreamLease();
 
         Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
 
@@ -1033,6 +1383,10 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     {
         var payload = PublicationPayload.WithoutKey(PlatformPayloadJson, PublicationPayload.QuotaReservedDayKey);
         payload = PublicationPayload.WithoutKey(payload, PublicationPayload.HeldByIncidentIdKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadCreateIssuedAtKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadSessionLeaseKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadStreamLeaseUntilKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadStreamLeaseOwnerKey);
 
         ExternalPostId = videoId;
         ExternalUrl = WatchUrl(videoId);

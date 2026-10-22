@@ -801,6 +801,144 @@ public sealed class PublicationUploadTransitionsTests
         }
     }
 
+    [Fact]
+    public void ClaimUploadSessionCreate_StampsTheMarkAndTheLease()
+    {
+        // SEC-8/QA D3: the keys a run writes before its `videos.insert` leaves the process. The marker is the persistent
+        // "a create was issued against this reservation" fact (YR19), the lease is the time-bounded claim that keeps a
+        // second run from opening a second session.
+        var publication = Uploading(quotaDay: QuotaDay);
+        var claimedAt = UploadStartedAt.AddMinutes(1);
+        var leaseUntil = claimedAt.AddSeconds(40);
+        var eventsBefore = publication.DomainEvents.OfType<PublicationUpdated>().Count();
+
+        var result = publication.ClaimUploadSessionCreate(claimedAt, leaseUntil);
+
+        result.IsError.ShouldBeFalse();
+        publication.UploadCreateIssuedAt.ShouldBe(claimedAt);
+        publication.UploadSessionLeaseUntil.ShouldBe(leaseUntil);
+        publication.HasUploadCreateIssued.ShouldBeTrue();
+        publication.QuotaReservedDay.ShouldBe(QuotaDay, "the claim says nothing about the unit");
+        publication.Status.ShouldBe(PublicationStatus.Uploading);
+
+        var payload = Payload(publication);
+        payload.GetProperty(PublicationPayload.UploadCreateIssuedAtKey).GetString().ShouldNotBeNullOrWhiteSpace();
+        payload.GetProperty(PublicationPayload.UploadSessionLeaseKey).GetString().ShouldNotBeNullOrWhiteSpace();
+        publication.DomainEvents.OfType<PublicationUpdated>().Count().ShouldBe(
+            eventsBefore,
+            "a claim is bookkeeping, not a transition: no event the dispatcher could act on");
+    }
+
+    [Theory]
+    [InlineData(PublicationStatus.Processing)]
+    [InlineData(PublicationStatus.Published)]
+    [InlineData(PublicationStatus.Failed)]
+    [InlineData(PublicationStatus.Cancelled)]
+    public void ClaimUploadSessionCreate_FromATerminalRow_IsRefused(PublicationStatus status)
+    {
+        var publication = Uploading();
+        SetStatus(publication, status);
+        var payload = publication.PlatformPayloadJson;
+
+        var result = publication.ClaimUploadSessionCreate(UploadStartedAt, UploadStartedAt.AddSeconds(40));
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(PublicationErrors.InvalidStateCode);
+        publication.UploadCreateIssuedAt.ShouldBeNull();
+        publication.PlatformPayloadJson.ShouldBe(payload, "a refused claim writes nothing");
+    }
+
+    [Fact]
+    public void ClearUploadSessionLease_KeepsTheCreateMarker()
+    {
+        // Ending the claim says "nobody is calling Google now"; it must not erase the fact that a call was made, which
+        // is what the release rule reads on a later attempt (YR19/SEC-1).
+        var publication = Uploading(quotaDay: QuotaDay);
+        var claimedAt = UploadStartedAt.AddMinutes(1);
+        publication.ClaimUploadSessionCreate(claimedAt, claimedAt.AddSeconds(40)).IsError.ShouldBeFalse();
+
+        publication.ClearUploadSessionLease();
+
+        publication.UploadSessionLeaseUntil.ShouldBeNull();
+        publication.UploadCreateIssuedAt.ShouldBe(claimedAt);
+        Payload(publication).TryGetProperty(PublicationPayload.UploadSessionLeaseKey, out _)
+            .ShouldBeFalse("the key is removed, never stored as null");
+    }
+
+    [Fact]
+    public void AttachUploadSession_EndsTheClaimInTheSameWrite()
+    {
+        // The cipher commit is the transaction that records the create's outcome, so the lease goes with it.
+        var publication = Uploading(quotaDay: QuotaDay);
+        publication.ClaimUploadSessionCreate(UploadStartedAt, UploadStartedAt.AddSeconds(40)).IsError.ShouldBeFalse();
+
+        publication.AttachUploadSession(ProtectedSessionUri).IsError.ShouldBeFalse();
+
+        publication.UploadSessionEnc.ShouldBe(ProtectedSessionUri);
+        publication.UploadSessionLeaseUntil.ShouldBeNull();
+        publication.UploadCreateIssuedAt.ShouldBe(UploadStartedAt, "the insert was issued, and the marker says so");
+    }
+
+    [Fact]
+    public void HasUploadCreateIssued_ReadsAStoredSessionAsAnIssuedCreate()
+    {
+        // A row seeded by an earlier run (or written before the marker existed) carries the cipher and no marker: a
+        // session URI only exists because an insert answered it, so the release rule must treat it as spent.
+        var publication = Uploading(quotaDay: QuotaDay);
+        publication.AttachUploadSession(ProtectedSessionUri).IsError.ShouldBeFalse();
+
+        publication.UploadCreateIssuedAt.ShouldBeNull();
+        publication.HasUploadCreateIssued.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void MarkQuotaReserved_StartsTheNewReservationWithoutAClaim()
+    {
+        // YR27-3: a restart reserves again, so the new unit has no create against it and nobody holds its claim.
+        var publication = Uploading(quotaDay: QuotaDay);
+        publication.ClaimUploadSessionCreate(UploadStartedAt, UploadStartedAt.AddSeconds(40)).IsError.ShouldBeFalse();
+
+        var nextDay = QuotaDay.AddDays(1);
+        publication.MarkQuotaReserved(nextDay).IsError.ShouldBeFalse();
+
+        publication.QuotaReservedDay.ShouldBe(nextDay);
+        publication.UploadCreateIssuedAt.ShouldBeNull();
+        publication.UploadSessionLeaseUntil.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ClearQuotaReservation_RemovesTheCreateMarkerWithTheDay()
+    {
+        // SEC-1/S72-1: the two keys describe one reservation, so a row that holds no day must never look like one whose
+        // insert Google counted.
+        var publication = Uploading(quotaDay: QuotaDay);
+        publication.ClaimUploadSessionCreate(UploadStartedAt, UploadStartedAt.AddSeconds(40)).IsError.ShouldBeFalse();
+
+        publication.ClearQuotaReservation();
+
+        publication.QuotaReservedDay.ShouldBeNull();
+        publication.UploadCreateIssuedAt.ShouldBeNull();
+
+        var payload = Payload(publication);
+        payload.TryGetProperty(PublicationPayload.QuotaReservedDayKey, out _).ShouldBeFalse();
+        payload.TryGetProperty(PublicationPayload.UploadCreateIssuedAtKey, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void MarkProcessing_RemovesTheUploadClaimsWithTheReservedDay()
+    {
+        // The upload was received: the day is spent for good, so the create marker and any surviving claim go with it.
+        var publication = Uploading(quotaDay: QuotaDay);
+        publication.ClaimUploadSessionCreate(UploadStartedAt, UploadStartedAt.AddSeconds(40)).IsError.ShouldBeFalse();
+
+        publication.MarkProcessing(VideoId, UploadStartedAt.AddMinutes(5), maxMinutes: 45).IsError.ShouldBeFalse();
+
+        publication.QuotaReservedDay.ShouldBeNull();
+        publication.UploadCreateIssuedAt.ShouldBeNull();
+        publication.UploadSessionLeaseUntil.ShouldBeNull();
+        publication.Processing.ShouldNotBeNull("the poller's block is still written");
+    }
+
     /// <summary>The parsed <c>platform_payload</c> of a row that has one.</summary>
     /// <param name="publication">The row to read.</param>
     /// <returns>The document.</returns>

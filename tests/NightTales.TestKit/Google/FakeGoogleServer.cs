@@ -158,6 +158,12 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     private int _goneSessionProbes;
     private int _videoListCalls;
     private int _serverErrorsRemaining;
+    private readonly ConcurrentQueue<TaskCompletionSource> _chunkGates = new();
+    private readonly SemaphoreSlim _heldChunkSignal = new(0);
+    private volatile bool _holdChunks;
+    private int _heldChunks;
+    private int _acceptedChunks;
+    private int _authErrorChunksRemaining;
     private string? _lastVideoId;
     private UploadScenario _scenario = UploadScenario.None;
 
@@ -186,7 +192,68 @@ public sealed class FakeGoogleServer : IAsyncDisposable
             Interlocked.Exchange(
                 ref _serverErrorsRemaining,
                 value.ServerErrorsPersistently ? int.MaxValue : value.ChunkServerErrors);
+            Interlocked.Exchange(ref _acceptedChunks, 0);
+            Interlocked.Exchange(ref _authErrorChunksRemaining, value.AuthErrorChunkRequest);
         }
+    }
+
+    /// <summary>
+    /// Holds every chunk <c>PUT</c> from here on until the test releases it one by one (PERF-3): the handler test that
+    /// needs a run parked mid-stream, with another run racing it, drives it through this.
+    /// </summary>
+    public void HoldChunks() => _holdChunks = true;
+
+    /// <summary>Releases the oldest held chunk request, and only that one.</summary>
+    public void ReleaseChunk()
+    {
+        if (_chunkGates.TryDequeue(out var gate))
+        {
+            gate.TrySetResult();
+        }
+    }
+
+    /// <summary>Stops holding chunks and releases every request parked on the gate.</summary>
+    public void ReleaseChunks()
+    {
+        _holdChunks = false;
+
+        while (_chunkGates.TryDequeue(out var gate))
+        {
+            gate.TrySetResult();
+        }
+    }
+
+    /// <summary>How many chunk <c>PUT</c>s have been parked on the hold gate so far.</summary>
+    public int HeldChunks => Volatile.Read(ref _heldChunks);
+
+    /// <summary>Completes once at least <paramref name="count"/> chunk <c>PUT</c>s have parked on the hold gate.</summary>
+    /// <param name="count">How many held chunks to wait for.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <returns>A task that completes when the count is reached.</returns>
+    public async Task WaitForHeldChunksAsync(int count, CancellationToken ct = default)
+    {
+        while (HeldChunks < count)
+        {
+            await _heldChunkSignal.WaitAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Parks one chunk request on the hold gate when the test armed <see cref="HoldChunks"/>.</summary>
+    /// <returns>A task the caller awaits before answering the request.</returns>
+    private async Task HoldChunkIfAskedAsync()
+    {
+        if (!_holdChunks)
+        {
+            return;
+        }
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _chunkGates.Enqueue(gate);
+        Interlocked.Increment(ref _heldChunks);
+        _heldChunkSignal.Release();
+
+        await gate.Task.ConfigureAwait(false);
     }
 
     /// <summary>The listener's base URL, e.g. <c>http://127.0.0.1:53123/</c>.</summary>
@@ -920,10 +987,30 @@ public sealed class FakeGoogleServer : IAsyncDisposable
             return;
         }
 
+        // PERF-3: a test can park the stream here, which is what a duplicate run races against.
+        await HoldChunkIfAskedAsync().ConfigureAwait(false);
+
         var received = await CountBodyAsync(context).ConfigureAwait(false);
         var declared = range.End - range.Start + 1;
         _chunks.Enqueue(new FakeUploadChunk(header, received, declared, range.Start, range.End, range.Total, false, session.Id));
         Interlocked.Increment(ref _chunkRequests);
+
+        // PERF-5: the token expired mid-stream, so exactly one chunk request is refused as unauthorized.
+        if (Interlocked.Decrement(ref _authErrorChunksRemaining) == 0)
+        {
+            await WriteUploadFailureAsync(context, UploadScenario.Reasons.AuthError).ConfigureAwait(false);
+
+            return;
+        }
+
+        // PERF-2: the session keeps a prefix and every later chunk dies, which is the state a resume continues from.
+        if (Scenario.AcceptChunksBeforeDrop > 0
+            && Interlocked.Increment(ref _acceptedChunks) > Scenario.AcceptChunksBeforeDrop)
+        {
+            context.Abort();
+
+            return;
+        }
 
         if (Scenario.DropLastChunk && range.End + 1 >= range.Total)
         {

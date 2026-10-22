@@ -1,3 +1,4 @@
+using System.Net;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Application.Features.Publishing.Upload;
 using NightTales.Domain.Publishing;
@@ -49,10 +50,139 @@ public sealed class PublishYouTubeJobReleasePredicateTests(TestDatabase database
             "the reserved day stays with the unit that is still spent");
     }
 
-    private static async Task<World> SeedReadyAsync(PublishYouTubeJobHarness harness)
+    [Fact]
+    public async Task PreSendReauthOnTheSecondAttempt_ReleasesTheUnitTheRowHolds()
+    {
+        // F4/SEC-1: `run.Reservation` is the *attempt's* property, so a release decided from it released nothing on any
+        // later attempt and the day key stayed on the row forever. The decision now reads the row under the lock: the
+        // unit attempt 1 reserved (then gave back no create for) is the one attempt 2 gives back.
+        await using var harness = await StartAsync();
+        var world = await SeedReadyAsync(harness, tokenExpiresIn: TimeSpan.Zero);
+        var day = harness.QuotaDayToday();
+
+        harness.Google.Options.TokenStatusCode = HttpStatusCode.InternalServerError;
+        harness.Google.Options.TokenError = "server_error";
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 1);
+
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe("uploading", "a token 5xx is retryable");
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.QuotaReservedDayKey))
+            .ShouldBe(PublicationPayload.FormatQuotaDay(day));
+
+        harness.Google.Options.TokenStatusCode = HttpStatusCode.BadRequest;
+        harness.Google.Options.TokenError = "invalid_grant";
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 2);
+
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe("failed");
+        (await harness.ErrorCodeAsync(world.PublicationId)).ShouldBe(PublicationErrorCodes.ChannelReauthRequired);
+        (await harness.QuotaUnitsAsync(day)).ShouldBe(
+            0,
+            "no create was ever issued for this reservation, so the unit the row still names goes back");
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.QuotaReservedDayKey))
+            .ShouldBeEmpty("the key leaves in the same transaction as the release");
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.UploadCreateIssuedAtKey)).ShouldBeEmpty();
+        harness.Google.SessionCreateCalls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task PreSendReauthAfterACreateWasIssued_KeepsTheUnit()
+    {
+        // The mirror: attempt 1 did reach the create, so its unit is spent whatever attempt 2's token answer says. The
+        // row keeps both the unit and the key that names it.
+        await using var harness = await StartAsync();
+        var world = await SeedReadyAsync(harness, tokenExpiresIn: TimeSpan.Zero);
+        var day = harness.QuotaDayToday();
+        harness.Google.Scenario = UploadScenario.PersistentServerErrors;
+
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 1);
+
+        harness.Google.SessionCreateCalls.ShouldBe(1);
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.UploadCreateIssuedAtKey))
+            .ShouldNotBeNullOrWhiteSpace();
+
+        // Attempt 1 refreshed the token successfully, so the next attempt only reaches the token endpoint again once
+        // that token is near its expiry (`TokenService.RefreshWindow`).
+        harness.Clock.Advance(TimeSpan.FromHours(6));
+        harness.Google.Scenario = UploadScenario.None;
+        harness.Google.Options.TokenStatusCode = HttpStatusCode.BadRequest;
+        harness.Google.Options.TokenError = "invalid_grant";
+        await RunTolerantlyAsync(harness, world.PublicationId, attempt: 2);
+
+        (await harness.StatusAsync(world.PublicationId)).ShouldBe("failed");
+        (await harness.ErrorCodeAsync(world.PublicationId)).ShouldBe(PublicationErrorCodes.ChannelReauthRequired);
+        (await harness.QuotaUnitsAsync(day)).ShouldBe(1, "the create was issued, so YouTube may have counted it");
+        (await harness.PayloadKeyAsync(world.PublicationId, PublicationPayload.QuotaReservedDayKey))
+            .ShouldBe(PublicationPayload.FormatQuotaDay(day));
+    }
+
+    [Fact]
+    public async Task QuotaExceededOnTheSecondAttempt_ReleasesTheRowUnit_AndTheNextDayReservesAgain()
+    {
+        // A decision that *is* a quota answer releases the unit even though a create went out (YR19: Google counted
+        // nothing), and it still reschedules the row — so the next Pacific day must reserve a fresh unit rather than
+        // skip on a stale key (SEC-1's second half).
+        await using var harness = await StartAsync();
+        var world = await SeedReadyAsync(harness);
+        var day = harness.QuotaDayToday();
+        await harness.SeedQuotaAsync(day, unitsUsed: 1, unitsLimit: 100, ct: Ct);
+        var episode = await harness.SeedEpisodeAsync(world.UserId, harness.Blobs.DefaultLength, ct: Ct);
+        var payload = PublicationPayload.WithInstant(
+            PublishYouTubeJobHarness.DefaultPlatformPayload,
+            PublicationPayload.UploadCreateIssuedAtKey,
+            harness.Clock.UtcNow.AddSeconds(-30));
+        payload = PublicationPayload.WithKey(
+            payload,
+            PublicationPayload.QuotaReservedDayKey,
+            PublicationPayload.FormatQuotaDay(day));
+        var claimed = await harness.SeedPublicationAsync(
+            world.UserId,
+            episode.EpisodeId,
+            world.Channel.Id,
+            status: PublicationStatus.Uploading,
+            platformPayloadJson: payload,
+            ct: Ct);
+
+        harness.Google.Scenario = UploadScenario.QuotaExceeded();
+        await RunTolerantlyAsync(harness, claimed, attempt: 2);
+
+        (await harness.StatusAsync(claimed)).ShouldBe("scheduled", "a quota refusal reschedules the row");
+        (await harness.PayloadKeyAsync(claimed, PublicationPayload.QuotaReservedDayKey)).ShouldBeEmpty();
+        (await harness.PayloadKeyAsync(claimed, PublicationPayload.UploadCreateIssuedAtKey)).ShouldBeEmpty();
+        (await harness.QuotaUnitsAsync(day)).ShouldBe(0, "the quota-class decision gives the row's unit back");
+        var wake = await harness.NextAttemptAtAsync(claimed);
+        wake.ShouldNotBeNull();
+
+        harness.Google.Scenario = UploadScenario.None;
+        harness.Clock.Advance(wake!.Value - harness.Clock.UtcNow + TimeSpan.FromMinutes(1));
+        await harness.RunAsync(claimed, Ct);
+
+        (await harness.StatusAsync(claimed)).ShouldBe("processing");
+        (await harness.QuotaUnitsAsync(harness.QuotaDayToday())).ShouldBe(
+            1,
+            "the next day's run reserves its own unit; a stale key would have made it skip the reservation");
+    }
+
+    private Task<PublishYouTubeJobHarness> StartAsync() => PublishYouTubeJobHarness.StartAsync(Database, Ct);
+
+    private static async Task RunTolerantlyAsync(PublishYouTubeJobHarness harness, Guid publicationId, int attempt)
+    {
+        try
+        {
+            await harness.RunAttemptAsync(publicationId, attempt, maxAttempts: 6, Ct);
+        }
+        catch (Exception) when (attempt < 6)
+        {
+            // A retryable failure surfaces to the job; the row is what these tests assert.
+        }
+    }
+
+    private static async Task<World> SeedReadyAsync(
+        PublishYouTubeJobHarness harness,
+        TimeSpan? tokenExpiresIn = null)
     {
         var userId = await harness.CreateUserAsync(Ct);
-        var channel = await harness.SeedChannelAsync(userId, ct: Ct);
+        var channel = tokenExpiresIn is { } expires
+            ? await harness.SeedChannelAsync(userId, expiresIn: expires, ct: Ct)
+            : await harness.SeedChannelAsync(userId, ct: Ct);
         var episode = await harness.SeedEpisodeAsync(userId, harness.Blobs.DefaultLength, ct: Ct);
         var publicationId = await harness.SeedPublicationAsync(userId, episode.EpisodeId, channel.Id, ct: Ct);
 
