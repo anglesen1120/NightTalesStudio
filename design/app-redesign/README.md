@@ -55,7 +55,7 @@ python3 -m http.server 8000
 |---|---|
 | `tokens.css` | Design tokens plus the embedded Be Vietnam Pro WOFF2 data URLs; single source of truth for colour, type, spacing, control and chip sizes |
 | `ui-runtime.js` | Language switch and shared page behaviour: rewrites `vi`/`en` pairs, sets `<html lang>`, localises option labels, table cell titles and description text, enhances/lays out tables, and drives the tooltip, help-panel and popover widgets. It contains **no theme code** |
-| `pager.js` | Numbered-pagination behaviour used by the list pages (10 CR-57 proposal) |
+| `pager.js` | Numbered-pagination behaviour used by the list pages (10 CR-57) |
 | `story-workspace.css`, `story-workspace.js` | Story review/editor workspace: diff, version rail, annotation layer |
 | `font-license.txt` | SIL OFL 1.1 licence for Be Vietnam Pro |
 | `assets/production/source-notes.txt` | Provenance of the media fixtures used by the review pages |
@@ -80,9 +80,9 @@ The design work ran in phases; these documents are the evidence trail, in the or
 
 ## Known gaps (recorded, not implemented)
 
-- **DASH-1…DASH-10** (plan-10 record **10 CR-56**, a number that exists only in PR #280 — `docs/dashboard-api-gaps`, still **open**, so the highest CR on `develop` is 10 CR-55) — the approved dashboard renders ten data points the API cannot supply yet (tile trigger/timing, list-level step and percent, run ETA/elapsed/started-by, list-level `nextActions` and status-entry time, aggregated publication schedule, reloadable activity history, cancel during story generation). Cite them by name until #280 merges. No route is invented here.
+- **DASH-1…DASH-10** (plan-10 record **10 CR-56**, defined in [`plans/features/10-web-ui/README.md` §4](../../plans/features/10-web-ui/README.md) (PR #280); the highest CR on `develop` before it was 10 CR-55 — the approved dashboard renders ten data points the API cannot supply yet (tile trigger/timing, list-level step and percent, run ETA/elapsed/started-by, list-level `nextActions` and status-entry time, aggregated publication schedule, reloadable activity history, cancel during story generation). No route is invented here.
 - **DASH-9 needs a DEC 10.14 amendment.** Reloadable activity history is not a revival of the user-facing activity feed that DEC 10.14 dropped (09.3.6-T2; `plans/09-backend-api.md` §09.3.6: "There is no HTTP feed over this table"), so any read route for it needs an explicit amendment before a task exists.
-- **Numbered pagination** (plan-10 record **10 CR-57**, again only in PR #280) — owner list screens (`/series`, `/episodes`, any other pager) use numbered pages with a total ("Showing 21–40 of 245", pages `1 2 3 … 13`, 20/50/100 rows) instead of "load more". The wire shape is still `[OPEN]` because the cursor-only contract carries no total.
+- **Numbered pagination** (plan-10 record **10 CR-57**, defined in [`plans/features/10-web-ui/README.md` §4](../../plans/features/10-web-ui/README.md) (PR #280) — owner list screens (`/series`, `/episodes`, any other pager) use numbered pages with a total ("Showing 21–40 of 245", pages `1 2 3 … 13`, 20/50/100 rows) instead of "load more". The wire shape is still `[OPEN]` because the cursor-only contract carries no total.
 - **No Angular implementation yet.** Mockup CSS is not application CSS: `tokens.css` here is a superset/rework of [`design/ui/assets/tokens.css`](../ui/assets/tokens.css) (adds `--control-height`, `--control-pad`, `--control-text`, `--nts-chip-*`, hover/on-error roles; drops `--nts-color-hairline` and `--nts-color-playhead-soft`), so adopting it is a design-token decision, not a copy.
 
 ## Media fixtures not committed
