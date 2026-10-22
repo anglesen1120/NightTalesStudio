@@ -260,6 +260,8 @@ Each use case states trigger → API → states → errors. All errors go throug
 
 **[RESOLVED-2]** Source snapshot `00e7d5d` exposes a scalar episode `status` filter. The dashboard uses the five-call contract above; no comma-separated fallback remains.
 
+**[OPEN-3]** The approved dashboard redesign reads more than the shipped dashboard: ten data points are missing from the contract (10 CR-56, `DASH-1`–`DASH-10` in `../../../00-overview.md` §8; the backend statement is `../../../09-backend-api.md` §10). The aggregated publication schedule it needs (`DASH-8`, one list across episodes for the "Upcoming" table) generalises [OPEN-1] from one series to the whole account — whichever read lands must serve both, or say why not. Nothing is decided and nothing here changes: the five-call `Promise.all` above stays the shipped behaviour until plan 09 details the shapes.
+
 **Events (D8).** Consumed: `EpisodeUpdated` (per-episode subscription via `RealtimeService.subscribeEpisode(episodeId, handler)`, WR7) → the run-log row refetches its episode/publication cell and, coalesced within 250 ms, the whole page once; `resync` after a (re)connect/visibility → the same coalesced refetch, but only if the tab has a live subscription. No `AutopilotRunUpdated` in P (B18/[OPEN] in 02.8.1 §5) → polling (§7). The hub token never appears in a URL and the ticket is never logged (D8).
 
 **Events raised by this folder:** none. The UI never sends outbox messages; every state change goes through the listed routes.

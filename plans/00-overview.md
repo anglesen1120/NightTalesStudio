@@ -340,6 +340,19 @@ any non-terminal → failed            (unrecoverable only, e.g. account suspend
 - Real-time: SignalR hub `/hubs/episodes` (connect with a 60-second single-use ticket from `POST /hubs/ticket`, never the JWT in the query string) pushes `EpisodeUpdated`, `RenderProgress { episodeId, renderJobId, stage, percent }` (`stage` guaranteed values `queued|running|ingesting`; finer values `voice|subtitles|images|assembling` reported by the adapter from MPT progress (05 CR-2, F09) plus the adapter-internal `checking`), `PublicationUpdated`.
 - `GET /episodes/{id}` returns `nextActions` (computed by the domain from §7), the latest render job with its `stage`/`percent`, and `processingPaused` (null or a reason such as `spend_cap_reached` or `provider_funds_exhausted` from the autopilot auto-pause, 02.8); `EpisodeUpdated` carries the same field.
 
+- **Dashboard data gaps (10 CR-56) [OPEN].** The approved dashboard design (`dashboard.html` of the UI-redesign project `nts-app-ui-redesign-20261021`; its source table is `review-tables.md` §Nguồn dữ liệu, L332–349) renders ten things this contract cannot supply. Owner decision 2026-10-22: record them, do not invent routes — the table below is unchanged, no payload or task is decided, and each item stays `[OPEN]` until plan 09 details it.
+  - DASH-1 status-strip tile subtitles: per-tile trigger and timing (autopilot-driven, waiting longer than 24 h, scheduled in the next 7 days). Today only status counts come from `GET /episodes`.
+  - DASH-2 list-level current step for every status other than `rendering`: `RenderProgress.stage` and the latest render job on `GET /episodes/{id}` cover render only.
+  - DASH-3 list-level progress percent for those same non-render statuses (`RenderProgress` is render-only).
+  - DASH-4 run ETA: no generation-run estimate exists; `GET /publishing/youtube/eta` returns a publishing slot, not a run.
+  - DASH-5 run elapsed time: the contract carries no run start timestamp.
+  - DASH-6 run started-by: autopilot versus owner.
+  - DASH-7 "Needs you": list-level `nextActions` (`nextActions` exists only on `GET /episodes/{id}`) plus how long each item has waited — the list item carries `updatedAt`, which any update moves, not a status-entered timestamp (`EpisodeListItemDto`: id, seriesId, title, status, lengthTier, createdAt, updatedAt, etag).
+  - DASH-8 aggregated publication schedule across episodes ("Upcoming"): publications are per episode only (`GET /episodes/{id}/publications`); this generalises the series-scoped read already requested as `10.4-series-autopilot/plan.md` [OPEN-1].
+  - DASH-9 activity history that survives a page load: the hub pushes `EpisodeUpdated`/`PublicationUpdated` live with no replay or cursor. This is **not** a revival of the user-facing activity feed dropped by DEC 10.14 (09.3.6-T2) — the audit rows stay in the database (`audit_logs`, `visibility = user`) with no read route, and reading them for the dashboard is only one option [OPEN].
+  - DASH-10 cancel a run during story generation: only `DELETE /render-jobs/{id}` exists, and `DELETE /episodes/{id}` answers 409 `episode_invalid_state` while `story_generating` (09.5.1 F14), so an in-flight generation has no stop command even though §7 already allows `story_generating → draft | story_review` on cancellation.
+  - [PROPOSAL] not decided: one dashboard read-model route could close DASH-1–DASH-9 in a single call; extending the `GET /episodes` list item instead is equally open.
+
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/login`, `/auth/login/mfa`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/reauth`, `POST /me/mfa/setup`, `POST /me/mfa/verify`, `POST /me/mfa/recovery-codes`, `DELETE /me/mfa` (no register/verify-email: the single owner account is seeded — DEC 10.14) |
