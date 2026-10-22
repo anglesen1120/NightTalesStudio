@@ -22,6 +22,7 @@ using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.OpenAI;
+using NightTales.TestKit.Publishing;
 using NightTales.TestKit.Research;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
@@ -401,17 +402,17 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             // endpoint overrides this one.
             [$"{StorageSettings.SectionName}:{nameof(StorageSettings.ServiceUrl)}"] = StorageTestEndpoint.Unreachable,
 
-            // 06.2.3-T2: the Worker composition root now composes `AddYouTubePublishing`, so the graph binds and
-            // start-up-validates the `YouTube` section — an empty `ActiveClientId` would fail every host's boot. These
-            // are the production-shaped values the validator needs (a named client whose `SecretRef` is a secret-manager
-            // *name*, an absolute redirect and exactly the two scopes); a test that talks to FakeGoogleServer overrides
-            // the endpoints and runs in the Development environment, where the https-only rule does not apply.
-            ["YouTube:ActiveClientId"] = "nts-youtube-dev",
-            ["YouTube:Clients:nts-youtube-dev:SecretRef"] = "nts/dev/api/YOUTUBE_CLIENT_SECRET",
-            ["YouTube:RedirectUri"] = "http://127.0.0.1:5000/api/v1/channels/youtube/callback",
-            ["YouTube:Scopes:0"] = "https://www.googleapis.com/auth/youtube.upload",
-            ["YouTube:Scopes:1"] = "https://www.googleapis.com/auth/youtube.readonly",
         };
+
+        // 06.2.3-T2: the Worker composition root now composes `AddYouTubePublishing`, so the graph binds and
+        // start-up-validates the `YouTube` section — an empty `ActiveClientId` would fail every host's boot. The
+        // values live in `YouTubeTestSettings`, shared with `WorkerHealthProbe`, because both harnesses boot the
+        // Worker graph; a test that talks to FakeGoogleServer overrides the endpoints and runs in Development, where
+        // the https-only rule does not apply.
+        foreach (var (key, value) in YouTubeTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
 
         // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the
         // `Email` section and `App:PublicOrigin` on start-up — see EmailTestSettings for what a host needs

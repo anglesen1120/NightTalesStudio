@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using NightTales.Domain.Common;
 
 namespace NightTales.Domain.Publishing;
@@ -33,5 +34,5 @@ namespace NightTales.Domain.Publishing;
 public sealed record PlatformIncidentCleared(
     Guid IncidentId,
     string Platform,
-    string OAuthClientId,
+    [property: JsonPropertyName("oauthClientId")] string OAuthClientId,
     DateTimeOffset OccurredAt) : IDomainEvent;

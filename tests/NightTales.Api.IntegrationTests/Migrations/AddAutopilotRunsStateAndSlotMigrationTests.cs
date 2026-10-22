@@ -386,6 +386,13 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
 
         try
         {
+            // The class database is shared by its tests, and an earlier one leaves autopilot_runs rows behind —
+            // some with a NULL `outcome`, which the backfill under test deliberately rewrites to `failed`
+            // (`Applies_BackfillsABlockedRunWithoutFinishedAt_AndANullOutcomeAsFailed` pins exactly that). The
+            // fingerprint below claims "the migration touches none of the inherited rows", so its precondition is a
+            // table holding exactly the old-shape row this dataset plants, not a sibling test's leftovers.
+            await Database.ExecuteAsync("DELETE FROM autopilot_runs", Ct);
+
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             var inherited = await SeedPrevious.CaptureTablesAsync(fixture, name, Ct);

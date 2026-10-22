@@ -21,6 +21,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.OpenAI;
+using NightTales.TestKit.Publishing;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
 using NightTales.TestKit.Stories;
@@ -117,6 +118,14 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
 
         // 02.2.2-T3: the Worker composes StoryQualityChecker, whose Story:Quality thresholds are required.
         foreach (var (key, value) in StoryTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
+
+        // 06.2.3-T2: the Worker's composition root composes `AddYouTubePublishing`, which binds and start-up-validates
+        // the `YouTube` section, so the probe supplies the same production-shaped values the harness's WorkerHost hands
+        // its host — an empty `ActiveClientId` would otherwise fail every health probe's boot.
+        foreach (var (key, value) in YouTubeTestSettings.WorkerSettings)
         {
             settings[key] = value;
         }
