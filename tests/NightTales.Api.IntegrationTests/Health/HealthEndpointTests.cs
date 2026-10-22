@@ -8,12 +8,27 @@ using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
 using NightTales.Api.IntegrationTests.Harness;
+using NightTales.Infrastructure.Storage;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
 
 namespace NightTales.Api.IntegrationTests.Health;
 
+/// <summary>
+/// The two orchestrator probes over the real Api (09 README BD12/D13, 09.9.3-T1, 09.9-D2): liveness never
+/// touches a dependency; readiness is 200 while only the blob store or the render-node registry is
+/// degraded and 503 only when the database is unreachable.
+/// </summary>
+/// <remarks>
+/// Every host here starts without the hosted <c>StorageHealthProbe</c> (<see cref="NewFactory"/>): the
+/// harness configures an unreachable <c>Storage:ServiceUrl</c>, so that prober publishes
+/// <c>storage_unavailable</c> on its first tick (~1.2 s after start-up, measured) and would overwrite the
+/// <see cref="IStorageHealthCache"/> value a test publishes — the report then depends on which writer
+/// landed last, which is the flake this class used to show. A test that asserts a published health value
+/// owns the cache; the prober itself is exercised by <c>StorageHealthTests</c>, which drives
+/// <see cref="StorageHealthProbe.ProbeAsync"/> directly.
+/// </remarks>
 [Trait("Category", "Integration")]
 public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest(database)
 {
@@ -22,10 +37,14 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
 
     private static CancellationToken Ct => TestContextToken.Value;
 
+    /// <summary>A host of this class's database with no background writer of the storage health cache.</summary>
+    private ApiFactory NewFactory(FakeClock clock) =>
+        new ApiFactory(Database, clock).ConfigureServices(services => services.WithoutStorageHealthProbe());
+
     [Fact]
     public async Task Live_is_200_with_database_stopped()
     {
-        using var factory = new ApiFactory(Database, new FakeClock())
+        using var factory = NewFactory(new FakeClock())
             .WithSetting("ConnectionStrings:Postgres", UnreachableDatabase);
         using var client = factory.CreateClient();
 
@@ -39,7 +58,7 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
     {
         await SeedNodesAsync("down", "active");
         var clock = new FakeClock();
-        using var factory = new ApiFactory(Database, clock);
+        using var factory = NewFactory(clock);
         PublishHealthyStorage(factory, clock);
         using var client = factory.CreateClient();
 
@@ -61,7 +80,7 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
     {
         await SeedNodesAsync(states);
         var clock = new FakeClock();
-        using var factory = new ApiFactory(Database, clock);
+        using var factory = NewFactory(clock);
         PublishHealthyStorage(factory, clock);
         using var client = factory.CreateClient();
 
@@ -78,7 +97,7 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
     [Fact]
     public async Task Ready_is_503_when_database_down()
     {
-        using var factory = new ApiFactory(Database, new FakeClock())
+        using var factory = NewFactory(new FakeClock())
             .WithSetting("ConnectionStrings:Postgres", UnreachableDatabase);
         using var client = factory.CreateClient();
 
@@ -95,7 +114,7 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
     public async Task Ready_is_degraded_200_when_storage_down()
     {
         var clock = new FakeClock();
-        using var factory = new ApiFactory(Database, clock);
+        using var factory = NewFactory(clock);
         factory.Services.GetRequiredService<IStorageHealthCache>()
             .Publish(new StorageHealth(false, clock.UtcNow, StorageHealth.UnavailableErrorCode));
         using var client = factory.CreateClient();
