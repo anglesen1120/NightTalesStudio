@@ -351,7 +351,7 @@ any non-terminal → failed            (unrecoverable only, e.g. account suspend
   - DASH-8 aggregated publication schedule across episodes ("Upcoming"): publications are per episode only (`GET /episodes/{id}/publications`); this generalises the series-scoped read already requested as `10.4-series-autopilot/plan.md` [OPEN-1].
   - DASH-9 activity history that survives a page load: the hub pushes `EpisodeUpdated`/`PublicationUpdated` live with no replay or cursor. This is **not** a revival of the user-facing activity feed dropped by DEC 10.14 (09.3.6-T2): 09.3.6 also states "There is no HTTP feed over this table" (`audit_logs`), so any read route here needs an explicit DEC 10.14 amendment from the owner before it can be detailed — the rows exist (`visibility = user`) and reading them for the dashboard is only one option [OPEN].
   - DASH-10 cancel a run during story generation: only `DELETE /render-jobs/{id}` exists, and `DELETE /episodes/{id}` answers 409 `episode_invalid_state` while `story_generating` (09.5.1 F14), so an in-flight generation has no stop command even though §7 already allows `story_generating → draft | story_review` on cancellation.
-  - [PROPOSAL] not decided: one dashboard read-model route could close DASH-1–DASH-9 in a single call; extending the `GET /episodes` list item instead is equally open.
+  - Option, not decided [OPEN]: one dashboard read-model route could close DASH-1–DASH-9 in a single call; extending the `GET /episodes` list item instead is equally open.
 
 | Area | Endpoints |
 |---|---|
