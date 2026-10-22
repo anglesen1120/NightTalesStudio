@@ -4,12 +4,12 @@ Static HTML mockups that redesign the whole owner-facing app (plan 10 web UI): s
 
 - Source: the OpenDesign project `nts-app-ui-redesign-20261021` (generated 2026-10-21/22 in numbered phases; the review documents below follow that order).
 - Owner approval: **2026-10-22**, in the redesign session, for the whole redesign as a design direction. Approval is for the mockups, not for any API, copy key or Angular implementation detail.
-- Scope: 25 pages, `vi` + `en` copy in every page, dark theme by default plus a light theme, responsive down to 360 px (media queries at 599 / 767 / 768 / 1000 / 1100 px; measured at 360 / 768 / 1280), WCAG 2.2 AA states (default, hover, focus-visible, active, disabled, loading, empty, error, success).
+- Scope: 25 pages, `vi` + `en` copy in every page, dark theme by default plus a light theme, responsive down to 360 px (shared media queries at 599 / 767 / 768 / 1000 / 1100 px plus page-local ones at 650 / 800 / 1240 px; measured at 360 / 768 / 1280), WCAG 2.2 AA states (default, hover, focus-visible, active, disabled, loading, empty, error, success).
 - The light theme is a **CSS-only hook** in this deck, not a working preference: `tokens.css` keys it on `[data-theme='light'], :root:has(#theme-light:checked)`, no script sets `data-theme`, and nothing persists the choice — selecting Light in the page header resets on the next page load. A real implementation has to persist it (the Angular app already owns that through the theme-preference bridge, 10.1.3-T1).
 
 ## How to view
 
-Open `index.html` through a static server (not `file://`, the shared `ui-runtime.js` and `tokens.css` are fetched relative to the page):
+Open `index.html` through a static server rather than `file://`; every page loads `tokens.css` and `ui-runtime.js` by relative path, so serve the folder as the site root:
 
 ```bash
 cd design/app-redesign
@@ -81,7 +81,7 @@ The design work ran in phases; these documents are the evidence trail, in the or
 ## Known gaps (recorded, not implemented)
 
 - **DASH-1…DASH-10** (plan-10 record **10 CR-56**, a number that exists only in PR #280 — `docs/dashboard-api-gaps`, still **open**, so the highest CR on `develop` is 10 CR-55) — the approved dashboard renders ten data points the API cannot supply yet (tile trigger/timing, list-level step and percent, run ETA/elapsed/started-by, list-level `nextActions` and status-entry time, aggregated publication schedule, reloadable activity history, cancel during story generation). Cite them by name until #280 merges. No route is invented here.
-- **DASH-9 needs a DEC 10.14 amendment.** Reloadable activity history is not a revival of the user-facing activity feed that DEC 10.14 dropped (09.3.6-T2, "there is no HTTP feed over `audit_logs`"), so any read route for it needs an explicit amendment before a task exists.
+- **DASH-9 needs a DEC 10.14 amendment.** Reloadable activity history is not a revival of the user-facing activity feed that DEC 10.14 dropped (09.3.6-T2; `plans/09-backend-api.md` §09.3.6: "There is no HTTP feed over this table"), so any read route for it needs an explicit amendment before a task exists.
 - **Numbered pagination** (plan-10 record **10 CR-57**, again only in PR #280) — owner list screens (`/series`, `/episodes`, any other pager) use numbered pages with a total ("Showing 21–40 of 245", pages `1 2 3 … 13`, 20/50/100 rows) instead of "load more". The wire shape is still `[OPEN]` because the cursor-only contract carries no total.
 - **No Angular implementation yet.** Mockup CSS is not application CSS: `tokens.css` here is a superset/rework of [`design/ui/assets/tokens.css`](../ui/assets/tokens.css) (adds `--control-height`, `--control-pad`, `--control-text`, `--nts-chip-*`, hover/on-error roles; drops `--nts-color-hairline` and `--nts-color-playhead-soft`), so adopting it is a design-token decision, not a copy.
 
