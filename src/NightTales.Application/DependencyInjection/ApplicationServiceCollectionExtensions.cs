@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Autopilot.Authorization;
 using NightTales.Application.Features.Autopilot.Gates;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
@@ -81,6 +82,24 @@ public static class ApplicationServiceCollectionExtensions
         // recorder, the approval service and the instruments. `Autopilot:Gates` is bound by each host through
         // AddAutopilotGatesOptions (Application cannot reference the options binder).
         services.AddAutopilotGates();
+
+        // 02.8.3-T2 (plan §3.7): the one renderer of the autopilot authorization text — the sentence GET shows, the
+        // accept command re-renders and compares by hash, and a covered-field change revokes against. One instance per
+        // process: it reads its two templates once and keeps no request state.
+        services.AddAutopilotAuthorization();
+
+        // 02.8.3-T2: the autopilot *read/write* routes live in the Api, and the Api never calls
+        // AddAutopilotOrchestration (that extension is the Worker's). Everything those four handlers resolve is
+        // therefore registered here, in the extension both hosts call — a port registered only in the Worker host
+        // resolves nowhere in the Api and turns every autopilot route into a 500.
+        services.TryAddSingleton<NightTales.Domain.Series.Autopilot.ISlotCalculator>(new NightTales.Domain.Series.Autopilot.SlotCalculator());
+        services.TryAddScoped<
+            Features.Autopilot.Orchestration.Steps.IChannelAuditPolicy,
+            Features.Autopilot.Orchestration.Steps.PlatformChannelAuditPolicy>();
+
+        // The run policy is consumed through IOptions<AutopilotRunOptions> only: `AddOptions()` (already composed by
+        // every host) supplies the open generic, so a host that binds no `Autopilot` section — the Api — resolves the
+        // documented default values, and the Worker's bound section stays its own.
 
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();

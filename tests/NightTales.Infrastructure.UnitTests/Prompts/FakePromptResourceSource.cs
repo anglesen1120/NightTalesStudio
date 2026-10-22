@@ -53,6 +53,20 @@ internal static class PromptsTree
 
     private const string Manifest = "manifest.json";
 
+    /// <summary>
+    /// The files under <c>prompts/</c> that <c>NightTales.Infrastructure.csproj</c> deliberately removes from its
+    /// prompt-tree embed, so this fake tree leaves them out too: they are not catalog prompts. 02.8.3-T2's two
+    /// authorization texts live in the tree as their source of truth but their ten <c>{{…}}</c> tokens are outside
+    /// the closed <see cref="NightTales.Application.Abstractions.Prompts.PromptPlaceholders"/> set rule 6 enforces;
+    /// <c>NightTales.Application.csproj</c> embeds them (linked from the same files) and
+    /// <c>AuthorizationTextRenderer</c> reads them there.
+    /// </summary>
+    private static readonly string[] NotCatalogPrompts =
+    [
+        "shared/autopilot-authorization.vi.v1.md",
+        "shared/autopilot-authorization.en.v1.md",
+    ];
+
     /// <summary>The repository's <c>prompts/</c> directory.</summary>
     internal static string Root { get; } = FindRoot();
 
@@ -64,7 +78,13 @@ internal static class PromptsTree
 
         foreach (var path in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
-            tree[Path.GetRelativePath(Root, path).Replace('\\', '/')] = File.ReadAllBytes(path);
+            var key = Path.GetRelativePath(Root, path).Replace('\\', '/');
+            if (NotCatalogPrompts.Contains(key, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            tree[key] = File.ReadAllBytes(path);
         }
 
         return tree;

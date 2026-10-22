@@ -325,6 +325,11 @@ public sealed class AutopilotRun : AggregateRoot, IUserOwned, IAuditable
     /// <see cref="AutopilotRunState.WaitingOwner"/>. Leaving that state clears the column — a pause keeps it, because
     /// the owner's ask is still pending — so <see langword="null"/> only makes sense while the run does not wait.
     /// </summary>
+    /// <remarks>
+    /// Re-labelling the wait while it stands (plan §3.5 row <c>waiting_owner → waiting_owner</c>, <c>sources</c> →
+    /// <c>fact_sheet</c>, S71-16) is this call alone: it is not a transition, so <see cref="LastTransitionAt"/> keeps
+    /// the instant the run entered <see cref="AutopilotRunState.WaitingOwner"/> and the 48 h expiry counts from there.
+    /// </remarks>
     /// <param name="waitingFor">The missing input, one of <see cref="WaitingFor"/>'s members.</param>
     public void SetWaitingFor(WaitingFor? waitingFor) => WaitingFor = waitingFor;
 

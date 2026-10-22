@@ -78,3 +78,49 @@ public enum AutopilotPauseReason
     /// <summary>The owner pressed pause; no alert is sent, because the owner is the one who did it (row 16, <c>owner_paused</c>).</summary>
     OwnerPaused,
 }
+
+/// <summary>
+/// The stored spelling of <see cref="AutopilotPauseReason"/> (02.8.3 plan §3.6), for the one writer that lives in the
+/// Domain: <see cref="Series.PauseAutopilot"/> stamps <c>series.autopilot_pause_reason</c>, a text column, so the
+/// aggregate has to spell the value itself.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The members are spelled out one by one rather than derived from the member name, because one of them is not the
+/// snake_case of its name: <see cref="AutopilotPauseReason.ChannelUnsupported"/> stores
+/// <c>autopilot_channel_unsupported</c> (plan §3.6 row 6b), which is also why the persistence converter carries a
+/// table of its own. Both tables must list the same values; the closed set is the
+/// <c>ck_autopilot_runs_pause_reason</c> check constraint (02.8.3-T1).
+/// </para>
+/// <para>
+/// A member this table does not name throws: a reason added to the enum without its stored form must fail loudly at
+/// the call site rather than write a value the <c>CHECK</c> would refuse at commit (SEC-8's rule, 02.8.2-T1).
+/// </para>
+/// </remarks>
+public static class AutopilotPauseReasons
+{
+    /// <summary>The stored form of one reason.</summary>
+    /// <param name="reason">The reason to spell.</param>
+    /// <returns>The snake_case wire value the column and its check constraint carry.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="reason"/> is not a declared member.</exception>
+    public static string ToWire(this AutopilotPauseReason reason) => reason switch
+    {
+        AutopilotPauseReason.GateFailedStreak => "gate_failed_streak",
+        AutopilotPauseReason.SpendCapReached => "spend_cap_reached",
+        AutopilotPauseReason.RunCostCapReached => "run_cost_cap_reached",
+        AutopilotPauseReason.ProviderFundsExhausted => "provider_funds_exhausted",
+        AutopilotPauseReason.ChannelNotActive => "channel_not_active",
+        AutopilotPauseReason.ChannelUnsupported => "autopilot_channel_unsupported",
+        AutopilotPauseReason.OauthClientIncident => "oauth_client_incident",
+        AutopilotPauseReason.YoutubeQuotaExhausted => "youtube_quota_exhausted",
+        AutopilotPauseReason.UploadFailed => "upload_failed",
+        AutopilotPauseReason.VideoRejected => "video_rejected",
+        AutopilotPauseReason.VetoNoticeUndelivered => "veto_notice_undelivered",
+        AutopilotPauseReason.RepeatedRunFailures => "repeated_run_failures",
+        AutopilotPauseReason.SlotMissed => "slot_missed",
+        AutopilotPauseReason.PreAuditPrivateLimit => "pre_audit_private_limit",
+        AutopilotPauseReason.ContentReported => "content_reported",
+        AutopilotPauseReason.OwnerPaused => "owner_paused",
+        _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "Unknown autopilot pause reason."),
+    };
+}

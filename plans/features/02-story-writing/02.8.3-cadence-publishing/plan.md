@@ -85,7 +85,7 @@ public interface ISlotCalculator { IReadOnlyList<DateTimeOffset> NextSlots(Autop
 - ⚠️ `TimeZoneInfo.FindSystemTimeZoneById` needs the ICU IANA tzdb available to the runtime; the container image must **not** set `InvariantGlobalization=true` (which drops IANA id resolution) — a start-up self-check resolves `"UTC"` and one DST zone (e.g. `"America/New_York"`) and fails loudly if either throws.
 - `IClock` (Application, already used elsewhere) exposes `DateTimeOffset UtcNow`, faked by `FakeClock` in tests (D20) — no NodaTime `IClock`, plain `DateTimeOffset`.
 - The result is a list of `DateTimeOffset` (UTC). `slot_at` is stored as `timestamptz` (00 §6 + CR-4).
-- Daily cap: when two series share a channel (`series.default_channel_id`), a local day may hold at most `daily_cap` **publications for that channel**. The planner skips a slot whose local day already has `daily_cap` slots (of any series on that channel) in a non-cancelled state; the skipped slot is not recorded as a run (no noise in the run log) but is logged at debug level with `autopilot_slot_skipped_total{reason="daily_cap"}`.
+- Daily cap: when two series share a channel (`series.default_channel_id`), a local day may hold at most `daily_cap` **publications for that channel**. The planner skips a slot whose local day already has `daily_cap` slots (of any series on that channel) in a non-cancelled state; the skipped slot is not recorded as a run (no noise in the run log) but is logged at debug level with `autopilot_slot_skipped_total{reason="daily_cap"}`. The count reads the caller's tenant-filtered `Series` set (`AutopilotSlotPlanner.HasChannelCapacityAsync`), which is correct while a channel belongs to one owner — `default_channel_id` names a channel of the series' own tenant — and wrong the day a channel is shared across owners: the count would miss the other owners' runs and over-plan that day. No behaviour change here; the assumption is recorded in the code beside the query (S71-21).
 - Horizon: `horizonDays = buffer_days + max(cadence interval, 1)` so the next slot is always planned even with a sparse cadence.
 
 ### 3.3 `autopilot_runs` — columns, constraints, indexes
@@ -204,6 +204,7 @@ Transition table (trigger, guard, idempotency key, outcome written):
 | `idea_picked → waiting_owner` | same tick | `topic = true_crime` and **no** go (F33) | `…:sources_required` | `waiting_owner` |
 | `researching → waiting_owner` | `FactSheetGenerated` | fact sheet draft exists | — | `waiting_owner` |
 | `waiting_owner → story_generating` | `FactSheetApproved` (user) | approved sheet is current | `…:story` | NULL (cleared) |
+| `waiting_owner → waiting_owner` | tick, `waiting_for = sources` and a fetched source exists | no approved sheet yet: the run drafts one itself (`GenerateFactSheetCommand`) and re-labels the wait | `…:fact_sheet` | `waiting_owner` (`waiting_for = fact_sheet`) |
 | `story_generating → story_gate` | `StoryGenerated` (`Trigger=autopilot`) | run's `episode_id` matches | `…:story_gate:{attempt}` | NULL |
 | `story_generating → story_generating` | `StoryGenerationFailed` with `story_invalid_output` / `story_generation_failed` | `attempt < 2` (platform failure uses the one regenerate) | `…:story2` | NULL |
 | `story_generating → failed` | `StoryGenerationFailed` with `story_moderated`, or a platform failure at `attempt = 2` | — | — | `failed` (reason = the error code; counts toward the §3.6 two-in-a-row trigger) |
@@ -229,13 +230,14 @@ Transition table (trigger, guard, idempotency key, outcome written):
 | `scheduled → failed` | `PublicationUpdated { status: failed }` with `youtube_upload_failed`/`youtube_rejected`/`youtube_quota_exhausted` | — | — | `failed` |
 | any non-terminal → `paused` | a §3.6 trigger | — | — | `paused` |
 | `paused → <previous state>` | `POST …/resume` | triggers re-checked, authorization valid, connection `active` | — | NULL (cleared) |
-| `waiting_owner → failed` | tick, `now > waiting_since + Autopilot:WaitingOwner:ExpiryHours` (48) | — | — | `failed` (`owner_approval_expired`) |
+| `waiting_owner → failed` | tick, `now > waiting_since + Autopilot:WaitingOwner:ExpiryHours` (48), where `waiting_since` is the `last_transition_at` written when the run entered `waiting_owner` (there is no separate column, and the `sources → fact_sheet` re-label above does not re-stamp it) | — | — | `failed` (`owner_approval_expired`) |
 | any → `failed` | an unrecoverable error | — | — | `failed` |
 
 Rules that hold for every row:
 
 - `outcome` is written when the run **stops** (a terminal state, or a blocked state: `waiting_owner`, `paused`, `awaiting_authorization`) and cleared to NULL when the run continues. `finished_at` is set only for terminal states — consumers that want "done" filter `finished_at IS NOT NULL`, consumers that want "why did it stop" read `outcome`. Both columns are in the DTO.
 - Every transition is written with `last_transition_at` in the same transaction as the state change, and the orchestrator only advances when `state` is behind the target (compare-and-set on `(state, step)`), so a duplicated outbox delivery is a no-op.
+- A `waiting_for` re-label inside `waiting_owner` (row `waiting_owner → waiting_owner`, `sources → fact_sheet`) is **not** a transition: the state does not change and `last_transition_at` is not bumped, so the 48 h `owner_approval_expired` window counts from entering `waiting_owner`, not from the owner's answer. The table has no `waiting_owner → researching` edge and the state machine refuses one; the research direction is carried by the `waiting_for` column instead (S71-16).
 - Terminal states: `published`, `published_private_locked`, `gate_failed`, `cancelled_by_owner`, `failed`.
 - `SystemContext(ownerId)` for every command and query inside a step (09.2.3); the actor is `system`, so `audit_logs.actor_type = system` and `autopilot_runs.user_id` is the tenant filter key.
 - `GenerationTrigger.Autopilot` on every `generation_runs` row this feature creates; FR-02-7's daily limit does **not** apply (D2).
@@ -503,7 +505,8 @@ Unit (`tests/NightTales.Domain.UnitTests/Series/Autopilot/`):
 | `RunStateMachine_OutcomeWrittenOnlyWhenStopping` | `scheduled` has `outcome = null`, `finished_at = null` |
 | `Timing_StartAt_UsesBufferWhenEarlier` | §3.4 worked example |
 | `Timing_StartAt_FallsBackToStoryStart_WhenBufferTooLate` | sparse cadence case |
-| `Timing_MinVetoWindow_ShortensButNeverBelow2h` | — |
+| `AutopilotTiming_CreateWindow_OpensAtPublicationCreateAndClosesAtTheCutoff` | Domain: the window's two bounds and the missed-slot verdict |
+| `Create_AutopilotShortenedVetoBelowTheMinimum_Is400ErrorsPublishAtAndWritesNoRow`, `Create_AutopilotVetoWindow_IsTheEarlierOfTheTwoInstants` | the shortened-veto floor and the earlier-of-two rule live in the create handler (06.2.1), not in `AutopilotTiming` (S71-41) |
 | `PauseStreak_TwoGateFailures_Pauses` | trigger 1 |
 | `PauseTriggers_TableCoverage_EveryReasonHasACopyKey` | reflection test over the enum vs the copy keys |
 | `AuthorizationText_RendersAllCoveredFields` | every placeholder substituted; no `{{` left |

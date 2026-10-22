@@ -27,9 +27,11 @@ namespace NightTales.Application.Features.Autopilot.Orchestration.Steps;
 /// <description>
 /// a fetched source exists. With an approved sheet the run continues into <c>story_generating</c>; otherwise it
 /// drafts the sheet itself (<c>GenerateFactSheetCommand</c>, key <c>…:fact_sheet</c>) and re-labels the wait
-/// <see cref="WaitingFor.FactSheet"/>. The state stays <c>waiting_owner</c>: the plan §3.5 table has no
-/// <c>waiting_owner → researching</c> edge, and the transition engine refuses one, so the research direction is
-/// expressed by the <c>waiting_for</c> column instead (deviation recorded for 02.8.3-T2).
+/// <see cref="WaitingFor.FactSheet"/>. The state stays <c>waiting_owner</c>: plan §3.5 documents this as the
+/// <c>waiting_owner → waiting_owner</c> row, a <c>waiting_for</c> re-label that is not a transition, so
+/// <see cref="AutopilotRun.LastTransitionAt"/> keeps the instant the run entered the wait and the 48 h expiry
+/// counts from there (S71-16). There is no <c>waiting_owner → researching</c> edge and the state machine refuses
+/// one, so the research direction is carried by the <c>waiting_for</c> column instead.
 /// </description>
 /// </item>
 /// <item>
@@ -166,7 +168,8 @@ public sealed class WaitingOwnerStep(
             .Send(
                 new GenerateFactSheetCommand(
                     episodeId,
-                    AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet)),
+                    AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet),
+                    Trigger: GenerationTrigger.Autopilot),
                 ct)
             .ConfigureAwait(false);
         if (drafted.IsError)

@@ -213,7 +213,7 @@ public sealed partial class AutopilotSlotPlanner(
                         : AutopilotRunMetrics.DstOverlapKind);
             }
 
-            var timing = AutopilotTiming.Compute(slot.At, settings, timingOptions);
+            var timing = AutopilotTiming.Compute(slot.At, settings, timingOptions, now);
             var run = AutopilotRun.Plan(userId, series.Id, slot.At, timing.StartAt, authorization?.Id, now);
 
             if (authorization is null)
@@ -298,6 +298,12 @@ public sealed partial class AutopilotSlotPlanner(
         }
 
         var (start, end) = LocalDay(day, zone);
+
+        // Both sides are tenant-filtered by `db` (09's scoped write model): the series set below is the caller's own
+        // series, so "this channel's local day" is counted per owner. Correct while a channel belongs to one owner —
+        // `series.default_channel_id` names a channel of the series' own tenant — and wrong the day a channel is
+        // shared across owners: the count would then miss the other owners' runs and over-plan the day (S71-21,
+        // recorded in plan §3.2's daily-cap bullet; no behaviour change here).
         var seriesOfChannel = db.Series
             .Where(candidate => candidate.DefaultChannelId == channelId)
             .Select(candidate => candidate.Id);

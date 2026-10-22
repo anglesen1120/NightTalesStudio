@@ -113,7 +113,24 @@ public static partial class ProblemDetailsWriter
             ErrorCodes.StoryInvalidContent,
             ErrorCodes.FactSheetInvalidContent,
             ErrorCodes.BibleInvalidContent,
+            // 02.8.3-T2: one code for the whole settings document, with every failure keyed by its JSON path
+            // (`daily_cap`, `cadence.time_zone`); without this entry two or more of them collapse into the generic
+            // `validation_failed` and the client loses both the reason and the path groups.
+            ErrorCodes.AutopilotSettingsInvalid,
         }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The 409 whose <c>errors</c> member names the field that made a consent text stale (02.8.3-T2 D-6, plan §3.7):
+    /// <c>autopilot_authorization_required</c> carries <c>textHash</c> → <c>stale_text</c> or <c>textVersion</c> →
+    /// <c>stale_version</c>. The mapping is a closed allow-list, so an error can never smuggle another field name or a
+    /// free-text message into the response.
+    /// </summary>
+    private static readonly Dictionary<string, string> AuthorizationConflictFields =
+        new(StringComparer.Ordinal)
+        {
+            ["textHash"] = "stale_text",
+            ["textVersion"] = "stale_version",
+        };
 
     /// <summary>
     /// The codes whose <c>errors</c> member is a defect list rather than the <c>field → messages</c> object:
@@ -280,6 +297,25 @@ public static partial class ProblemDetailsWriter
                 SerializerOptions);
         }
 
+        // 02.8.3-T2 D-6: the stale-consent answer names the field the client has to re-read, as the
+        // `field → messages` object the other 400 codes use. Only the two documented pairs render; anything else
+        // stays a bare conflict, so a bug cannot leak a field name or a message the contract never published.
+        if (status == StatusCodes.Status409Conflict
+            && errorsElement is null
+            && code == ErrorCodes.AutopilotAuthorizationRequired
+            && driving.Metadata is not null
+            && driving.Metadata.TryGetValue(ErrorMetadata.Field, out var staleField)
+            && staleField is string staleName
+            && AuthorizationConflictFields.TryGetValue(staleName, out var staleMessage))
+        {
+            errorsElement = JsonSerializer.SerializeToElement(
+                new Dictionary<string, List<string>>(StringComparer.Ordinal)
+                {
+                    [staleName] = [staleMessage],
+                },
+                SerializerOptions);
+        }
+
         var body = new ProblemBody
         {
             Type = ErrorCatalogue.ProblemType(code),
@@ -290,7 +326,10 @@ public static partial class ProblemDetailsWriter
             Errors = errorsElement,
             Metadata = AllowedMetadata(
                 metadataSource,
-                includeField: !isValidation || (ownValidationCode && !groupsFieldErrors),
+                // The stale-consent field travels in `errors` only; repeating it at the top level would publish the
+                // same value in two shapes (the legal 409 keeps the same rule for `documents`).
+                includeField: (!isValidation || (ownValidationCode && !groupsFieldErrors))
+                    && !(status == StatusCodes.Status409Conflict && code == ErrorCodes.AutopilotAuthorizationRequired),
                 http),
         };
 

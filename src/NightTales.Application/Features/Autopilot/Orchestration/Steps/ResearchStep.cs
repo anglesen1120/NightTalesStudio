@@ -112,7 +112,8 @@ public sealed class ResearchStep(ISender sender, IAppDbContext db, ISourceFinder
                 .Send(
                     new GenerateFactSheetCommand(
                         episodeId,
-                        AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet)),
+                        AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet),
+                        Trigger: GenerationTrigger.Autopilot),
                     ct)
                 .ConfigureAwait(false);
 

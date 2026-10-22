@@ -150,6 +150,7 @@ public sealed class AutopilotWaitingOwnerStepTests(TestDatabase database) : Inte
         var command = sender.Single<GenerateFactSheetCommand>();
         command.EpisodeId.ShouldBe(world.EpisodeId);
         command.IdempotencyKey.ShouldBe(AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet));
+        command.Trigger.ShouldBe(GenerationTrigger.Autopilot, "an autopilot sheet row must not claim a user trigger (S71-6)");
     }
 
     /// <summary>

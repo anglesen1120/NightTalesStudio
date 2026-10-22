@@ -38,7 +38,9 @@ public static class AutopilotOrchestrationServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddSingleton<ISlotCalculator, SlotCalculator>();
+        // `ISlotCalculator` and `IChannelAuditPolicy` are registered by AddNightTalesApplication
+        // (ApplicationServiceCollectionExtensions): the Api's autopilot routes resolve them too, and this extension is
+        // called from the Worker alone.
         services.TryAddSingleton<AutopilotRunMetrics>();
 
         services.TryAddScoped<IAutopilotRunOrchestrator, AutopilotRunOrchestrator>();
@@ -51,6 +53,9 @@ public static class AutopilotOrchestrationServiceCollectionExtensions
         services.TryAddScoped<Steps.AutopilotPublicationCreator>();
         services.TryAddScoped<Steps.IAutopilotStepReader, Steps.EfAutopilotStepReader>();
         services.TryAddScoped<Steps.IAutopilotConsentGate, Steps.PublicationConsentGate>();
+
+        // 02.8.3-T2: `IChannelAuditPolicy` is registered by AddNightTalesApplication, not here — see the note by the
+        // slot calculator above.
 
         // The research step's go signal, owned here because this extension owns the handler scan that consumes it
         // (`AddAutopilotOutboxHandlers` registers locator and handlers only). `TryAdd` lets a host that wants a

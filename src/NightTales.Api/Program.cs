@@ -363,6 +363,11 @@ try
     // behind a required If-Match ("sb-<version>"). Accept/dismiss of a pending proposal is 02.6.3-T2.
     app.MapSeriesBibleEndpoints();
 
+    // 02.8.3-T2 (02 README D9/D13, 02.8.3 plan §5): the series' autopilot routes — settings read/write behind
+    // `youtube_publish` and a required If-Match ("sa-<xmin>"), accept/revoke of the versioned authorization,
+    // pause/resume, and the run list.
+    app.MapAutopilotEndpoints();
+
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.
     app.MapCatalogEndpoints();

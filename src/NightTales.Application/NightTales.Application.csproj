@@ -30,4 +30,29 @@
     <EmbeddedResource Include="Templates/Consent/pc.v1.vi.md" LogicalName="NightTales.Application.Templates.Consent.pc.v1.vi.md" WithCulture="false" />
     <EmbeddedResource Include="Templates/Consent/pc.v1.en.md" LogicalName="NightTales.Application.Templates.Consent.pc.v1.en.md" WithCulture="false" />
   </ItemGroup>
+
+  <!--
+    02.8.3-T2 (plan §3.7; task 'Authorization text'): the `autopilot-auth.v1` authorization texts
+    `prompts/shared/autopilot-authorization.<locale>.v1.md`, embedded (not copied) so a deployment cannot ship
+    without the sentence the owner is asked to authorize, and `AuthorizationTextRenderer` addresses each one by the
+    exact logical name below.
+
+    They are LINKED from the `prompts/` tree rather than kept under `Templates/`: the task names those paths as the
+    source of truth, and the Application layer cannot reference Infrastructure, where the D5 prompt catalog lives,
+    so a copy under `Templates/` would be a second file free to drift from the tree the task names.
+
+    They are NOT entries of `prompts/manifest.json`: the catalog's rule 6 refuses every placeholder outside
+    `PromptPlaceholders.All` (the eight story-prompt tokens), and this text's ten tokens are a different closed set
+    owned by the renderer. `NightTales.Infrastructure.csproj` therefore removes these two files from its own
+    prompt-tree embed, so the catalog's rule 4b never sees an untracked runtime file and its start-up hash rules do
+    not apply to them; `AuthorizationTextRenderer.CurrentTextVersion` is what pins a wording change.
+
+    `WithCulture="false"` stops MSBuild reading the `.vi`/`.en` before the extension as a culture and moving the
+    file into a satellite assembly (the trap 02.3.3-T1 documents for `prompts/`). The SDK's default
+    `EmbeddedResource` glob is project-relative `**/*.resx`, so the outside-the-project include is added once.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\prompts\shared\autopilot-authorization.vi.v1.md" Link="Templates\Authorization\autopilot-authorization.vi.v1.md" LogicalName="NightTales.Application.Templates.Authorization.autopilot-authorization.vi.v1.md" WithCulture="false" />
+    <EmbeddedResource Include="..\..\prompts\shared\autopilot-authorization.en.v1.md" Link="Templates\Authorization\autopilot-authorization.en.v1.md" LogicalName="NightTales.Application.Templates.Authorization.autopilot-authorization.en.v1.md" WithCulture="false" />
+  </ItemGroup>
 </Project>

@@ -76,6 +76,10 @@ public sealed class FactSheetGenerateEndpointTests(TestDatabase database) : Inte
                 Database,
                 $"SELECT data->>'generationRunId' FROM audit_logs WHERE action = 'episode.fact_sheet_generation_requested' AND subject_user_id = '{world.UserId}'")
             .ShouldBe(runId.ToString("D"));
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT data->>'trigger' FROM audit_logs WHERE action = 'episode.fact_sheet_generation_requested' AND subject_user_id = '{world.UserId}'")
+            .ShouldBe("user", "the wire value, as the story command's audit row stores it (S71-6)");
     }
 
     [Fact]

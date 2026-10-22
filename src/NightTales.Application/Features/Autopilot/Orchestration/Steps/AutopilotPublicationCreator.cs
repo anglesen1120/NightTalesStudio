@@ -160,7 +160,7 @@ public sealed partial class AutopilotPublicationCreator
             return StepResult.Retry(AutopilotStepCodes.EpisodeMissing);
         }
 
-        var verdict = AutopilotTiming.EvaluateVetoWindow(now, context.Timing, context.TimingOptions, context.Settings);
+        var verdict = AutopilotTiming.EvaluateVetoWindow(now, context.Timing, context.TimingOptions);
 
         switch (verdict.Decision)
         {

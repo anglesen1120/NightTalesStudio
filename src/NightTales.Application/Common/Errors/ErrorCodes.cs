@@ -247,6 +247,13 @@ public static class ErrorCodes
     /// <summary>Resume while a pause trigger is still active (02 D8).</summary>
     public const string AutopilotPauseReasonActive = "autopilot_pause_reason_active";
 
+    /// <summary>
+    /// The series' channel connection cannot be scheduled through: TikTok Direct Post has no scheduling
+    /// parameter, so autopilot cannot publish on it (02.8.3-T2 §3.7 step 4, 07 CR-5; the same fact as plan
+    /// §3.6 row 6b's pause reason).
+    /// </summary>
+    public const string AutopilotChannelUnsupported = "autopilot_channel_unsupported";
+
     /// <summary>Render keyword linter at approve and render; the body carries <c>errors[] { segment, index, rule }</c> (03 D10).</summary>
     public const string KeywordsFlagged = "keywords_flagged";
 
