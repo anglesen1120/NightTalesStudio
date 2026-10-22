@@ -24,6 +24,13 @@ internal sealed class SeriesAutopilotAuthorizationConfiguration : IEntityTypeCon
         builder.Property(authorization => authorization.Cadence).IsRequired();
         builder.Property(authorization => authorization.PrivacyStatus).HasEnumCheck();
 
+        // 02.8.3 plan §3.7: `revoked_reason`, nullable text over the six wire reasons. The nullable overload
+        // of HasEnumCheck keeps the `ck_series_autopilot_authorizations_revoked_reason` constraint in step
+        // with the enum and lets NULL (a live row) satisfy it, because `NULL IN (…)` is never false. The
+        // column and its constraint arrive with the migration the orchestrator generates after S76 (README
+        // D-block D-1); this configuration is the only half of that mapping this task owns.
+        builder.Property(authorization => authorization.RevokedReason).HasEnumCheck();
+
         // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the series (see SeriesConfiguration).
         builder.HasAlternateKey(authorization => new { authorization.Id, authorization.UserId });
         builder.HasOne<Series>().WithMany()

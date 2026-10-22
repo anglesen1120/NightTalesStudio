@@ -64,10 +64,12 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// this point (plan §3.3).
 /// </para>
 /// <para>
-/// This class no longer owns the last-migration check (<c>migrations[^1]</c>): 06.2.3-T2's
-/// <see cref="AddPlatformIncidentsMigrationTests"/> took it over for the new tip, and this class now only proves its own
-/// migration is compiled in, exactly as 06.2.1-T1's <see cref="AddPublicationsMigrationTests"/> did when this migration
-/// landed.
+/// This class no longer owns the last-migration check (<c>migrations[^1]</c>): 02.8.3-T2's
+/// <see cref="AddAutopilotAuthorizationRevokedReasonMigrationTests"/> appended
+/// <c>_02_AutopilotAuthorizationRevokedReason</c> after 06.2.3-T2's <see cref="AddPlatformIncidentsMigrationTests"/>
+/// and took that check (and the no-pending-model-change check) over, exactly as 06.2.1-T1's
+/// <see cref="AddPublicationsMigrationTests"/> handed it to this class; it now only proves its own migration is
+/// compiled in.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -149,17 +151,15 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
+    public async Task Migration_IsCompiledIn_AndModelMapsTheRunState()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
 
-        // 06.2.3-T2 appended a migration after this one, so this class no longer owns the last-migration check (the
-        // newest migration's own test does); it still proves its own migration is compiled in.
+        // 02.8.3-T2 appended a migration after this one, so this class no longer owns the last-migration and
+        // the no-pending-model-change checks (the newest migration's own test does); it still proves its own
+        // migration is compiled in.
         migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
-
-        context.Database.HasPendingModelChanges().ShouldBeFalse(
-            "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
 
         // The runtime model is read-optimized (EF Core 10 drops the index sort order there), so the contract is read
         // from the design-time model — the one `dotnet ef migrations` diffs against.
@@ -375,6 +375,9 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
     /// The schema one release behind with the seed harness's rows (<see cref="SeedPrevious"/>), including one
     /// <c>autopilot_runs</c> row in the old shape: every inherited column comes out untouched, and the eleven new
     /// columns are backfilled from <c>started_at</c>/<c>updated_at</c>/<c>outcome</c> exactly as this class documents.
+    /// The table is narrowed to the seed row before it is fingerprinted (see the body): the backfill rewrites an
+    /// inherited <c>outcome</c> when it is <c>NULL</c>, and the rows the other tests of this class leave behind carry
+    /// exactly that.
     /// </summary>
     [Fact]
     public async Task Applies_OnThePreviousSchemaWithSeededData()
@@ -400,6 +403,14 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
             seeded.ShouldContain(Table, "the migration must be exercised against an old-shape run, not an empty schema");
 
             (await NewColumnsAsync()).ShouldBeEmpty("schema N-1 has none of the eleven columns");
+
+            // The class database is shared with the other tests of this class, and several of them leave
+            // `autopilot_runs` rows behind that were inserted without an `outcome` (a live run). The backfill above
+            // turns a NULL outcome into `failed` — an *inherited* column — so those rows legitimately change the
+            // fingerprint, while the claim here is about the rows schema N-1 inherited from the dataset. The table
+            // is therefore narrowed to the seed row before it is fingerprinted (its own outcome is `gate_failed`,
+            // which the backfill keeps); no other table has a row this migration rewrites.
+            SqlProbe.Execute(Database, $"DELETE FROM {Table} WHERE id <> '{SeededRun}'");
 
             var before = Snapshot(await SeedPrevious.SnapshotAsync(fixture, name, inherited, Ct));
 
@@ -523,8 +534,6 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
                 Database,
                 $"SELECT state || '|' || (slot_at = started_at)::text FROM {Table} WHERE id = '{id}'")
             .ShouldBe(["failed|true"]);
-
-        context.Database.HasPendingModelChanges().ShouldBeFalse();
     }
 
     /// <summary>The columns of the table this migration adds, if the schema under test has them.</summary>

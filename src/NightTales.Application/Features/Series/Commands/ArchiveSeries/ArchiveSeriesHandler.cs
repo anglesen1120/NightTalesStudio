@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
+using NightTales.Domain.Series.Autopilot;
 
 namespace NightTales.Application.Features.Series.Commands.ArchiveSeries;
 
@@ -35,6 +36,34 @@ public sealed class ArchiveSeriesHandler(IAppDbContext db, IClock clock)
             return Errors.NotFound();
         }
 
-        return series.Archive(clock.UtcNow);
+        // The pointer is read before the archive clears it (Series.Archive → DisableAutopilot), because the row it
+        // names is the consent that has to be revoked in the same transaction.
+        var currentAuthorizationId = series.CurrentAutopilotAuthorizationId;
+        var now = clock.UtcNow;
+
+        var archived = series.Archive(now);
+        if (archived.IsError)
+        {
+            return archived.Errors;
+        }
+
+        if (currentAuthorizationId is { } authorizationId)
+        {
+            var authorization = await db.SeriesAutopilotAuthorizations
+                .SingleOrDefaultAsync(candidate => candidate.Id == authorizationId, cancellationToken)
+                .ConfigureAwait(false);
+
+            // `disabled` is the plan §3.7 reason for both "the owner turned it off" and "the series is gone"; a row
+            // already revoked stays as it is (Revoke answers false) and the audit summary keeps no id.
+            if (authorization is not null
+                && authorization.Revoke(AutopilotAuthorizationRevokeReason.Disabled, now))
+            {
+                command.RevokedAuthorizationId = authorization.Id;
+            }
+        }
+
+        // No run hold: an archived series is disabled, and a disabled series cannot spend
+        // (AutopilotStepSupport.SeriesMaySpendAsync), so the next tick retires its runs without a call from here.
+        return Result.Success;
     }
 }

@@ -182,7 +182,7 @@ public sealed partial class AutopilotRunOrchestrator(
                 run,
                 series,
                 parsed.Value,
-                AutopilotTiming.Compute(run.SlotAt, parsed.Value, timingOptions),
+                AutopilotTiming.Compute(run.SlotAt, parsed.Value, timingOptions, now),
                 timingOptions,
                 now);
 

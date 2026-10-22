@@ -153,6 +153,7 @@ public static class ErrorCatalogue
             [ErrorCodes.AutopilotAuthorizationRequired] = StatusCodes.Status409Conflict,
             [ErrorCodes.AutopilotTopicLocked] = StatusCodes.Status409Conflict,
             [ErrorCodes.AutopilotPauseReasonActive] = StatusCodes.Status409Conflict,
+            [ErrorCodes.AutopilotChannelUnsupported] = StatusCodes.Status409Conflict,
 
             // 02.8.1-T2's idea state machine: an idea that is not `picked` cannot be linked to an episode.
             [ErrorCodes.IdeaInvalidState] = StatusCodes.Status409Conflict,

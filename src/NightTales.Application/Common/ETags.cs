@@ -24,6 +24,20 @@ public static class ETags
     public static string Publication(uint xmin) => $"\"pu-{xmin}\"";
 
     /// <summary>
+    /// Series-autopilot ETag: <c>"sa-&lt;series.xmin&gt;"</c> (<c>GET/PUT /series/{id}/autopilot</c>, 02 README
+    /// D9, 02.8.3 plan §10 open item 7).
+    /// </summary>
+    /// <remarks>
+    /// The settings live on the <c>series</c> row, so the value comes from <c>series.xmin</c> — the same
+    /// column <see cref="Series"/> names. The <c>sa</c> prefix is what keeps the two tags apart: the autopilot
+    /// route and <c>PATCH /series/{id}</c> write different columns of one row, so a client must not be able to
+    /// replay a <c>"se-…"</c> tag it read from the series route on this one, nor the other way round.
+    /// </remarks>
+    /// <param name="xmin">The series row's <c>xmin</c>.</param>
+    /// <returns>The strong ETag, quotes included.</returns>
+    public static string SeriesAutopilot(uint xmin) => $"\"sa-{xmin}\"";
+
+    /// <summary>
     /// Fact-sheet ETag: <c>"fs-&lt;fact_sheets.id&gt;"</c> (02 README D9, 02.5.4-T1).
     /// </summary>
     /// <remarks>

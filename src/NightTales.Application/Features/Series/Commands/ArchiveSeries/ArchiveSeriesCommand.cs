@@ -15,9 +15,32 @@ namespace NightTales.Application.Features.Series.Commands.ArchiveSeries;
 public sealed record ArchiveSeriesCommand(Guid Id) : ICommand<ErrorOr<Success>>, IAuditData
 {
     /// <summary>
+    /// The authorization row the handler revoked with <c>disabled</c> while archiving, or <see langword="null"/>
+    /// when the series had no live one (02.8.3-T2 plan §3.7: archiving disables the autopilot, so its consent goes
+    /// with it).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid? RevokedAuthorizationId { get; set; }
+
+    /// <summary>
     /// The projection of this command's audit row (09 README BD15): the archived series, the caller as
     /// the subject, and no summary — <c>series.archived</c> says everything that changed.
     /// </summary>
+    /// <remarks>
+    /// One row, never two: <c>autopilot.disabled</c> has no row of its own here, because the archive's row is the
+    /// record of the same transaction and BD15 is one row per command. A revoked consent is the one fact the action
+    /// name does not carry, so it travels as the summary's id when it happened.
+    /// </remarks>
     /// <returns>The projection of this command's audit row.</returns>
-    public AuditData ToAuditData() => new(null, "series", Id, AuditData.NoSummary);
+    public AuditData ToAuditData() => RevokedAuthorizationId is { } authorizationId
+        ? new(
+            null,
+            "series",
+            Id,
+            new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["authorizationId"] = authorizationId.ToString(),
+                ["reason"] = "disabled",
+            })
+        : new(null, "series", Id, AuditData.NoSummary);
 }

@@ -468,15 +468,6 @@ public sealed class AutopilotTrueCrimeRunTests(TestDatabase database) : Integrat
         await db.SaveChangesAsync(Ct);
     }
 
-    /// <summary>The slot's publication-create instant, from the shipped options the Worker reads (§3.4).</summary>
-    private static DateTimeOffset PublicationCreateAt(AutopilotTickHarness harness, AutopilotSettings settings)
-    {
-        using var scope = harness.Host.CreateScope();
-        var options = scope.ServiceProvider.GetRequiredService<AutopilotRunOptions>();
-
-        return AutopilotTiming.Compute(Slot, settings, options.ToTimingOptions()).PublicationCreateAt;
-    }
-
     /// <summary>One publication row as <c>status|episode|authorization|publish_at-equals-slot</c>.</summary>
     private string PublicationRow(Guid publicationId) =>
         SqlProbe.ScalarText(

@@ -7,6 +7,7 @@ using NightTales.Domain.Common;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
@@ -82,6 +83,7 @@ public sealed class AutopilotResearchStepTests(TestDatabase database) : Integrat
         var command = sender.Single<GenerateFactSheetCommand>();
         command.EpisodeId.ShouldBe(world.EpisodeId);
         command.IdempotencyKey.ShouldBe(AutopilotIdempotencyKeys.For(run, AutopilotRunStep.FactSheet));
+        command.Trigger.ShouldBe(GenerationTrigger.Autopilot, "an autopilot sheet row must not claim a user trigger (S71-6)");
 
         await new FactSheetBuilder(Database, world.Actor).CreateAsync(world.UserId, world.EpisodeId, Ct);
 

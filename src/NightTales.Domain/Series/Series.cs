@@ -10,11 +10,22 @@ namespace NightTales.Domain.Series;
 /// <see cref="Archive"/>) is this task's.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The rules the aggregate owns are the two <c>ErrorOr</c> outcomes a <c>201</c>/<c>200</c> request can
 /// still hit: an archived series is never updated (409 <c>series_archived</c>) and a topic change is
 /// refused while autopilot is enabled (409 <c>series_topic_locked</c>, 09 README D16/00 §6). Everything
 /// the wire can check first — the 1–120 title, the voice language, the style-topic policy — is the
 /// Application handlers' and their validator's (09.4.1 plan §4 U1/U2).
+/// </para>
+/// <para>
+/// 02.8.3-T2 adds the autopilot state the aggregate owns: the settings document
+/// (<see cref="ApplyAutopilotSettings"/>), the flag (<see cref="EnableAutopilot"/>,
+/// <see cref="DisableAutopilot"/>), the current-authorization pointer
+/// (<see cref="AcceptAutopilotAuthorization"/>, <see cref="SetCurrentAutopilotAuthorization"/>) and the
+/// implicit disable of <see cref="Archive"/>, plus the pause state the owner's two buttons write
+/// (<see cref="PauseAutopilot"/>, <see cref="ResumeAutopilot"/>). The revocations, audits and run moves those
+/// calls imply are the Application commands' — this type owns only the state of the series row.
+/// </para>
 /// </remarks>
 public sealed class Series : AggregateRoot, IUserOwned, IAuditable
 {
@@ -30,6 +41,14 @@ public sealed class Series : AggregateRoot, IUserOwned, IAuditable
     /// 409; the Domain half of <c>ErrorCodes.SeriesTopicLocked</c>).
     /// </summary>
     public const string TopicLockedCode = "series_topic_locked";
+
+    /// <summary>
+    /// The catalogued code of "the settings document is missing or invalid" (400; the Domain half of
+    /// <c>ErrorCodes.AutopilotSettingsInvalid</c>). The <c>PUT /series/{id}/autopilot</c> route answers it from
+    /// <see cref="Autopilot.AutopilotSettingsValidator"/>; this constant is the code
+    /// <see cref="EnableAutopilot"/> answers when there is nothing to enable.
+    /// </summary>
+    public const string AutopilotSettingsInvalidCode = "autopilot_settings_invalid";
 
     private Series()
     {
@@ -184,8 +203,18 @@ public sealed class Series : AggregateRoot, IUserOwned, IAuditable
     /// <c>GET /series</c>, and its episodes stay readable.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Idempotent: a second call answers <c>Success</c> without raising a second
     /// <see cref="SeriesArchived"/>, exactly like the <c>DELETE</c> the client can repeat.
+    /// </para>
+    /// <para>
+    /// An archived series cannot publish, so archiving it with autopilot on disables it first — the same state
+    /// <see cref="DisableAutopilot"/> leaves (§3.7: "DELETE /series/{id} with autopilot on implicitly disables
+    /// it"). The authorization row of the series is revoked by the archive handler in the same transaction
+    /// (<see cref="Autopilot.AutopilotAuthorizationRevokeReason.Disabled"/>); no such row exists for a series
+    /// that was never enabled and nothing different is raised for it, so the event stream of a plain archive is
+    /// unchanged.
+    /// </para>
     /// </remarks>
     /// <param name="now">The command's clock reading.</param>
     /// <returns>Always <c>Success</c>: there is no state an archive can be refused from.</returns>
@@ -196,6 +225,7 @@ public sealed class Series : AggregateRoot, IUserOwned, IAuditable
             return Result.Success;
         }
 
+        DisableAutopilot(now);
         ArchivedAt = now;
         UpdatedAt = now;
 
@@ -238,6 +268,223 @@ public sealed class Series : AggregateRoot, IUserOwned, IAuditable
         Raise(new SeriesBibleUpdated(Id, UserId, version, changedBy, now));
 
         return Result.Success;
+    }
+
+    /// <summary>
+    /// Stores the settings document the owner wrote (plan §3.1), unchanged.
+    /// </summary>
+    /// <remarks>
+    /// The aggregate is a carrier here, exactly as it is for <c>title</c>: the shape and the ranges are
+    /// <see cref="Autopilot.AutopilotSettingsValidator"/>'s single decision, taken by the command before this
+    /// call, and re-serialising the document here would hide the document the owner actually wrote (its key
+    /// order and any member this build does not know yet). Applying settings neither enables the autopilot nor
+    /// revokes anything: the covered-field diff of plan §3.7 is the command's, because it also has to move the
+    /// series' runs.
+    /// </remarks>
+    /// <param name="settingsJson">The validated document, stored verbatim.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <exception cref="ArgumentException"><paramref name="settingsJson"/> is empty or whitespace.</exception>
+    public void ApplyAutopilotSettings(string settingsJson, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsJson);
+
+        AutopilotSettings = settingsJson;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Switches autopilot on (plan §3.7) — the last step of <c>PUT /series/{id}/autopilot</c> with
+    /// <c>enabled = true</c>, after that route has checked the legal acceptance, the re-auth, the settings, the
+    /// current authorization and the channel.
+    /// </summary>
+    /// <remarks>
+    /// The one state the aggregate refuses on its own is a series with no settings document at all: there is
+    /// nothing to publish on, and answering <c>true</c> would leave a flag the planner has to re-check on every
+    /// tick. Turning on an already enabled series changes nothing, not even <c>updated_at</c>, so a repeated
+    /// <c>PUT enabled=true</c> does not bump the row's <c>xmin</c> (the ETag of the series, README D9).
+    /// </remarks>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns><c>Success</c>, or 400 <see cref="AutopilotSettingsInvalidCode"/> when no settings are stored.</returns>
+    public ErrorOr<Success> EnableAutopilot(DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(AutopilotSettings))
+        {
+            return Error.Validation(
+                AutopilotSettingsInvalidCode,
+                "Autopilot needs a settings document before it can be enabled.");
+        }
+
+        if (AutopilotEnabled)
+        {
+            return Result.Success;
+        }
+
+        AutopilotEnabled = true;
+        UpdatedAt = now;
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Switches autopilot off and forgets everything that only matters while it is on: the current
+    /// authorization pointer and the pause state (plan §3.6, §3.7).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Idempotent, and it touches nothing when there is nothing to clear, so a repeated <c>PUT enabled=false</c>
+    /// does not bump the row's <c>xmin</c> (the ETag of the series, README D9).
+    /// </para>
+    /// <para>
+    /// Revoking the authorization <em>row</em> is the caller's step, in the same transaction: the row records
+    /// why it stopped being current (<see cref="Autopilot.AutopilotAuthorizationRevokeReason.Disabled"/>), and
+    /// the aggregate does not reach across to it. <see cref="Archive"/> calls this method for the same reason
+    /// (an archived series cannot publish), so the archive handler revokes in the same transaction too.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The command's clock reading.</param>
+    public void DisableAutopilot(DateTimeOffset now)
+    {
+        if (!AutopilotEnabled
+            && CurrentAutopilotAuthorizationId is null
+            && AutopilotPausedAt is null
+            && AutopilotPauseReason is null)
+        {
+            return;
+        }
+
+        AutopilotEnabled = false;
+        CurrentAutopilotAuthorizationId = null;
+        AutopilotPausedAt = null;
+        AutopilotPauseReason = null;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Points the series at the authorization it currently runs on, or clears the pointer with
+    /// <see langword="null"/> when the caller revoked it.
+    /// </summary>
+    /// <param name="id">The live <c>series_autopilot_authorizations</c> row, or <see langword="null"/>.</param>
+    /// <param name="now">The command's clock reading.</param>
+    public void SetCurrentAutopilotAuthorization(Guid? id, DateTimeOffset now)
+    {
+        CurrentAutopilotAuthorizationId = id;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Holds the series (<c>POST /series/{id}/autopilot/pause</c>, plan §3.6 row 15): <c>autopilot_paused_at</c> and
+    /// <c>autopilot_pause_reason</c> are stamped, so the next tick's readiness check stops the series before it
+    /// reserves anything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Who owns what.</b> This method writes the two columns of the series row and nothing else. Pausing the
+    /// series' open runs (<see cref="AutopilotRun.Pause"/>) and the <c>autopilot.paused</c> audit entry are the
+    /// Application command's, because both reach rows this aggregate does not own; the audit keys themselves are
+    /// <b>02.8.3-T4's</b> (§3.6: "Pause/resume keys are T4's"), so T2 writes no audit for this call.
+    /// </para>
+    /// <para>
+    /// <b>Idempotent.</b> A repeated pause with the reason the row already carries changes nothing — not even
+    /// <c>updated_at</c> — so a double click does not bump the row's <c>xmin</c>, which is the ETag of the
+    /// autopilot (02 README D9). A pause with a <em>different</em> reason replaces the stored one: the last trigger
+    /// that fired is the one the owner's banner explains (plan §3.6).
+    /// </para>
+    /// </remarks>
+    /// <param name="reason">The plan §3.6 trigger; the owner's own button passes <see cref="Autopilot.AutopilotPauseReason.OwnerPaused"/>.</param>
+    /// <param name="now">The command's clock reading.</param>
+    public void PauseAutopilot(Autopilot.AutopilotPauseReason reason, DateTimeOffset now)
+    {
+        var wire = Autopilot.AutopilotPauseReasons.ToWire(reason);
+
+        if (AutopilotPausedAt is not null
+            && string.Equals(AutopilotPauseReason, wire, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        AutopilotPausedAt = now;
+        AutopilotPauseReason = wire;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Lifts a pause (<c>POST /series/{id}/autopilot/resume</c>, plan §3.6 "Resume"): both pause columns are cleared,
+    /// which is what lets the next tick plan slots again.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The triggers are not re-checked here.</b> Plan §3.6 requires every row of its table to be re-evaluated
+    /// before a resume is accepted, and that ladder is <b>02.8.3-T4's</b>: it needs the gate streak, the budget
+    /// guard, the channel's status and 06's publication rows, none of which this aggregate may read. T2's resume
+    /// command checks only what its own task lists — a current authorization and an active channel — and answers
+    /// 409 <c>autopilot_pause_reason_active</c> from T4 once the ladder exists. This method therefore assumes the
+    /// caller already decided the resume may happen.
+    /// </para>
+    /// <para>
+    /// Idempotent: resuming a series that is not paused changes nothing, not even <c>updated_at</c>.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The command's clock reading.</param>
+    public void ResumeAutopilot(DateTimeOffset now)
+    {
+        if (AutopilotPausedAt is null && AutopilotPauseReason is null)
+        {
+            return;
+        }
+
+        AutopilotPausedAt = null;
+        AutopilotPauseReason = null;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Accepts one authorization for the series (plan §3.7): the pointer moves to
+    /// <paramref name="authorization"/> and <see cref="AutopilotAuthorizationAccepted"/> is raised so the
+    /// acceptance lands in the outbox of the same transaction. No other state of the series changes —
+    /// accepting the text is not enabling the autopilot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Revoking the row this one supersedes is the caller's step (the command knows the previous version and
+    /// writes <see cref="Autopilot.AutopilotAuthorizationRevokeReason.Superseded"/>), for the reason
+    /// <see cref="DisableAutopilot"/> gives: the aggregate does not reach across to a row it does not own.
+    /// </para>
+    /// <para>
+    /// A row of another series or another owner is a caller bug, not a state: the accept command reads the
+    /// previous version and the owner inside the series' own tenant filter, so a mismatch means the caller
+    /// built the row from the wrong request.
+    /// </para>
+    /// </remarks>
+    /// <param name="auth">The row the caller just created for this series and owner.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="auth"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// The row belongs to another series or another owner, or it is already revoked.
+    /// </exception>
+    public void AcceptAutopilotAuthorization(
+        Autopilot.SeriesAutopilotAuthorization auth,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+
+        if (auth.SeriesId != Id || auth.UserId != UserId)
+        {
+            throw new ArgumentException(
+                "An accepted authorization must belong to this series and its owner.",
+                nameof(auth));
+        }
+
+        if (auth.IsRevoked)
+        {
+            throw new ArgumentException(
+                "A revoked authorization cannot become the current one.",
+                nameof(auth));
+        }
+
+        CurrentAutopilotAuthorizationId = auth.Id;
+        UpdatedAt = now;
+
+        Raise(new AutopilotAuthorizationAccepted(UserId, Id, auth.Id, auth.Version, now));
     }
 
     /// <summary>

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Autopilot.Orchestration;
+using NightTales.Application.Features.Autopilot.Orchestration.Steps;
 using NightTales.Application.Features.Autopilot.Planning;
 using NightTales.Domain.Series.Autopilot;
 using Shouldly;
@@ -44,13 +46,21 @@ public sealed class AutopilotStepHandlerRegistrationTests
 
     /// <summary>
     /// The composition registers one <see cref="IAutopilotStepHandler"/> descriptor per scanned type, plus the
-    /// calculator, the planner, the orchestrator, the metrics and the render/publish step's shared creator.
+    /// planner, the orchestrator, the metrics and the render/publish step's shared creator.
     /// </summary>
+    /// <remarks>
+    /// The shared Application ports the handlers resolve — <see cref="ISlotCalculator"/> and
+    /// <see cref="IChannelAuditPolicy"/> — are registered by <c>AddNightTalesApplication</c>, not here: the Api's
+    /// autopilot routes resolve them too and the Api never calls this Worker-only extension, so a registration here
+    /// would resolve nowhere in the Api. Both are composed in this test for the same reason the Worker composes both
+    /// (02.8.3-T2); the routes' own integration tests are what prove that half by resolving the ports in a host.
+    /// </remarks>
     [Fact]
     public void AddAutopilotOrchestration_RegistersEveryScannedHandler()
     {
         var services = new ServiceCollection();
 
+        services.AddNightTalesApplication();
         services.AddAutopilotOrchestration();
 
         var scanned = AutopilotOrchestrationServiceCollectionExtensions.StepHandlerTypes(

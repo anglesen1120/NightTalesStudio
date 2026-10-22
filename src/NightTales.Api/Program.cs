@@ -151,6 +151,10 @@ try
     // has an in-code default — `DryRun` is true, so the Api never auto-approves until the owner flips it — and an
     // impossible value fails the boot instead of a gate. The Worker binds the same section for the gate it runs.
     builder.Services.AddAutopilotGatesOptions();
+    // 02.8.3-T2: the run policy (`Autopilot:Run`) the autopilot page's `nextSlots` preview computes from. It is the
+    // same binding the Worker plans with, so the preview cannot name a slot the planner would not use; the Api's
+    // page handlers take it as a plain value, because Application may not reference the options binder.
+    builder.Services.AddAutopilotRunOptions();
     builder.Services.AddOptions<AssetRetentionOptions>()
         .BindConfiguration(AssetRetentionOptions.SectionName)
         .ValidateOnStart();
@@ -362,6 +366,11 @@ try
     // 02.6.3-T1 (02 README D9, 02.6.3 plan §4 U1/U2): GET/PUT /api/v1/series/{id}/bible, the bible.v1 document
     // behind a required If-Match ("sb-<version>"). Accept/dismiss of a pending proposal is 02.6.3-T2.
     app.MapSeriesBibleEndpoints();
+
+    // 02.8.3-T2 (02 README D9/D13, 02.8.3 plan §5): the series' autopilot routes — settings read/write behind
+    // `youtube_publish` and a required If-Match ("sa-<xmin>"), accept/revoke of the versioned authorization,
+    // pause/resume, and the run list.
+    app.MapAutopilotEndpoints();
 
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.

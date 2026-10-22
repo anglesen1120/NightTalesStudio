@@ -148,7 +148,7 @@ internal static class AutopilotStepContexts
             run,
             series,
             settings,
-            AutopilotTiming.Compute(run.SlotAt, settings, TimingOptions),
+            AutopilotTiming.Compute(run.SlotAt, settings, TimingOptions, now),
             TimingOptions,
             now);
     }

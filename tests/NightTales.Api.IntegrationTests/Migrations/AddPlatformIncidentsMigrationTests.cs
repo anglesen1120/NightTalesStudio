@@ -19,9 +19,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// newest-first <c>ix_platform_incidents_raised_at</c>.
 /// </summary>
 /// <remarks>
-/// This class owns the last-migration check (<c>migrations[^1]</c>) for the tip: 02.8.3-T1's
-/// <c>AddAutopilotRunsStateAndSlotMigrationTests</c> handed it over and now only proves its own migration is compiled
-/// in.
+/// This class no longer owns the last-migration check (<c>migrations[^1]</c>): 02.8.3-T2's
+/// <c>AddAutopilotAuthorizationRevokedReasonMigrationTests</c> appended its migration after this one and took that
+/// check (and the no-pending-model-change check) over; this class now only proves its own migration is compiled in.
 /// </remarks>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -56,15 +56,12 @@ public sealed class AddPlatformIncidentsMigrationTests(TestDatabase database) : 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsPresent_OwnsTheLastMigration_AndTheModelHasNoPendingChange()
+    public async Task Migration_IsCompiledIn_AndMapsTheTable()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
 
-        migrations[^1].ShouldEndWith("_" + MigrationName);
-
-        context.Database.HasPendingModelChanges().ShouldBeFalse(
-            "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
         context.Model.FindEntityType(typeof(PlatformIncident))!.GetTableName().ShouldBe(Table);
     }
 

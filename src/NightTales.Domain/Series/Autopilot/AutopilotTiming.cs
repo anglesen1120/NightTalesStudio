@@ -1,3 +1,5 @@
+using NightTales.Domain.Publishing;
+
 namespace NightTales.Domain.Series.Autopilot;
 
 /// <summary>
@@ -49,7 +51,7 @@ public enum VetoWindowDecision
     /// <summary>The publication may not be created yet: <c>now &lt; publication_create_at</c>.</summary>
     WaitUntil = 0,
 
-    /// <summary>The publication may be created now with the veto window in <see cref="VetoWindowResult.VetoHours"/>.</summary>
+    /// <summary>The publication may be created now; the veto window it gets is the series' configured one, clamped by the create command.</summary>
     Create = 1,
 
     /// <summary>
@@ -59,21 +61,23 @@ public enum VetoWindowDecision
     SlotMissed = 2,
 }
 
-/// <summary>The verdict of <see cref="AutopilotTiming.EvaluateVetoWindow"/>.</summary>
+/// <summary>
+/// The verdict of <see cref="AutopilotTiming.EvaluateVetoWindow"/>: which of the three branches the instant falls
+/// in. It carries no veto hours — the window a created publication gets is the series' configured
+/// <see cref="AutopilotSettings.VetoWindowHours"/> and belongs to <c>CreatePublicationCommand</c>, so a copy here
+/// would be a second, discarded rule (STATUS S71-41).
+/// </summary>
 /// <param name="Decision">Whether to wait, create, or call the slot missed.</param>
-/// <param name="VetoHours">The veto window to create with; <c>0</c> unless <paramref name="Decision"/> is <see cref="VetoWindowDecision.Create"/>.</param>
-public sealed record VetoWindowResult(VetoWindowDecision Decision, int VetoHours)
+public sealed record VetoWindowResult(VetoWindowDecision Decision)
 {
     /// <summary>The publication is not due yet.</summary>
-    public static VetoWindowResult WaitUntil { get; } = new(VetoWindowDecision.WaitUntil, 0);
+    public static VetoWindowResult WaitUntil { get; } = new(VetoWindowDecision.WaitUntil);
 
     /// <summary>The slot is gone.</summary>
-    public static VetoWindowResult SlotMissed { get; } = new(VetoWindowDecision.SlotMissed, 0);
+    public static VetoWindowResult SlotMissed { get; } = new(VetoWindowDecision.SlotMissed);
 
-    /// <summary>Create the publication now, with this shortened (but never below the minimum) veto window.</summary>
-    /// <param name="vetoHours">The hours the owner keeps to veto.</param>
-    /// <returns>The verdict.</returns>
-    public static VetoWindowResult Create(int vetoHours) => new(VetoWindowDecision.Create, vetoHours);
+    /// <summary>The publication may be created now.</summary>
+    public static VetoWindowResult Create { get; } = new(VetoWindowDecision.Create);
 }
 
 /// <summary>
@@ -82,7 +86,8 @@ public sealed record VetoWindowResult(VetoWindowDecision Decision, int VetoHours
 /// </summary>
 /// <remarks>
 /// <para>
-/// The chain is: <c>upload_at = slot_at − PublishLead</c>,
+/// The chain is: <c>upload_at = slot_at − PublishLead</c> (through <see cref="PublicationQueueTime.For"/>, which
+/// clamps a slot already inside the lead window to the caller's clock reading),
 /// <c>publication_create_at = upload_at − veto_window_hours</c>,
 /// <c>render_deadline = publication_create_at − PublicationCreateMargin</c>,
 /// <c>render_start_at = render_deadline − render_lead</c>,
@@ -95,10 +100,10 @@ public sealed record VetoWindowResult(VetoWindowDecision Decision, int VetoHours
 /// <para>
 /// <b>Missed slot.</b> A publication is created only while
 /// <c>publication_create_at ≤ now &lt; upload_at − MinVetoWindowHours</c>; it never goes out before
-/// <c>publication_create_at</c>. A late video inside that window gets a shortened veto of at least
-/// <see cref="AutopilotTimingOptions.MinVetoWindowHours"/> hours; at or after the cutoff the slot is missed and
-/// the run ends <c>failed</c> with <c>pause_reason = slot_missed</c> (two consecutive misses count as two
-/// failures for the pause streak, §3.6).
+/// <c>publication_create_at</c>. At or after the cutoff the slot is missed and the run ends <c>failed</c> with
+/// <c>pause_reason = slot_missed</c> (two consecutive misses count as two failures for the pause streak, §3.6).
+/// The window a created publication then gets is the series' configured one, decided by
+/// <c>CreatePublicationCommand</c>: this type answers only which branch the instant falls in.
 /// </para>
 /// </remarks>
 public static class AutopilotTiming
@@ -107,17 +112,25 @@ public static class AutopilotTiming
     /// <param name="slotAt">The slot's publish instant (plan §3.2).</param>
     /// <param name="settings">The series' settings: veto window, buffer depth and the two optional lead overrides.</param>
     /// <param name="options">The configured estimates and lead times.</param>
+    /// <param name="now">
+    /// The caller's clock reading. It only matters for a slot already inside its lead window (a series enabled late,
+    /// a backfill): <see cref="PublicationQueueTime.For"/> then answers <paramref name="now"/>, so the chain starts
+    /// at the present instead of an upload instant that has already passed.
+    /// </param>
     /// <returns>The milestones, all in UTC like <paramref name="slotAt"/>.</returns>
     /// <exception cref="ArgumentNullException">A reference argument is <see langword="null"/>.</exception>
     public static AutopilotRunTiming Compute(
         DateTimeOffset slotAt,
         AutopilotSettings settings,
-        AutopilotTimingOptions options)
+        AutopilotTimingOptions options,
+        DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(options);
 
-        var uploadAt = slotAt.AddMinutes(-options.PublishLeadMinutes);
+        // The upload instant is D12's, derived through its one owner rather than spelled again here (06 README
+        // YR3; STATUS S71-41), which is also where the "never in the past" clamp lives.
+        var uploadAt = PublicationQueueTime.For(slotAt, options.PublishLeadMinutes, now);
         var publicationCreateAt = uploadAt.AddHours(-settings.VetoWindowHours);
         var renderDeadline = publicationCreateAt.AddMinutes(-options.PublicationCreateMarginMinutes);
         var renderStartAt = renderDeadline.AddMinutes(-(settings.RenderLeadMinutes ?? options.RenderEstimateMinutes));
@@ -145,50 +158,19 @@ public static class AutopilotTiming
         return timing.UploadAt.AddHours(-options.MinVetoWindowHours);
     }
 
-    /// <summary>
-    /// The veto window a publication created at <paramref name="now"/> gets: the hours left before the upload,
-    /// floored at <see cref="AutopilotTimingOptions.MinVetoWindowHours"/> and capped at the configured
-    /// <see cref="AutopilotSettings.VetoWindowHours"/> (a late start never lengthens a window either).
-    /// </summary>
-    /// <param name="now">The caller's clock reading, inside the create window.</param>
-    /// <param name="timing">The slot's milestones.</param>
-    /// <param name="options">The configured minimum veto window.</param>
-    /// <param name="settings">The series' configured veto window.</param>
-    /// <returns>The hours the owner keeps to veto.</returns>
-    /// <exception cref="ArgumentNullException">A reference argument is <see langword="null"/>.</exception>
-    public static int ShortenedVetoHours(
-        DateTimeOffset now,
-        AutopilotRunTiming timing,
-        AutopilotTimingOptions options,
-        AutopilotSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(timing);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(settings);
-
-        var remainingHours = (int)Math.Floor((timing.UploadAt - now).TotalHours);
-        var minimum = options.MinVetoWindowHours;
-        var maximum = Math.Max(settings.VetoWindowHours, minimum);
-
-        return Math.Clamp(remainingHours, minimum, maximum);
-    }
-
     /// <summary>The missed-slot rule of plan §3.4 as one verdict at the instant <paramref name="now"/>.</summary>
     /// <param name="now">The caller's clock reading.</param>
     /// <param name="timing">The slot's milestones.</param>
     /// <param name="options">The configured minimum veto window.</param>
-    /// <param name="settings">The series' configured veto window.</param>
-    /// <returns>Wait, create with a veto of N hours, or the slot is missed.</returns>
+    /// <returns>Wait, create, or the slot is missed.</returns>
     /// <exception cref="ArgumentNullException">A reference argument is <see langword="null"/>.</exception>
     public static VetoWindowResult EvaluateVetoWindow(
         DateTimeOffset now,
         AutopilotRunTiming timing,
-        AutopilotTimingOptions options,
-        AutopilotSettings settings)
+        AutopilotTimingOptions options)
     {
         ArgumentNullException.ThrowIfNull(timing);
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(settings);
 
         if (now < timing.PublicationCreateAt)
         {
@@ -200,7 +182,7 @@ public static class AutopilotTiming
             return VetoWindowResult.SlotMissed;
         }
 
-        return VetoWindowResult.Create(ShortenedVetoHours(now, timing, options, settings));
+        return VetoWindowResult.Create;
     }
 
     /// <summary>
@@ -210,7 +192,6 @@ public static class AutopilotTiming
     /// <param name="now">The caller's clock reading.</param>
     /// <param name="timing">The slot's milestones.</param>
     /// <param name="options">The configured minimum veto window.</param>
-    /// <param name="settings">The series' configured veto window.</param>
     /// <param name="result">The verdict, in every case — the caller needs the reason when this answers <see langword="false"/>.</param>
     /// <returns>Whether a publication may be created now.</returns>
     /// <exception cref="ArgumentNullException">A reference argument is <see langword="null"/>.</exception>
@@ -218,10 +199,9 @@ public static class AutopilotTiming
         DateTimeOffset now,
         AutopilotRunTiming timing,
         AutopilotTimingOptions options,
-        AutopilotSettings settings,
         out VetoWindowResult result)
     {
-        result = EvaluateVetoWindow(now, timing, options, settings);
+        result = EvaluateVetoWindow(now, timing, options);
 
         return result.Decision == VetoWindowDecision.Create;
     }

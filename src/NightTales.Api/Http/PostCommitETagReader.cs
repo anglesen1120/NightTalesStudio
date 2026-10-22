@@ -44,6 +44,23 @@ public sealed class PostCommitETagReader(IReadDb readDb)
             ? ETags.Episode(xmin)
             : null;
 
+    /// <summary>
+    /// The series-autopilot ETag (<c>"sa-&lt;xmin&gt;"</c>), or <see langword="null"/> when the row is not visible
+    /// (02.8.3-T2, <c>GET/PUT /series/{id}/autopilot</c>).
+    /// </summary>
+    /// <remarks>
+    /// The settings of the autopilot are columns of the <c>series</c> row, so the tag is read from the same row as
+    /// <see cref="SeriesAsync"/>; only the prefix differs (02 README D9). The write routes of the group
+    /// (<c>PUT</c>, pause, resume, accept, revoke) read it here after their unit of work committed, because
+    /// <c>xmin</c> is assigned at commit and a tag a handler built is already stale (09 README D15).
+    /// </remarks>
+    /// <param name="id">The series whose autopilot was just written.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    public async Task<string?> SeriesAutopilotAsync(Guid id, CancellationToken cancellationToken)
+        => await VersionAsync<Series>(id, cancellationToken).ConfigureAwait(false) is { } xmin
+            ? ETags.SeriesAutopilot(xmin)
+            : null;
+
     /// <summary>The publication ETag (<c>"pu-&lt;xmin&gt;"</c>), or <see langword="null"/> when the row is not visible.</summary>
     /// <param name="id">The publication that was just created.</param>
     /// <param name="cancellationToken">Cancels the read.</param>

@@ -1,6 +1,8 @@
+using System.Text.Json;
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Usage;
@@ -40,12 +42,14 @@ namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 /// <param name="costEstimator">The worst-case cost of one facts call.</param>
 /// <param name="budgetGuard">The platform spend cap.</param>
 /// <param name="creditLedger">The credit reservation (metering-only in phase P).</param>
+/// <param name="currentUser">The actor, which decides whether a non-user trigger is allowed.</param>
 /// <param name="clock">The command's clock reading.</param>
 public sealed class GenerateFactSheetCommandHandler(
     IAppDbContext db,
     IFactSheetCostEstimator costEstimator,
     IBudgetGuard budgetGuard,
     ICreditLedger creditLedger,
+    ICurrentUser currentUser,
     IClock clock)
     : ICommandHandler<GenerateFactSheetCommand, ErrorOr<FactSheetRunDto>>
 {
@@ -54,6 +58,15 @@ public sealed class GenerateFactSheetCommandHandler(
         GenerateFactSheetCommand command,
         CancellationToken cancellationToken)
     {
+        // Step 0: only a system scope may name a non-user trigger (the autopilot's SystemContext, 02.8.3;
+        // the same guard as FindSourcesCommandHandler and GenerateStoryCommandHandler).
+        if (command.Trigger != GenerationTrigger.User && currentUser.Actor != ActorType.System)
+        {
+            return Error.Forbidden(
+                ErrorCodes.Forbidden,
+                "Only the platform can start an automatic fact-sheet generation.");
+        }
+
         // The row lock first, then the tenant-filtered load (another user's id and a missing id are both 404).
         await db.LockEpisodeForUpdateAsync(command.EpisodeId, cancellationToken).ConfigureAwait(false);
 
@@ -157,7 +170,7 @@ public sealed class GenerateFactSheetCommandHandler(
             episode.SeriesId,
             episode.Id,
             GenerationKind.FactSheet,
-            GenerationTrigger.User,
+            command.Trigger,
             command.IdempotencyKey,
             episode.Status,
             null,
@@ -177,13 +190,13 @@ public sealed class GenerateFactSheetCommandHandler(
         // The transition raises FactSheetGenerationRequested; the pipeline commits it with the run, and the
         // Worker's consumer enqueues GenerateFactSheetJob(runId) — and nothing else. No EpisodeUpdated NOTIFY
         // leaves this path: the feature's NOTIFYs are raised by the run's terminal events instead.
-        var requested = episode.RequestFactSheetGeneration(run.Id, GenerationTrigger.User, now);
+        var requested = episode.RequestFactSheetGeneration(run.Id, command.Trigger, now);
         if (requested.IsError)
         {
             return requested.Errors;
         }
 
-        command.Outcome = new FactSheetRunOutcome(run.Id, bound.Value.WorstCaseUsd);
+        command.Outcome = new FactSheetRunOutcome(run.Id, Wire(command.Trigger), bound.Value.WorstCaseUsd);
 
         return new FactSheetRunDto(run.Id, null, "queued");
     }
@@ -192,4 +205,12 @@ public sealed class GenerateFactSheetCommandHandler(
         Error.Conflict(
             ErrorCodes.FactSheetGenerationInProgress,
             "A fact-sheet generation is already queued or running for this episode.");
+
+    /// <summary>The enum's wire value, as <c>GenerateStoryCommandHandler</c> spells it: the audit row stores the name the API uses.</summary>
+    /// <typeparam name="TEnum">The enum to name.</typeparam>
+    /// <param name="value">The member.</param>
+    /// <returns>The snake_case name (<c>user</c>, <c>autopilot</c>, <c>system</c>).</returns>
+    private static string Wire<TEnum>(TEnum value)
+        where TEnum : struct, Enum =>
+        JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
 }

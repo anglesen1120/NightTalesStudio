@@ -29,7 +29,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// on both sides. A migration that adds a column therefore does not disturb the comparison, while a
 /// rewrite of an inherited column still does. A migration that adds columns to an *existing* table (with
 /// or without a backfill) is exercised by a row of that table in its old shape — see the
-/// <c>autopilot_runs</c> row 02.8.3-T1 added, which pins the backfill of `_02_AutopilotRunsStateAndSlot`.
+/// <c>autopilot_runs</c> row 02.8.3-T1 added, which pins the backfill of `_02_AutopilotRunsStateAndSlot`, and
+/// the <c>series_autopilot_authorizations</c> row 02.8.3-T2 added for the nullable `revoked_reason` of
+/// `_02_AutopilotAuthorizationRevokedReason`.
 /// </para>
 /// </remarks>
 internal static class SeedPrevious
@@ -479,6 +481,29 @@ internal static class SeedPrevious
                             TIMESTAMPTZ '2026-10-19 08:00:00+00', TIMESTAMPTZ '2026-10-19 10:00:00+00');
                 END IF;
             END $$;
+            """),
+        (
+            // 02.8.3-T2: no table is created here either — `series_autopilot_authorizations` has existed since
+            // `InitialCore`, and this row is its OLD shape, which is what `_02_AutopilotAuthorizationRevokedReason`
+            // extends with `revoked_reason`. The insert names only that shape's columns, so it stays valid on both
+            // sides of the migration: the added column is nullable and a row without a reason is a live
+            // authorization. `channel_connection_id` is NULL on purpose — the `channel_connections` table and the
+            // seed connection only exist from `_06_ChannelConnections` on, while this row is written from the first
+            // schema that has the table. `version` is 1, the only one the unique `(series_id, version)` key allows
+            // for the seed series, `text_hash` is a real 64-character SHA-256 digest because the column is
+            // fixed-length, and `cadence` is the covered snapshot the accept path writes (README D-7).
+            "series_autopilot_authorizations",
+            """
+            INSERT INTO series_autopilot_authorizations (id, user_id, series_id, version, text_version, text_hash,
+                                                         topic, channel_connection_id, cadence, privacy_status,
+                                                         accepted_at, revoked_at, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-000000000020', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000002', 1, 'autopilot-auth.v1',
+                    'fa35d3944dfc56f92e7b69f806a97f554fe8e94ee4af0d38fc1f26b47b9a4a91',
+                    'ghost', NULL,
+                    '{"cadence":{"days_of_week":["monday"],"publish_time":"09:00","time_zone":"Asia/Ho_Chi_Minh"},"daily_cap":1,"privacy":"private","veto_window_hours":24,"pre_audit_mode":"private","pre_audit_pending":false}',
+                    'private', TIMESTAMPTZ '2026-10-20 08:00:00+00', NULL,
+                    TIMESTAMPTZ '2026-10-20 08:00:00+00', TIMESTAMPTZ '2026-10-20 08:00:00+00')
             """),
     ];
 

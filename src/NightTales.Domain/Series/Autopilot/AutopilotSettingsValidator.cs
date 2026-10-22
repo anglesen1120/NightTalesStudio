@@ -336,8 +336,11 @@ public static class AutopilotSettingsValidator
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(options);
 
-        var timing = AutopilotTiming.Compute(DateTimeOffset.UnixEpoch, settings, options);
-        var bufferStart = DateTimeOffset.UnixEpoch.AddDays(-settings.BufferDays);
+        // The probe is about the chain's shape, not about a queue instant: a slot well past the clock keeps the raw
+        // `slot − lead` (the D12 clamp never engages), so the warning compares the same deltas whatever the clock.
+        var slotAt = DateTimeOffset.UnixEpoch.AddYears(1);
+        var timing = AutopilotTiming.Compute(slotAt, settings, options, DateTimeOffset.UnixEpoch);
+        var bufferStart = slotAt.AddDays(-settings.BufferDays);
 
         return timing.StartAt < bufferStart
             ? [Invariant(

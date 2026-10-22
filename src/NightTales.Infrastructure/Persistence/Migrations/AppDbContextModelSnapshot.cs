@@ -2350,6 +2350,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamptz")
                         .HasColumnName("revoked_at");
 
+                    b.Property<string>("RevokedReason")
+                        .HasColumnType("text")
+                        .HasColumnName("revoked_reason");
+
                     b.Property<Guid>("SeriesId")
                         .HasColumnType("uuid")
                         .HasColumnName("series_id");
@@ -2402,6 +2406,8 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("series_autopilot_authorizations", null, t =>
                         {
                             t.HasCheckConstraint("ck_series_autopilot_authorizations_privacy_status", "\"privacy_status\" IN ('private', 'public', 'unlisted')");
+
+                            t.HasCheckConstraint("ck_series_autopilot_authorizations_revoked_reason", "\"revoked_reason\" IN ('channel_changed', 'disabled', 'owner_revoked', 'superseded', 'text_changed', 'topic_changed')");
 
                             t.HasCheckConstraint("ck_series_autopilot_authorizations_topic", "\"topic\" IN ('ghost', 'spiritual', 'true_crime')");
                         });

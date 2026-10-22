@@ -36,7 +36,7 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
 
     private static readonly decimal[] WorstCaseChecks = [0.5m];
 
-    private static readonly string[] AuditKeys = ["episodeId", "generationRunId", "worstCaseUsd"];
+    private static readonly string[] AuditKeys = ["episodeId", "generationRunId", "trigger", "worstCaseUsd"];
 
     [Fact]
     public async Task GenerateFactSheetCommand_FetchedNote_InsertsQueuedRunAndReservesCredit()
@@ -196,6 +196,7 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
         audit.EntityType.ShouldBe("episode");
         audit.EntityId.ShouldBe(world.EpisodeId);
         audit.Summary["generationRunId"].ShouldBe(result.Value.RunId.ToString());
+        audit.Summary["trigger"].ShouldBe("user", "the route's own caller is a user trigger, named as the wire value (S71-6)");
         audit.Summary["worstCaseUsd"].ShouldBe(0.5m);
         audit.Summary.Keys.OrderBy(key => key, StringComparer.Ordinal).ShouldBe(AuditKeys);
     }
@@ -243,6 +244,39 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
         world.Ledger.Reservations.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// S71-6: the autopilot's sheet generation must record <see cref="GenerationTrigger.Autopilot"/> on the run row
+    /// (plan §3.5 rule 241) and on the audit row, and the trigger must be the caller's, not a hard-coded user one.
+    /// </summary>
+    [Fact]
+    public async Task GenerateFactSheetCommand_AutopilotTriggerUnderSystemScope_QueuesAnAutopilotRun()
+    {
+        var world = await NewWorldAsync(sources: Sources.FetchedNote, actor: ActorType.System);
+        var command = new GenerateFactSheetCommand(world.EpisodeId, "autopilot:s:t:fact_sheet", GenerationTrigger.Autopilot);
+
+        var result = await world.SendAsync(command);
+
+        result.IsError.ShouldBeFalse(string.Join(";", result.ErrorsOrEmptyList));
+        (await world.OnlyRunAsync()).Trigger.ShouldBe(GenerationTrigger.Autopilot);
+        command.ToAuditData()!.Summary["trigger"].ShouldBe("autopilot", "the audit row stores the wire value, not the enum");
+    }
+
+    /// <summary>Only a system scope may name a non-user trigger, exactly as the story and source-search commands rule.</summary>
+    [Fact]
+    public async Task GenerateFactSheetCommand_AutopilotTriggerUnderUserScope_ReturnsForbidden()
+    {
+        var world = await NewWorldAsync(sources: Sources.FetchedNote);
+
+        var result = await world.SendAsync(
+            new GenerateFactSheetCommand(world.EpisodeId, "k1", GenerationTrigger.Autopilot));
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.Forbidden);
+        await world.ShouldHaveNoRunAsync();
+        world.Budget.Checked.ShouldBeEmpty("the scope guard runs before the cost is estimated");
+        world.Ledger.Reservations.ShouldBeEmpty();
+    }
+
     /// <summary>Which sources the episode already has; a note is born <c>fetched</c>, a url source starts <c>pending</c>.</summary>
     private enum Sources
     {
@@ -254,14 +288,15 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
     private async Task<World> NewWorldAsync(
         EpisodeStatus status = EpisodeStatus.Draft,
         Topic topic = Topic.TrueCrime,
-        Sources sources = Sources.None)
+        Sources sources = Sources.None,
+        ActorType actor = ActorType.User)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(Database, setup).CreateAsync(ct: Ct);
         var series = await new SeriesBuilder(Database, setup).CreateAsync(user.Id, topic: topic, ct: Ct);
         var episode = await new EpisodeBuilder(Database, setup).CreateAsync(user.Id, series.Id, status: status, ct: Ct);
 
-        var world = new World(Database, user.Id, series.Id, episode.Id);
+        var world = new World(Database, user.Id, series.Id, episode.Id, actor);
         if (sources != Sources.None)
         {
             await world.SeedSourceAsync(sources == Sources.FetchedNote);
@@ -270,8 +305,10 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
         return world;
     }
 
-    private sealed class World(TestDatabase database, Guid userId, Guid seriesId, Guid episodeId)
+    private sealed class World(TestDatabase database, Guid userId, Guid seriesId, Guid episodeId, ActorType actor)
     {
+        private readonly TestCurrentUser _current = new() { Id = userId, Actor = actor };
+
         public Guid UserId => userId;
 
         public Guid SeriesId => seriesId;
@@ -284,13 +321,14 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
 
         public async Task<ErrorOr<FactSheetRunDto>> SendAsync(GenerateFactSheetCommand command)
         {
-            await using var db = database.CreateAppDbContext(new TestCurrentUser { Id = userId }, new FakeClock(Now));
+            await using var db = database.CreateAppDbContext(_current, new FakeClock(Now));
             await using var transaction = await db.Database.BeginTransactionAsync(Ct);
             var handler = new GenerateFactSheetCommandHandler(
                 db,
                 new FixedEstimator(),
                 Budget,
                 Ledger,
+                _current,
                 new FakeClock(Now));
 
             var result = await handler.Handle(command, Ct);

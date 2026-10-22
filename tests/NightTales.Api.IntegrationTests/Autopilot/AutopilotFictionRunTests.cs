@@ -119,7 +119,7 @@ public sealed class AutopilotFictionRunTests(TestDatabase database) : Integratio
         run.Outcome.ShouldBeNull();
         run.FinishedAt.ShouldBeNull();
 
-        var timing = AutopilotTiming.Compute(run.SlotAt, world.Settings, TimingOptions());
+        var timing = AutopilotTiming.Compute(run.SlotAt, world.Settings, TimingOptions(), WorkedSlot.AddDays(-3));
         timing.PublicationCreateAt.ShouldBe(WorkedPublicationCreate, "plan §3.4's worked example");
         timing.UploadAt.ShouldBe(new DateTimeOffset(2026, 10, 8, 10, 0, 0, TimeSpan.Zero));
 
