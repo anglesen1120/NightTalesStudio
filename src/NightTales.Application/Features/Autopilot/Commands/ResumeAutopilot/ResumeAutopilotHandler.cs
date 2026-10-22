@@ -1,6 +1,7 @@
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Authorization;
@@ -33,10 +34,12 @@ namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 /// in T2's contract changes.
 /// </para>
 /// <para>
-/// <b>It releases the runs, not only the series</b> (S77 review C-2/S-1). A run paused by
+/// <b>It releases the runs, not only the series</b> (S77 review C-2/S-1; delta N-2). A run paused by
 /// <c>AutopilotStepSupport.SeriesMaySpendAsync</c> is not due, so nothing else would ever look at it: this route is the
-/// owner's "continue", and it moves the series' <c>paused</c> runs back through <see cref="AutopilotRun.Resume"/> —
-/// the domain's own <c>paused → previous state</c> edge, so no state is guessed here. That also covers a series whose
+/// owner's "continue", and it hands the series' <c>owner_paused</c> runs to the one release path,
+/// <see cref="AutopilotRunHold.ReleaseOwnerPausedAsync"/> — the domain's own <c>paused → previous state</c> edge, so no
+/// state is guessed here, and a row whose step the ladder cannot place is skipped and counted instead of throwing.
+/// A run paused for any other §3.6 reason is left to 02.8.3-T4's trigger ladder. That also covers a series whose
 /// own pause was already cleared (a switch-off, or a disabled-then-enabled series): the two refusals above apply to
 /// that release too, because moving a run without a live authorization would only feed it back into the spend check
 /// that paused it. With no paused run left to move and no series pause, the route is the documented no-op it always
@@ -51,7 +54,11 @@ namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
 /// <param name="clock">The command's clock reading.</param>
-public sealed class ResumeAutopilotHandler(IAppDbContext db, IClock clock)
+/// <param name="logger">The log of what one resume could not release (ids and counts only).</param>
+public sealed partial class ResumeAutopilotHandler(
+    IAppDbContext db,
+    IClock clock,
+    ILogger<ResumeAutopilotHandler> logger)
     : ICommandHandler<ResumeAutopilotCommand, ErrorOr<Success>>
 {
     /// <inheritdoc />
@@ -77,8 +84,13 @@ public sealed class ResumeAutopilotHandler(IAppDbContext db, IClock clock)
                 "The series is archived; autopilot cannot be resumed for it.");
         }
 
+        // S77 delta N-2: the pre-check reads only `owner_paused` rows, because those are the only ones any release
+        // path moves. Every other §3.6 reason belongs to 02.8.3-T4's trigger ladder, so a series holding only those
+        // runs has nothing this route may do.
         var pausedRuns = await db.AutopilotRuns
-            .Where(run => run.SeriesId == command.SeriesId && run.State == AutopilotRunState.Paused)
+            .Where(run => run.SeriesId == command.SeriesId
+                && run.State == AutopilotRunState.Paused
+                && run.PauseReason == AutopilotPauseReason.OwnerPaused)
             .OrderBy(run => run.SlotAt)
             .Take(AutopilotRunHold.MaxRunsPerPass)
             .ToListAsync(cancellationToken)
@@ -123,16 +135,33 @@ public sealed class ResumeAutopilotHandler(IAppDbContext db, IClock clock)
 
         if (!seriesIsIdle)
         {
+            // The pause's own undo comes first: the release only moves runs of a series that is not paused
+            // (`AutopilotRunHold.ReleaseOwnerPausedAsync`'s guard), so the order is the series, then its runs.
             series.ResumeAutopilot(now);
         }
 
-        foreach (var run in pausedRuns)
+        // One release path (S77 delta N-2): `AutopilotRunHold` moves `owner_paused` rows only, and it skips and counts a
+        // row whose step is not on the ladder instead of letting `AutopilotRun.Resume` throw out of the request. The
+        // pre-check above decided the no-op; this read is the authoritative one, because the series pause was cleared
+        // in between.
+        var release = await AutopilotRunHold
+            .ReleaseOwnerPausedAsync(db, command.SeriesId, now, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (release.Refused > 0 || release.Untouched > 0)
         {
-            run.Resume(now);
+            LogRunReleaseIncomplete(command.SeriesId, release.Refused, release.Untouched);
         }
 
         return Result.Success;
     }
+
+    /// <summary>Logs the owner-paused runs a resume did not move; the next resume or acceptance retries them.</summary>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="refused">How many rows the domain refused to resume (a corrupt step).</param>
+    /// <param name="untouched">How many paused rows lie beyond the release bound.</param>
+    [LoggerMessage(EventId = 6701, Level = LogLevel.Warning, Message = "Autopilot resume: series {seriesId} left {refused} paused run(s) unreleased and {untouched} beyond the release bound.")]
+    private partial void LogRunReleaseIncomplete(Guid seriesId, int refused, int untouched);
 
     /// <summary>
     /// Whether the channel connection the authorization snapshot names is still <c>active</c> (plan §3.6 rows 6/6b's

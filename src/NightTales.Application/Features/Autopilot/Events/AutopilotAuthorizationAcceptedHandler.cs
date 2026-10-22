@@ -24,12 +24,18 @@ namespace NightTales.Application.Features.Autopilot.Events;
 /// <b>The consent also releases what its absence paused</b> (S77 review C-2/S-1). <c>SeriesMaySpendAsync</c> pauses a
 /// producing run with <c>owner_paused</c> when the current authorization is missing or revoked, because the §3.5 table
 /// has no <c>→ awaiting_authorization</c> row outside <c>planned</c>. A <c>paused</c> row is not due, so without this
-/// step those runs would stay paused forever, and the owner's <c>POST …/resume</c> cannot help either (the series is
-/// not paused, so the route is a documented no-op). The acceptance is the event that brings the consent back, so the
-/// runs go back through <c>AutopilotRun.Resume</c> — the domain's own <c>paused → previous state</c> edge, no
-/// state the table lacks — and then through the same advance loop as every other open run. Only
-/// <c>owner_paused</c> runs of an enabled, unpaused, live series are released; the other
+/// step those runs would stay paused until the owner pressed <c>POST …/resume</c> — and that brake is not always at
+/// hand (the series itself is not paused, so a client may show no resume affordance). The acceptance is the event that
+/// brings the consent back, so the runs go back through <c>AutopilotRun.Resume</c> — the domain's own
+/// <c>paused → previous state</c> edge, no state the table lacks — and then through the same advance loop as every
+/// other open run. Only <c>owner_paused</c> runs of an enabled, unpaused, live series are released; the other
 /// §3.6 reasons belong to 02.8.3-T4's trigger ladder.
+/// </para>
+/// <para>
+/// <b>Only the current pointer releases</b> (S77 delta N-1). The delivery can arrive after the owner revoked this
+/// authorization or after a newer acceptance superseded it, so the handler first checks that the event's row is still
+/// <c>series.current_autopilot_authorization_id</c>. If it is not, the delivery is a no-op — nothing is released and
+/// nothing is advanced — because consent the series no longer holds must not un-pause a run.
 /// </para>
 /// <para>
 /// <b>The release is committed before the advance.</b> <c>IAutopilotRunOrchestrator.AdvanceAsync</c> opens its
@@ -71,6 +77,19 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
+
+        var series = await db.Series
+            .SingleOrDefaultAsync(candidate => candidate.Id == domainEvent.SeriesId, cancellationToken)
+            .ConfigureAwait(false);
+
+        // S77 delta N-1: the delivery can arrive after the owner revoked this authorization, or after a newer acceptance
+        // superseded it. Restoring consent the series no longer holds would resume runs for a snapshot that is gone and
+        // advance them without a live authorization, so a delivery whose row is not the current pointer is a no-op.
+        if (series is null || series.CurrentAutopilotAuthorizationId != domainEvent.AuthorizationId)
+        {
+            LogNotCurrent(domainEvent.SeriesId, domainEvent.AuthorizationId);
+            return;
+        }
 
         // S77 review C-2/S-1: the runs the missing consent paused go back to the state their step implies, and the
         // save has to land before the orchestrator opens its own scope below. The rows are stamped with the event's
@@ -132,4 +151,10 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
     /// <param name="untouched">How many paused rows lie beyond the pass bound.</param>
     [LoggerMessage(EventId = 6699, Level = LogLevel.Warning, Message = "Autopilot authorization accepted for series {seriesId}: {refused} paused run(s) could not be released and {untouched} lie beyond the release bound.")]
     private partial void LogReleaseIncomplete(Guid seriesId, int refused, int untouched);
+
+    /// <summary>Logs a delivery whose authorization is no longer the series' current one: nothing was released.</summary>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="authorizationId">The accepted row the delivery carries.</param>
+    [LoggerMessage(EventId = 6702, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} accepted for series {seriesId} is no longer current; nothing released.")]
+    private partial void LogNotCurrent(Guid seriesId, Guid authorizationId);
 }

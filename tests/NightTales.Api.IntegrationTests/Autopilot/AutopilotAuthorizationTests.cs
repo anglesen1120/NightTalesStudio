@@ -721,9 +721,68 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
     }
 
     /// <summary>
+    /// S77 delta N-2: the resume route releases an idle series' <c>owner_paused</c> runs through the one release path,
+    /// and only those — a run another §3.6 trigger holds is T4's to clear. The series is enabled with a live
+    /// authorization and an active channel, which is exactly what the route's two consent gates read.
+    /// </summary>
+    [Fact]
+    public async Task Resume_ReleasesOnlyTheOwnerPausedRuns()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, enabled: true, authorized: true);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: false);
+        await using var harness = await AutopilotTickHarness.StartAsync(Database, clock, ct: Ct);
+
+        var ownerPaused = await harness.CreateRunAsync(
+            world.User.Id,
+            world.SeriesId,
+            slotAt: Start.AddDays(5),
+            startAt: Start.AddDays(4),
+            authorizationId: null,
+            state: AutopilotRunState.Paused,
+            step: AutopilotRunStep.Idea,
+            pauseReason: AutopilotPauseReason.OwnerPaused,
+            ct: Ct);
+
+        var heldByAnotherTrigger = await harness.CreateRunAsync(
+            world.User.Id,
+            world.SeriesId,
+            slotAt: Start.AddDays(5).AddHours(1),
+            startAt: Start.AddDays(4).AddHours(1),
+            authorizationId: null,
+            state: AutopilotRunState.Paused,
+            step: AutopilotRunStep.Idea,
+            pauseReason: AutopilotPauseReason.GateFailedStreak,
+            ct: Ct);
+
+        using (var response = await client.SendAsync(
+            Request(HttpMethod.Post.Method, $"{Url(world.SeriesId)}/resume"),
+            Ct))
+        {
+            response.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                await response.Content.ReadAsStringAsync(Ct));
+        }
+
+        var released = await harness.RunAsync(world.User.Id, ownerPaused.Id, Ct);
+        released.State.ShouldNotBe(
+            AutopilotRunState.Paused,
+            "the owner's continue releases the run the missing consent paused");
+        released.PauseReason.ShouldBeNull("the reason is forgotten with the resume");
+
+        var kept = await harness.RunAsync(world.User.Id, heldByAnotherTrigger.Id, Ct);
+        kept.State.ShouldBe(
+            AutopilotRunState.Paused,
+            "another §3.6 trigger's pause is T4's to clear, not the resume route's");
+        kept.PauseReason.ShouldBe(AutopilotPauseReason.GateFailedStreak);
+    }
+
+    /// <summary>
     /// S77 review C-2/S-1: the runs a missing consent paused are released by the acceptance event. The acceptance is
     /// the only thing that can bring the consent back, and a <c>paused</c> run is not due, so without this the run
-    /// would never move again — the owner's <c>POST …/resume</c> cannot help, because the series itself is not paused.
+    /// would never move again until an owner pressed <c>POST …/resume</c> (which does release an idle series now, but a
+    /// client may show no such affordance when the series is not paused).
     /// Only <c>owner_paused</c> rows are released: every other §3.6 reason belongs to 02.8.3-T4's trigger ladder.
     /// </summary>
     [Fact]
@@ -790,6 +849,56 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
             AutopilotRunState.Paused,
             "a run held by another §3.6 trigger is T4's to resume, not the acceptance's");
         kept.PauseReason.ShouldBe(AutopilotPauseReason.GateFailedStreak);
+    }
+
+    /// <summary>
+    /// S77 delta N-1: a delivery whose authorization is no longer the series' current pointer releases nothing. The
+    /// event can outlive the row — the owner may revoke after accepting, or a newer acceptance may supersede it — and
+    /// restoring consent for a snapshot the series does not hold would resume runs with no live authorization.
+    /// </summary>
+    [Fact]
+    public async Task AcceptedEvent_ForAnAuthorizationThatIsNoLongerCurrent_ReleasesNothing()
+    {
+        var clock = new FakeClock(Start);
+        await using var harness = await AutopilotTickHarness.StartAsync(Database, clock, ct: Ct);
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var series = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+
+        var stranded = await harness.CreateRunAsync(
+            owner,
+            series.SeriesId,
+            slotAt: Start.AddDays(5),
+            startAt: Start.AddDays(4),
+            authorizationId: null,
+            state: AutopilotRunState.Paused,
+            step: AutopilotRunStep.Idea,
+            pauseReason: AutopilotPauseReason.OwnerPaused,
+            ct: Ct);
+
+        using (var scope = harness.Host.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISystemContext>().For(owner);
+
+            var handler = scope.ServiceProvider
+                .GetRequiredService<IOutboxHandler<AutopilotAuthorizationAccepted>>();
+
+            // A row the pointer never named: the same shape a revoked or superseded acceptance leaves behind.
+            await handler.HandleAsync(
+                new AutopilotAuthorizationAccepted(
+                    owner,
+                    series.SeriesId,
+                    Guid.NewGuid(),
+                    2,
+                    clock.UtcNow),
+                new OutboxContext(Guid.NewGuid(), owner, 1, clock.UtcNow),
+                Ct);
+        }
+
+        var kept = await harness.RunAsync(owner, stranded.Id, Ct);
+        kept.State.ShouldBe(
+            AutopilotRunState.Paused,
+            "an acceptance that is no longer current may not release a run");
+        kept.PauseReason.ShouldBe(AutopilotPauseReason.OwnerPaused);
     }
 
     /// <summary>The settings every seeded series starts from (19:00 Mon/Thu, daily_cap 1, public, 12 h veto).</summary>
