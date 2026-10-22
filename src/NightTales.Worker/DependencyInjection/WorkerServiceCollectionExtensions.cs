@@ -648,22 +648,66 @@ public static class WorkerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the single Hangfire server of the platform (09.2.6 plan §7): one server on every queue,
-    /// with the worker counts and poll intervals of the <c>Jobs</c> section. Production calls this from
-    /// <c>Program.cs</c>; the test harness calls it only in real-server mode (D13).
+    /// Adds the two Hangfire servers of the Worker (09.2.6 plan §7, 06.2.3-T2 review PERF-1): the main
+    /// server on every queue except <c>publish</c>, and a dedicated publish server on the <c>publish</c>
+    /// queue alone, with <c>Jobs:Workers:publish</c> worker threads. Production calls this from
+    /// <see cref="WorkerApplication"/>; the test harness calls it only in real-server mode (D13).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why two servers.</b> One server on every queue gives the publish queue no bound: each of its
+    /// workers fetches from every queue, so <c>Jobs:Workers:publish</c> only enlarged one shared pool and a
+    /// burst of minutes-long uploads could occupy every worker, starving <c>default</c>, <c>render</c> and
+    /// <c>email</c>. A server owns its own worker pool and a worker serves one queue at a time, so the
+    /// split makes <c>Jobs:Workers:publish</c> the real cap on concurrent uploads and keeps them off the
+    /// other queues' threads.
+    /// </para>
+    /// <para>
+    /// <b>Why two <c>AddHangfireServer</c> calls are correct.</b> That overload builds a fresh
+    /// <c>BackgroundJobServerOptions</c> per registration and registers its own
+    /// <c>BackgroundJobServerHostedService</c>, so each server gets its own queue list, worker count and
+    /// poll interval. Storage, activator and filter provider are resolved from the container, so both
+    /// dispatch with the platform retry policy and activate jobs in this host's scopes. Boot, the health
+    /// probe (<c>HangfireStorageHealthCheck</c> reads the storage, not a server) and shutdown need no
+    /// change: the host starts and stops both hosted services the same way.
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The service collection of the Worker host.</param>
     public static IServiceCollection AddWorkerHangfireServer(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddHangfireServer((provider, options) =>
+        services.AddHangfireServer((provider, options) =>
         {
             var jobs = provider.GetRequiredService<IOptions<JobsOptions>>().Value;
 
-            options.Queues = [.. JobQueues.All];
-            options.WorkerCount = jobs.TotalWorkerCount;
-            options.SchedulePollingInterval = TimeSpan.FromSeconds(jobs.SchedulePollSeconds);
+            ConfigureServer(options, jobs, JobsOptions.MainServerQueues, jobs.MainServerWorkerCount);
         });
+
+        services.AddHangfireServer((provider, options) =>
+        {
+            var jobs = provider.GetRequiredService<IOptions<JobsOptions>>().Value;
+
+            ConfigureServer(options, jobs, JobsOptions.PublishServerQueues, jobs.PublishServerWorkerCount);
+        });
+
+        return services;
+    }
+
+    /// <summary>Applies the <c>Jobs</c> section to one server's options.</summary>
+    /// <param name="options">The options of the server being registered.</param>
+    /// <param name="jobs">The bound <c>Jobs</c> section.</param>
+    /// <param name="queues">The queues this server listens on.</param>
+    /// <param name="workerCount">The worker count of this server.</param>
+    private static void ConfigureServer(
+        BackgroundJobServerOptions options,
+        JobsOptions jobs,
+        IReadOnlyList<string> queues,
+        int workerCount)
+    {
+        options.Queues = [.. queues];
+        options.WorkerCount = workerCount;
+        options.SchedulePollingInterval = TimeSpan.FromSeconds(jobs.SchedulePollSeconds);
     }
 }
 
