@@ -73,8 +73,10 @@ public enum ChannelConnectionStatus
 /// <see cref="Connect"/>, <see cref="Reconnect"/> and <see cref="Revoke"/> additionally raise
 /// <see cref="ChannelConnectionChanged"/>, the event the interceptor stores as <c>channel_connection_changed.v1</c>
 /// beside the row in the same unit of work (06 README D13); ids and the status only, never a token or a title.
-/// Those three are the only raisers: <see cref="MarkExpired"/>, <see cref="MarkError"/>, <see cref="MarkRefreshed"/>,
-/// <see cref="RefreshFromApi"/> and <see cref="PurgeYouTubeData"/> write no event of their own.
+/// <see cref="ExpireForReauth"/> raises it too — a grant the platform refused is a state change the owner must see
+/// (06.2.3-T2 D9, 02.8.3-T4). The rest are silent: <see cref="MarkExpired"/>, <see cref="MarkError"/>,
+/// <see cref="MarkRefreshed"/>, <see cref="RefreshFromApi"/> and <see cref="PurgeYouTubeData"/> write no event of
+/// their own, so a seeded row or a routine rotation does not announce itself.
 /// </para>
 /// <para>
 /// The row carries no <c>xmin</c> row version and no <c>updated_at</c> bookkeeping: 06 README D15 needs no
@@ -294,6 +296,26 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
         _ = now;
 
         Status = ChannelConnectionStatus.Expired;
+    }
+
+    /// <summary>
+    /// Records that the platform refused the grant during an upload and announces the change (06.2.3-T2 D9):
+    /// <see cref="MarkExpired"/> plus a <see cref="ChannelConnectionChanged"/> row.
+    /// </summary>
+    /// <remarks>
+    /// A separate member on purpose. <see cref="MarkExpired"/> stays silent because the seeding and migration paths
+    /// write already-dead rows through it, and an event per seeded row would tell the platform about a transition that
+    /// never happened in this run. Only the path that actually observed the refusal calls this one, inside the same
+    /// unit of work that fails the publication, so the platform sees one dead channel rather than one per retry
+    /// (02.8.3-T4 pauses on it).
+    /// </remarks>
+    /// <param name="now">The caller's clock reading, for the event only; see <see cref="MarkExpired"/>.</param>
+    /// <exception cref="InvalidOperationException">The row is <c>revoked</c>, which is terminal.</exception>
+    public void ExpireForReauth(DateTimeOffset now)
+    {
+        MarkExpired(now);
+
+        Raise(new ChannelConnectionChanged(Id, UserId, Status, now));
     }
 
     /// <summary>

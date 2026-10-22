@@ -147,6 +147,14 @@ public interface IAppDbContext
     DbSet<Publication> Publications { get; }
 
     /// <summary>
+    /// The platform incidents of 06.2.3-T2 (<c>platform_incidents</c>, 06 README D14): one row per OAuth client the
+    /// platform refused, closed by an operator. A platform-wide row — it is not <c>IUserOwned</c>, so the D10 tenant
+    /// filter never applies — and <c>IPlatformIncidentStore</c> is the only writer; the partial unique index
+    /// <c>ux_platform_incidents_open</c> keeps exactly one open row per <c>(platform, oauth_client_id)</c>.
+    /// </summary>
+    DbSet<PlatformIncident> PlatformIncidents { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction
@@ -207,6 +215,21 @@ public interface IAppDbContext
     /// <param name="publicationId">The publication to lock.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task LockPublicationForUpdateAsync(Guid publicationId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Re-reads one already-tracked entity from the store, overwriting its values and its concurrency token.
+    /// </summary>
+    /// <remarks>
+    /// A query over a tracked set answers with the instance the scope already tracks, so a row that was locked and
+    /// re-read after an earlier transaction keeps that transaction's values and its <c>xmin</c>: a competing writer in
+    /// between would be invisible and the following <c>UPDATE</c> would fail the token. Inside the row lock this is the
+    /// fresh read, and it is what makes a second runner see the first one's committed state.
+    /// </remarks>
+    /// <typeparam name="TEntity">The tracked entity's type.</typeparam>
+    /// <param name="entity">The tracked instance to refresh.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task ReloadAsync<TEntity>(TEntity entity, CancellationToken cancellationToken)
+        where TEntity : class;
 
     /// <summary>
     /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the

@@ -155,6 +155,7 @@ public sealed class FakeGoogleServer : IAsyncDisposable
     private int _chunkRequests;
     private int _revokeCalls;
     private int _probeCalls;
+    private int _goneSessionProbes;
     private int _videoListCalls;
     private int _serverErrorsRemaining;
     private string? _lastVideoId;
@@ -235,6 +236,12 @@ public sealed class FakeGoogleServer : IAsyncDisposable
 
     /// <summary>How many <c>bytes */total</c> probes arrived.</summary>
     public int ProbeCalls => Volatile.Read(ref _probeCalls);
+
+    /// <summary>
+    /// How many <c>bytes */total</c> probes named a session this listener never created — the shape of a stored URI
+    /// whose session Google has already dropped (the <c>404</c> the restart path turns into a fresh session).
+    /// </summary>
+    public int GoneSessionProbes => Volatile.Read(ref _goneSessionProbes);
 
     /// <summary>How many <c>videos.list</c> reads arrived.</summary>
     public int VideoListCalls => Volatile.Read(ref _videoListCalls);
@@ -883,6 +890,11 @@ public sealed class FakeGoogleServer : IAsyncDisposable
 
         if (!_uploadSessions.TryGetValue(sessionId, out var session))
         {
+            if (range.IsProbe)
+            {
+                Interlocked.Increment(ref _goneSessionProbes);
+            }
+
             await WriteJsonAsync(
                     context,
                     StatusCodes.Status404NotFound,

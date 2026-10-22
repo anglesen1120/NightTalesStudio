@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Research;
@@ -57,6 +58,8 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     private readonly List<IRecurringJobRegistration> _recurringJobs = [];
     private readonly List<Action<IServiceCollection>> _configurations = [];
     private readonly List<Assembly> _jobAssemblies = [typeof(WorkerHost).Assembly];
+    private readonly List<ILoggerProvider> _logProviders = [];
+    private string _environment = Environments.Production;
     private bool _withHangfireServer;
     private bool _withTelemetry;
     private bool _started;
@@ -152,6 +155,38 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         return this;
     }
 
+    /// <summary>
+    /// Runs the host in <paramref name="environmentName"/> instead of <see cref="Environments.Production"/>.
+    /// </summary>
+    /// <remarks>
+    /// A host that composes an options validator with a host-dependent rule needs this: 06.2.3-T2's upload wiring
+    /// accepts the fake Google server's plain-http loopback endpoints only in <see cref="Environments.Development"/>
+    /// (06.1.2-T1's <c>YouTubeOptionsValidation</c>), which is exactly the shape the connect harness boots in.
+    /// </remarks>
+    /// <param name="environmentName">The environment name, e.g. <see cref="Environments.Development"/>.</param>
+    public WorkerHost WithEnvironment(string environmentName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(environmentName);
+        EnsureNotStarted();
+        _environment = environmentName;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Attaches one log sink to the host, so a test asserts what a job actually wrote (06 README D17's redaction
+    /// checks) instead of what a component claims to have written.
+    /// </summary>
+    /// <param name="provider">The capture; its lines come from every category of this host.</param>
+    public WorkerHost WithLoggerProvider(ILoggerProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        EnsureNotStarted();
+        _logProviders.Add(provider);
+
+        return this;
+    }
+
     /// <summary>Adds services (probe jobs, fakes) to the host's collection.</summary>
     public WorkerHost ConfigureServices(Action<IServiceCollection> configure)
     {
@@ -242,10 +277,18 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             _settings[$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"]);
 
         var builder = Host.CreateApplicationBuilder();
+        builder.Environment.EnvironmentName = _environment;
 
         // The harness owns the configuration: the Worker's appsettings.json must not leak into a test.
         builder.Configuration.Sources.Clear();
         builder.Configuration.AddInMemoryCollection(_settings);
+
+        // 06.2.3-T2: a host that must answer "what did the job write?" attaches its capture here; every category of
+        // this host reaches it, so a framework line cannot smuggle a secret past the check.
+        foreach (var provider in _logProviders)
+        {
+            builder.Logging.AddProvider(provider);
+        }
 
         if (_withTelemetry)
         {
@@ -357,6 +400,17 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             // waiting on a DNS lookup for the dev container's hostname; a test that needs another
             // endpoint overrides this one.
             [$"{StorageSettings.SectionName}:{nameof(StorageSettings.ServiceUrl)}"] = StorageTestEndpoint.Unreachable,
+
+            // 06.2.3-T2: the Worker composition root now composes `AddYouTubePublishing`, so the graph binds and
+            // start-up-validates the `YouTube` section — an empty `ActiveClientId` would fail every host's boot. These
+            // are the production-shaped values the validator needs (a named client whose `SecretRef` is a secret-manager
+            // *name*, an absolute redirect and exactly the two scopes); a test that talks to FakeGoogleServer overrides
+            // the endpoints and runs in the Development environment, where the https-only rule does not apply.
+            ["YouTube:ActiveClientId"] = "nts-youtube-dev",
+            ["YouTube:Clients:nts-youtube-dev:SecretRef"] = "nts/dev/api/YOUTUBE_CLIENT_SECRET",
+            ["YouTube:RedirectUri"] = "http://127.0.0.1:5000/api/v1/channels/youtube/callback",
+            ["YouTube:Scopes:0"] = "https://www.googleapis.com/auth/youtube.upload",
+            ["YouTube:Scopes:1"] = "https://www.googleapis.com/auth/youtube.readonly",
         };
 
         // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the

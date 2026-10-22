@@ -174,6 +174,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<Publication> Publications => Set<Publication>();
 
+    /// <summary>
+    /// The platform incidents of 06.2.3-T2 (<c>platform_incidents</c>, 06 README D14): the raise and the clear are
+    /// set-based statements in <c>PlatformIncidentStore</c>, and the open-incident probe reads this set. A
+    /// platform-wide row, so the D10 tenant filter never applies; <c>ux_platform_incidents_open</c> keeps exactly one
+    /// open row per <c>(platform, oauth_client_id)</c>.
+    /// </summary>
+    public DbSet<PlatformIncident> PlatformIncidents => Set<PlatformIncident>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -305,6 +313,11 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
                 $"SELECT id FROM publications WHERE id = {publicationId} AND user_id = {userId} FOR NO KEY UPDATE",
                 cancellationToken)
             : Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task ReloadAsync<TEntity>(TEntity entity, CancellationToken cancellationToken)
+        where TEntity : class =>
+        Entry(entity).ReloadAsync(cancellationToken);
 
     /// <inheritdoc />
     public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>
