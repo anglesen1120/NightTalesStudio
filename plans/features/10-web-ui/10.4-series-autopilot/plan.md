@@ -238,8 +238,8 @@ Each use case states trigger → API → states → errors. All errors go throug
 
 | Method | Route | Used by | Notes |
 |---|---|---|---|
-| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per scalar status; five parallel calls cover the five P statuses below |
-| `GET` | `/api/v1/series?cursor=&limit=&includeArchived=` | 10.4.2-T1 | `{ items, nextCursor }`, limit ≤ 100 (B1) |
+| `GET` | `/api/v1/episodes?status=&cursor=&limit=` | 10.4.1-T1 | one call per scalar status; five parallel calls cover the five P statuses below; numbered pages + `totalCount` pending 10 CR-57 |
+| `GET` | `/api/v1/series?cursor=&limit=&includeArchived=` | 10.4.2-T1 | `{ items, nextCursor }`, limit ≤ 100 (B1); numbered pages + `totalCount` pending 10 CR-57 |
 | `POST` | `/api/v1/series` | 10.4.2-T1 | 201 + `Location` + `ETag` (B1) |
 | `GET` `PATCH` `DELETE` | `/api/v1/series/{id}` | 10.4.2-T1 | `PATCH` needs `If-Match: "se-<xmin>"` (B1/B2) |
 | `GET` | `/api/v1/voices?language=` | 10.4.2-T2 | `{ items }`, cacheable, ETag/304 (B4) |

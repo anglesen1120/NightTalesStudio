@@ -314,6 +314,12 @@ public abstract class AggregateRoot : Entity
   - response `{ items, nextCursor }`;
   - the cursor is opaque base64url JSON `{ "c": createdAt, "i": id }`, ordered `(created_at DESC, id DESC)` as a keyset;
   - an invalid cursor → 400 `validation_failed` (field `cursor`).
+- Numbered pages for owner-facing list screens (10 CR-57, owner decision 2026-10-22; wire shape [OPEN]):
+  - The series list, `/episodes` and every other owner list that shows a pager need numbered pages with a total ("Showing 21–40 of 245", pages `1 2 3 … 13`, rows per page 20/50/100, first/prev/next/last), not "load more". Today's keyset returns `{ items, nextCursor }` and carries no total, so it cannot render the "of N" or jump to a page.
+  - Two shapes are open: (a) offset paging `?page=&pageSize=` → `{ items, page, pageSize, totalCount }`, or (b) keep the cursor request and add `totalCount` plus a page offset — a cursor alone cannot address page 7 directly.
+  - Tradeoff to settle when detailing: keyset is stable under inserts and needs no `COUNT`; offset paging needs a deterministic total order (`created_at DESC, id DESC` + `OFFSET/LIMIT`) and a second `COUNT(*)` over the **same filtered owner-scoped query** (no cross-tenant scan; the extra cost is one aggregate per request, not per row), and page contents can shift when rows are inserted between requests.
+  - Caps and errors: `pageSize` keeps the existing ceiling (default 20, 1–100, otherwise 400 `validation_failed`); a non-integer or `page < 1` → 400 `validation_failed` (field `page`); whether a page past the last one answers 200 with an empty page and the real `totalCount` or 400 is [OPEN].
+  - Scope: the two named screens are in. Whether the autopilot run log, the veto list and the planned activity history (10 CR-56 DASH-9) also switch is [OPEN] — they use "load more" today.
 - The OpenAPI document is generated at build to `src/NightTales.Api/openapi.json` (09.1.5-T1; 09.9.5 owns the contract diff).
 
 **D15 ETags [DECISION].** In addition to 02 D9:

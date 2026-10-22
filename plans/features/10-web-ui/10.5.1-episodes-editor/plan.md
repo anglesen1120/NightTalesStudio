@@ -9,7 +9,7 @@
 
 **In scope.** The wave-1 Angular 22 screens of the episodes feature (phase **P**, milestone **M1**), built as one lazy feature `web/src/app/features/episodes/` (D2):
 
-- `10.5.1` — `/episodes`: cursor-paginated list, status + series filters, status chips, continue buttons.
+- `10.5.1` — `/episodes`: list with numbered pages and a total (10 CR-57 pending; today cursor-paginated), status + series filters, status chips, continue buttons.
 - `10.5.2` — `/series/:id/episodes/new`: brief form (≤ 1,000 chars), length tier, create + generate, the live generating state driven by `EpisodeUpdated`, then hand-off to the editor.
 - `10.5.3` — `/episodes/:id`: story editor and read-only production `SceneStrip`; editable 1–2 keyword labels remain the semantic `SegmentChips` seam and follow the locked contract as an implementation reconciliation note (flag to the owner only if a new visual state is needed; this does not reopen the approval or block the task). The task owns `StoryDraft` and explicit **Save version** with `If-Match`.
 - `10.5.9` — structure: drag + keyboard reorder, delete with undo snackbar, keyword values/beat travel with their paragraph, dirty guard (`canDeactivate` + `beforeunload`); mobile segment navigation follows the locked contract as an implementation reconciliation note (flag to the owner only if a new visual state is needed; this does not reopen the approval or block the task).
