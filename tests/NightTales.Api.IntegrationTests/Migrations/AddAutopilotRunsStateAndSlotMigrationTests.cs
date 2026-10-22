@@ -64,8 +64,10 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// this point (plan §3.3).
 /// </para>
 /// <para>
-/// This class owns the last-migration check (<c>migrations[^1]</c>) for the new tip; 06.2.1-T1's
-/// <see cref="AddPublicationsMigrationTests"/> handed it over and now only proves its own migration is compiled in.
+/// This class no longer owns the last-migration check (<c>migrations[^1]</c>): 06.2.3-T2's
+/// <see cref="AddPlatformIncidentsMigrationTests"/> took it over for the new tip, and this class now only proves its own
+/// migration is compiled in, exactly as 06.2.1-T1's <see cref="AddPublicationsMigrationTests"/> did when this migration
+/// landed.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -147,11 +149,14 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+
+        // 06.2.3-T2 appended a migration after this one, so this class no longer owns the last-migration check (the
+        // newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
@@ -381,6 +386,13 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
 
         try
         {
+            // The class database is shared by its tests, and an earlier one leaves autopilot_runs rows behind —
+            // some with a NULL `outcome`, which the backfill under test deliberately rewrites to `failed`
+            // (`Applies_BackfillsABlockedRunWithoutFinishedAt_AndANullOutcomeAsFailed` pins exactly that). The
+            // fingerprint below claims "the migration touches none of the inherited rows", so its precondition is a
+            // table holding exactly the old-shape row this dataset plants, not a sibling test's leftovers.
+            await Database.ExecuteAsync("DELETE FROM autopilot_runs", Ct);
+
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             var inherited = await SeedPrevious.CaptureTablesAsync(fixture, name, Ct);

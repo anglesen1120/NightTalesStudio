@@ -1104,6 +1104,58 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.PlatformIncident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ClearedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("cleared_at");
+
+                    b.Property<string>("ClearedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("cleared_by");
+
+                    b.Property<string>("ErrorCode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<string>("OAuthClientId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("oauth_client_id");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("raised_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_platform_incidents");
+
+                    b.HasIndex("RaisedAt")
+                        .IsDescending()
+                        .HasDatabaseName("ix_platform_incidents_raised_at");
+
+                    b.HasIndex("Platform", "OAuthClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_platform_incidents_open")
+                        .HasFilter("cleared_at IS NULL");
+
+                    b.ToTable("platform_incidents", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Publishing.PlatformQuotaUsage", b =>
                 {
                     b.Property<string>("Platform")

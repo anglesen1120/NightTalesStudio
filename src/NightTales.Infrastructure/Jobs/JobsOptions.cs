@@ -48,8 +48,32 @@ public sealed class JobsOptions
     public int WorkerCount(JobQueue queue) =>
         Workers.TryGetValue(JobQueues.Name(queue), out var count) ? count : DefaultWorkerCounts[queue];
 
-    /// <summary>The worker count of the single server, i.e. the sum over every queue.</summary>
-    public int TotalWorkerCount => Enum.GetValues<JobQueue>().Sum(WorkerCount);
+    /// <summary>
+    /// The queues the main Hangfire server listens on: every queue except <see cref="JobQueue.Publish"/>
+    /// (06.2.3-T2 review PERF-1).
+    /// </summary>
+    /// <remarks>
+    /// The Worker runs a second server for <see cref="JobQueue.Publish"/> alone, so this list never
+    /// contains the publish queue: a queue name on both servers would leave the uploads unbounded again.
+    /// </remarks>
+    public static IReadOnlyList<string> MainServerQueues { get; } =
+        [.. Enum.GetValues<JobQueue>().Where(queue => queue != JobQueue.Publish).Select(JobQueues.Name)];
+
+    /// <summary>The queues the dedicated publish server listens on (the publish queue alone).</summary>
+    public static IReadOnlyList<string> PublishServerQueues { get; } = [JobQueues.Name(JobQueue.Publish)];
+
+    /// <summary>
+    /// The main server's worker count, i.e. the sum over <see cref="MainServerQueues"/>: the publish
+    /// queue's workers belong to the dedicated publish server and are not part of this pool.
+    /// </summary>
+    public int MainServerWorkerCount =>
+        Enum.GetValues<JobQueue>().Where(queue => queue != JobQueue.Publish).Sum(WorkerCount);
+
+    /// <summary>
+    /// The publish server's worker count, i.e. <c>Jobs:Workers:publish</c>: the real bound on concurrent
+    /// uploads, because no other queue's job can occupy one of these threads (06.2.3-T2 review PERF-1).
+    /// </summary>
+    public int PublishServerWorkerCount => WorkerCount(JobQueue.Publish);
 
     /// <summary>The queue names of <see cref="Workers"/> that are not a <see cref="JobQueue"/> member.</summary>
     internal IReadOnlyList<string> UnknownQueueNames() =>

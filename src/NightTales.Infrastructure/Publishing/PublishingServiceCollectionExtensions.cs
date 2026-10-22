@@ -92,6 +92,13 @@ public static class PublishingServiceCollectionExtensions
         // joins the request's unit of work, whose transaction holds the row lock.
         services.TryAddScoped<IPublicationCancelLock, PublicationCancelLock>();
 
+        // 06.2.3-T2: the platform incidents (`platform_incidents`, 06 README D14). It belongs with these
+        // registrations because both hosts compose this method: the upload job raises one when Google refuses the
+        // client and gates every upload on the client's open incident, and 06.4.2-T1/T3's token-health and clear paths
+        // resolve the same port. Scoped, like the context and transaction it joins — the incident, its outbox row and
+        // its audit row commit with the caller's change.
+        services.TryAddScoped<IPlatformIncidentStore, PlatformIncidentStore>();
+
         // The form posts: the timeout is the configured one, the transport is shared with the API client below, and
         // the buffered body is bounded. A token answer is a few hundred bytes, so a compromised or misconfigured
         // token endpoint must not be able to make the callback buffer an arbitrary body inside that timeout.
