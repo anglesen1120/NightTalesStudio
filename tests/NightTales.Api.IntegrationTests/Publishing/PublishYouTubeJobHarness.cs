@@ -163,12 +163,16 @@ internal sealed class PublishYouTubeJobHarness : IAsyncDisposable
 
         await database.ExecuteAsync($"DELETE FROM feature_flags WHERE key = '{FeatureKey}'", ct);
 
-        // A class shares one database across its tests, so the two tables whose rows outlive a test are cleared here:
+        // A class shares one database across its tests, so the three tables whose rows outlive a test are cleared here:
         // the ledger's day rows (a spent day would refuse every later test's reservation — the row's limit is the one
-        // a previous harness seeded) and the outbox (a stale row would wake its own publication on another test's
-        // dispatcher run). Each test then seeds exactly the counter and the events it is about.
+        // a previous harness seeded), the outbox (a stale row would wake its own publication on another test's
+        // dispatcher run), and the incidents (an open incident holds every later run of the same platform and OAuth
+        // client — UC4/YR24 — and every test here pins the same canary client, so one test's `invalid_client` raise
+        // would leave later tests' rows `scheduled`/`platform_incident` with no reservation and no Google call).
+        // Each test then seeds exactly the counter, the events and the incident it is about.
         await database.ExecuteAsync("DELETE FROM platform_quota_usage", ct);
         await database.ExecuteAsync("DELETE FROM outbox_messages", ct);
+        await database.ExecuteAsync("DELETE FROM platform_incidents", ct);
 
         if (flagOn)
         {

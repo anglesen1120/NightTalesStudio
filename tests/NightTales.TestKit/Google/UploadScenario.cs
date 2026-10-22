@@ -56,11 +56,25 @@ public sealed record UploadScenario
     /// <summary>The scheduled publication instant is refused: <c>400</c> + <c>invalidPublishAt</c>.</summary>
     public static UploadScenario InvalidPublishAt() => Refusal(Reasons.InvalidPublishAt);
 
+    /// <summary>
+    /// The insert itself is refused as unauthorized: the session create answers <c>401</c> + <c>authError</c>, the
+    /// answer Google gives a token it no longer accepts. It is the "refusal after the send" shape: the create has
+    /// been issued by the time this arrives, which is exactly what the release predicate has to distinguish from a
+    /// refusal before it (06.2.3-T2 YR19, QA D2).
+    /// </summary>
+    public static UploadScenario SessionCreateAuthFailure() => new() { AuthFailureAtSessionCreate = true };
+
     /// <summary>Whether the drop-after-last-chunk fault is armed.</summary>
     public bool DropLastChunk { get; init; }
 
     /// <summary>Whether every session request answers <c>404</c>.</summary>
     public bool ExpireSession { get; init; }
+
+    /// <summary>
+    /// Whether the session create answers <c>401</c> + <c>authError</c> instead of opening a session: the insert is
+    /// refused after it was issued, so nothing is opened and no chunk can follow.
+    /// </summary>
+    public bool AuthFailureAtSessionCreate { get; init; }
 
     /// <summary>The <c>error.errors[].reason</c> every session request is refused with, or null for no refusal.</summary>
     public string? UploadFailureReason { get; init; }
@@ -114,5 +128,11 @@ public sealed record UploadScenario
 
         /// <summary>The publication instant is not accepted (a channel-schedule constraint, plan §3).</summary>
         public const string InvalidPublishAt = "invalidPublishAt";
+
+        /// <summary>
+        /// The token is no longer accepted: Google's <c>401</c> reason. The client maps it to
+        /// <c>youtube_reauth_required</c>, never to a transport retry.
+        /// </summary>
+        public const string AuthError = "authError";
     }
 }

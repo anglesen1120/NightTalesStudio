@@ -18,12 +18,15 @@ namespace NightTales.Application.Features.Publishing.Upload;
 /// reason: the raw reason is diagnostic and travels separately into <c>platform_payload.lastGoogleReason</c>.
 /// </para>
 /// <para>
-/// <b>The three side effects are named, not implied.</b> <see cref="ReleaseReservation"/> is the D10 rule that YouTube
-/// never received the upload; <see cref="ExpireConnection"/> is the reauth rule (the grant is dead, the owner must
-/// reconnect, and <c>channel_connection_changed.v1</c> tells the rest of the platform); <see cref="RaiseIncident"/> is
-/// the <c>invalid_client</c> rule — a problem of the OAuth client, not of this owner's grant, so the row is held under
-/// a platform incident instead of being failed. The handler applies them, which keeps the quota ledger and the
-/// publication row inside one transaction.
+/// <b>The three side effects are named, not implied.</b> <see cref="ReleaseReservation"/> is the one decision that
+/// releases <em>even though</em> a session create was issued in the same run: the quota classes, where Google itself
+/// says the upload was refused. Every other failure releases only under the handler's own rule — this run reserved the
+/// unit and nothing was sent (YR19 corrected, QA D2) — so a 401 or `invalid_client` that answers an upload already in
+/// flight keeps the unit Google may have counted. <see cref="ExpireConnection"/> is the reauth rule (the grant is
+/// dead, the owner must reconnect, and <c>channel_connection_changed.v1</c> tells the rest of the platform);
+/// <see cref="RaiseIncident"/> is the <c>invalid_client</c> rule — a problem of the OAuth client, not of this owner's
+/// grant, so the row is held under a platform incident instead of being failed. The handler applies them, which keeps
+/// the quota ledger and the publication row inside one transaction.
 /// </para>
 /// <para>
 /// <b>What is not a Google failure.</b> <see cref="Map(Error)"/> answers <see langword="null"/> for an error it does
@@ -33,7 +36,10 @@ namespace NightTales.Application.Features.Publishing.Upload;
 /// </remarks>
 /// <param name="Outcome">The verdict of the run, or <see langword="null"/> when the row keeps <c>uploading</c>.</param>
 /// <param name="ErrorCode">The <see cref="PublicationErrorCodes"/> value to write, if any.</param>
-/// <param name="ReleaseReservation">Whether this run's quota unit goes back to the ledger.</param>
+/// <param name="ReleaseReservation">
+/// Whether this run's unit goes back even when a session create was issued: only the quota classes say yes, because
+/// the handler already releases whenever nothing was sent in the run (YR19).
+/// </param>
 /// <param name="RaiseIncident">Whether a platform incident must be raised and the row held under it.</param>
 /// <param name="ExpireConnection">Whether the connection must move to <c>expired</c> before the row is failed.</param>
 /// <param name="Retryable">Whether another attempt is the right answer (the row keeps <c>uploading</c>).</param>
@@ -89,19 +95,20 @@ public static class UploadFailureMap
                 ReleaseReservation: true),
 
             // The grant is dead: the owner must reconnect, so the row is terminal for this row and the connection is
-            // moved to `expired` by the handler (the client's own 06.2.3-T1 answer names the case).
+            // moved to `expired` by the handler (the client's own 06.2.3-T1 answer names the case). No release of its
+            // own: a 401 can arrive after the insert was issued, so only the handler's "nothing was sent in this run"
+            // rule decides whether the unit goes back (YR19 corrected, QA D2).
             YouTubeErrorCodes.ReauthRequired => new UploadFailureDecision(
                 UploadOutcome.ReauthRequired,
                 PublicationErrorCodes.ChannelReauthRequired,
-                ReleaseReservation: true,
                 ExpireConnection: true),
 
             // The OAuth client itself is refused: a host problem. Nothing is failed and nothing is released beyond
-            // this run's untouched unit; the row is held under the incident so the owner's row survives a fix.
+            // this run's untouched unit; the row is held under the incident so the owner's row survives a fix. Like the
+            // reauth row, no release of its own — `invalid_client` can answer a session that was already opened.
             YouTubeErrorCodes.ClientBroken => new UploadFailureDecision(
                 UploadOutcome.HeldByIncident,
                 PublicationErrorCodes.PlatformIncident,
-                ReleaseReservation: true,
                 RaiseIncident: true),
 
             // The session is gone: a fresh run probes, reserves again and opens a new one (YR27-3).
@@ -121,11 +128,11 @@ public static class UploadFailureMap
                 PublicationErrorCodes.Rejected),
 
             // `ITokenService`'s uniform dead end: no row, a revoked row, or an unreadable cipher. The connection is
-            // already unusable, so only the row is failed — the expiry path is the refresh failure's.
+            // already unusable, so only the row is failed — the expiry path is the refresh failure's, and the unit
+            // follows the handler's "nothing was sent" rule like every other reauth.
             ErrorCodes.ChannelReauthRequired => new UploadFailureDecision(
                 UploadOutcome.ReauthRequired,
-                PublicationErrorCodes.ChannelReauthRequired,
-                ReleaseReservation: true),
+                PublicationErrorCodes.ChannelReauthRequired),
 
             _ => null,
         };

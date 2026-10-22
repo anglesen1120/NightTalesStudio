@@ -823,6 +823,15 @@ public sealed class FakeGoogleServer : IAsyncDisposable
                 ? createRange.Total
                 : null);
 
+        // The insert is refused after it was issued (a token Google no longer accepts): the shape a release predicate
+        // must not treat as "nothing was sent".
+        if (Scenario.AuthFailureAtSessionCreate)
+        {
+            await WriteUploadFailureAsync(context, UploadScenario.Reasons.AuthError).ConfigureAwait(false);
+
+            return;
+        }
+
         var index = Interlocked.Increment(ref _sessions);
         var sessionId = $"canary-session-{index}";
         var videoId = $"canary-video-{index}";
@@ -1043,13 +1052,14 @@ public sealed class FakeGoogleServer : IAsyncDisposable
         context.Response.StatusCode = StatusCodes.Status308PermanentRedirect;
     }
 
-    /// <summary>Google's <c>quotaExceeded</c>/<c>uploadLimitExceeded</c>/<c>invalidPublishAt</c> refusal body.</summary>
+    /// <summary>Google's upload refusal body: the quota, the instant, and the unauthorized answer.</summary>
     private static async Task WriteUploadFailureAsync(HttpContext context, string reason)
     {
         var status = reason switch
         {
             "quotaExceeded" or "uploadLimitExceeded" => StatusCodes.Status403Forbidden,
             "invalidPublishAt" => StatusCodes.Status400BadRequest,
+            UploadScenario.Reasons.AuthError => StatusCodes.Status401Unauthorized,
             _ => StatusCodes.Status400BadRequest,
         };
 

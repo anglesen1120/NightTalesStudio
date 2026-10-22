@@ -668,8 +668,10 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// <b>Server-only, one day.</b> The value is the ISO <c>yyyy-MM-dd</c> Pacific calendar date the caller computed
     /// (<c>PacificQuotaDay.Day</c>); it is never derived here, because the Domain may not read a time zone of the
     /// platform's quota. The key is written at the reserve step, in the same transaction as the
-    /// <c>scheduled → uploading</c> move (STATUS S72-1), and removed by <see cref="MarkProcessing"/>,
-    /// <see cref="FailUpload"/> or <see cref="ClearQuotaReservation"/> — never rewritten to another day.
+    /// <c>scheduled → uploading</c> move (STATUS S72-1), and removed only by <see cref="MarkProcessing"/> (the upload
+    /// reached the platform) or <see cref="ClearQuotaReservation"/> (the handler's release branch) — never rewritten to
+    /// another day. <see cref="FailUpload"/> deliberately <em>keeps</em> it: the unit belongs to the handler's release
+    /// branch, the only place that knows whether this run reserved it (YR19/YR27-2).
     /// </para>
     /// <para>
     /// <b>Bookkeeping, not a transition.</b> No event and no stamp: the reserve never changes what a consumer does,

@@ -202,9 +202,11 @@ public sealed partial class PublishYouTubeHandler(
     /// <param name="run">The run's state; the reservation is recorded on it when this run spent a unit.</param>
     /// <param name="cancellationToken">The attempt's token.</param>
     /// <returns>
-    /// Either a decided outcome (nothing further to do this run) or the resolved asset to stream; an error only when the
-    /// row cannot be read or the database refused the commit.
+    /// Either a decided outcome (nothing further to do this run) or the resolved asset to stream; an error only when
+    /// the row cannot be read or a decision refused its transition. A refused commit is not an error: it ends the
+    /// attempt through <see cref="CommitAsync"/>.
     /// </returns>
+    /// <exception cref="PublishAttemptException">The commit of this transaction was refused.</exception>
     private async Task<ErrorOr<(UploadOutcome? Decided, (string StorageKey, string ContentType, long SizeBytes)? Asset)>>
         PrepareAsync(RunState run, CancellationToken cancellationToken)
     {
@@ -324,10 +326,7 @@ public sealed partial class PublishYouTubeHandler(
                         return rescheduled.FirstError;
                     }
 
-                    if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-                    {
-                        return commitError;
-                    }
+                    await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
                     LogQuotaExhausted(run.PublicationId);
 
@@ -338,10 +337,7 @@ public sealed partial class PublishYouTubeHandler(
                 run.Reservation = reserved.Value;
             }
 
-            if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } refused)
-            {
-                return refused;
-            }
+            await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
             return (
                 null,
@@ -559,10 +555,7 @@ public sealed partial class PublishYouTubeHandler(
                     return rescheduled.FirstError;
                 }
 
-                if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-                {
-                    return commitError;
-                }
+                await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
                 LogQuotaExhausted(run.PublicationId);
 
@@ -573,10 +566,7 @@ public sealed partial class PublishYouTubeHandler(
             row.MarkQuotaReserved(reserved.Value.Day);
             run.Reservation = reserved.Value;
 
-            if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } refused)
-            {
-                return refused;
-            }
+            await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
             return Result.Success;
         }
@@ -711,9 +701,19 @@ public sealed partial class PublishYouTubeHandler(
                     return attached.FirstError;
                 }
 
-                if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } attachCommitError)
+                try
                 {
-                    return attachCommitError;
+                    await CommitAsync(run, cancellationToken).ConfigureAwait(false);
+                }
+                catch (PublishAttemptException)
+                {
+                    // The create was issued, but its session is unrecoverable: the cipher rolled back with the refused
+                    // transaction, so nothing this row holds can address the session Google just opened. The unit this
+                    // run reserved was committed by PrepareAsync and bought nothing streamable, so it goes back — with
+                    // the day key that names it — before the retry reserves its own (YR19; QA D1).
+                    await ReleaseAbandonedUnitAsync(run, row, cancellationToken).ConfigureAwait(false);
+
+                    throw;
                 }
 
                 var session = created.Value;
@@ -854,10 +854,7 @@ public sealed partial class PublishYouTubeHandler(
                 return UploadOutcome.Reconciled;
             }
 
-            if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-            {
-                return commitError;
-            }
+            await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
             LogUploaded(run.PublicationId, reconciled);
 
@@ -963,8 +960,9 @@ public sealed partial class PublishYouTubeHandler(
             }
 
             // D10 / YR19 corrected: only the unit *this run* reserved, and only when YouTube never received the upload in
-            // this run (or the answer itself says the quota refused it). The key is cleared with the release, so a later
-            // cancel can never give the same unit back twice (STATUS S72-1).
+            // this run (or the answer itself says the quota refused it — the one flag the table still sets). A 401 or
+            // `invalid_client` that answers a create already issued keeps the unit Google may have counted (QA D2).
+            // The key is cleared with the release, so a later cancel can never give the same unit back twice (S72-1).
             if (run.Reservation is { } reservation && (effective.ReleaseReservation || !sessionCreateSent))
             {
                 var released = await quota.ReleaseAsync(reservation, cancellationToken).ConfigureAwait(false);
@@ -979,10 +977,7 @@ public sealed partial class PublishYouTubeHandler(
                 row.ClearQuotaReservation();
             }
 
-            if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-            {
-                return commitError;
-            }
+            await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
             var outcome = effective.Outcome!.Value.ToString();
             LogFailureApplied(run.PublicationId, outcome, effective.ErrorCode ?? "none");
@@ -1079,10 +1074,7 @@ public sealed partial class PublishYouTubeHandler(
             return failed.FirstError;
         }
 
-        if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-        {
-            return commitError;
-        }
+        await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
         LogConnectionUnusable(run.PublicationId, connectionStatus);
 
@@ -1116,10 +1108,7 @@ public sealed partial class PublishYouTubeHandler(
             return held.FirstError;
         }
 
-        if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-        {
-            return commitError;
-        }
+        await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
         LogHeldByIncident(run.PublicationId, incidentId);
 
@@ -1147,10 +1136,7 @@ public sealed partial class PublishYouTubeHandler(
             return failed.FirstError;
         }
 
-        if (await CommitAsync(cancellationToken).ConfigureAwait(false) is { } commitError)
-        {
-            return commitError;
-        }
+        await CommitAsync(run, cancellationToken).ConfigureAwait(false);
 
         var terminal = UploadOutcome.Failed.ToString();
         LogFailureApplied(run.PublicationId, terminal, PublicationErrorCodes.UploadFailed);
@@ -1260,16 +1246,119 @@ public sealed partial class PublishYouTubeHandler(
             MimeType: mimeType);
     }
 
-    /// <summary>Saves and commits the caller's open transaction.</summary>
+    /// <summary>Saves and commits the caller's open transaction, or ends the attempt so the scheduler runs it again.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A refused commit is never a verdict.</b> The unit of work rolls a refused commit back, so nothing this run
+    /// decided was written — not the transition, not the cipher, not the ledger release — and the only thing that can
+    /// write them is another attempt. Answering the refusal as an <c>ErrorOr</c> made it indistinguishable from a
+    /// decided outcome: the job swallows every one of those, so a transient failure at the commit left the row
+    /// <c>uploading</c> with no session, no unit and nothing to wake it (QA D1). It therefore travels the way "run me
+    /// again" travels here — <see cref="PublishAttemptException"/>, the same statement
+    /// <see cref="ApplyAsync"/> makes for a retryable Google failure.
+    /// </para>
+    /// <para>
+    /// <b>What a caller owes before the throw escapes.</b> Nothing, except the session-URI commit:
+    /// <see cref="StartSessionAsync"/> gives its unit back there, because that one was committed by
+    /// <see cref="PrepareAsync"/> before the cipher was written (see <see cref="ReleaseAbandonedUnitAsync"/>). Every
+    /// other site reserves inside the very transaction that was refused, so its reserve rolled back with it and a
+    /// release would take another row's unit.
+    /// </para>
+    /// </remarks>
+    /// <param name="run">The run, for the log line.</param>
     /// <param name="cancellationToken">The attempt's token.</param>
-    /// <returns>The error a refused save or commit answered, or <see langword="null"/> when the commit succeeded.</returns>
-    private async Task<Error?> CommitAsync(CancellationToken cancellationToken)
+    /// <exception cref="PublishAttemptException">The save or the commit was refused.</exception>
+    private async Task CommitAsync(RunState run, CancellationToken cancellationToken)
     {
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         var committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        return committed.IsError ? committed.FirstError : null;
+        if (!committed.IsError)
+        {
+            return;
+        }
+
+        LogCommitRefused(run.PublicationId, committed.FirstError.Code);
+
+        throw new PublishAttemptException(PublishAttemptException.InfrastructureCode);
+    }
+
+    /// <summary>
+    /// Gives back the unit of a session nobody can resume, after a refused commit rolled its cipher back, and removes
+    /// the reserved day with it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Only this run's own reservation.</b> <see cref="RunState.Reservation"/> is set where this run called
+    /// <c>TryReserveAsync</c> (<see cref="PrepareAsync"/> step 6 or <see cref="ReserveAgainAsync"/>); a resume of a row
+    /// that already held a reserved day never reserved one here, so its unit belongs to the earlier run and is left
+    /// alone (YR27-2).
+    /// </para>
+    /// <para>
+    /// <b>Why a release and not just the throw.</b> <see cref="PrepareAsync"/> committed that unit with everything else
+    /// before the create, so it is spent ledger state, not a reservation this failed transaction rolled back — the
+    /// opposite of a refused <see cref="PrepareAsync"/> commit, where a release would take another row's unit because
+    /// the reserve never landed.
+    /// </para>
+    /// <para>
+    /// <b>The key travels with the release.</b> <c>quotaReservedDay</c> names the unit, and two readers act on it: the
+    /// retry's <see cref="PrepareAsync"/> (a row that still holds a day skips the reservation, YR27-2) and the cancel
+    /// path (it releases whatever day the key names, 06.2.6-T1). Leaving it behind would make the retry upload with no
+    /// unit counted and would hand a later cancel a second decrement of a unit already given back — so the removal is
+    /// part of the same transaction as the decrement (STATUS S72-1's rule for every other release). It is its own
+    /// transaction because the refused commit already ended the failed one, and a failure here rolls both back rather
+    /// than leaving one of the two written.
+    /// </para>
+    /// </remarks>
+    /// <param name="run">The run whose reservation goes back.</param>
+    /// <param name="row">The locked row whose reserved day is removed; reloaded because it still carries the cipher the refused transaction wrote.</param>
+    /// <param name="cancellationToken">The attempt's token.</param>
+    private async Task ReleaseAbandonedUnitAsync(RunState run, Publication row, CancellationToken cancellationToken)
+    {
+        if (run.Reservation is not { } reservation)
+        {
+            return;
+        }
+
+        run.Reservation = null;
+
+        try
+        {
+            await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+            // The tracked entity still carries this run's uncommitted edits (the cipher above all); reloading takes the
+            // committed truth — `uploading`, no session, the reserved day — before the key is removed from it.
+            await db.ReloadAsync(row, cancellationToken).ConfigureAwait(false);
+
+            var released = await quota.ReleaseAsync(reservation, cancellationToken).ConfigureAwait(false);
+
+            if (released.IsError)
+            {
+                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                LogAbandonedUnitReleaseFailed(run.PublicationId, released.FirstError.Code);
+
+                return;
+            }
+
+            row.ClearQuotaReservation();
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            var committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            if (committed.IsError)
+            {
+                // Nothing more this attempt can do: the retry the exception asks for is still the right answer, and the
+                // unit is the one thing an operator has to reconcile by hand if this line ever appears.
+                LogAbandonedUnitReleaseFailed(run.PublicationId, committed.FirstError.Code);
+            }
+        }
+        catch (Exception failure) when (failure is not OperationCanceledException)
+        {
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+            LogAbandonedUnitReleaseFailed(run.PublicationId, failure.GetType().FullName ?? "unknown");
+        }
     }
 
     /// <summary>Rolls back without masking the exception that brought the run here.</summary>
@@ -1412,6 +1501,18 @@ public sealed partial class PublishYouTubeHandler(
         Level = LogLevel.Warning,
         Message = "publication_upload_video_missing publicationId={PublicationId}")]
     private partial void LogVideoMissing(Guid publicationId);
+
+    [LoggerMessage(
+        EventId = 6641,
+        Level = LogLevel.Warning,
+        Message = "publication_upload_commit_refused publicationId={PublicationId} code={Code}")]
+    private partial void LogCommitRefused(Guid publicationId, string code);
+
+    [LoggerMessage(
+        EventId = 6642,
+        Level = LogLevel.Warning,
+        Message = "publication_upload_abandoned_unit_release_failed publicationId={PublicationId} reason={Reason}")]
+    private partial void LogAbandonedUnitReleaseFailed(Guid publicationId, string reason);
 
     [LoggerMessage(
         EventId = 6636,

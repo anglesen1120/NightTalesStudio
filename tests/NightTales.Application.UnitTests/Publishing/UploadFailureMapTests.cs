@@ -19,7 +19,9 @@ public sealed class UploadFailureMapTests
     [Fact]
     public void QuotaExceeded_ReleasesAndReschedules()
     {
-        // D10: YouTube never received the upload, so the unit goes back and the row waits for the next Pacific day.
+        // D10: Google itself refused the upload for quota, so the unit goes back even if the refusal answered a create
+        // already issued — this is the one class where a release after a send is right (YR19), and the only row in the
+        // table that says so.
         var decision = UploadFailureMap.Map(YouTubeError(YouTubeErrorCodes.QuotaExceeded, "quotaExceeded", 403));
 
         decision.ShouldNotBeNull();
@@ -32,17 +34,42 @@ public sealed class UploadFailureMapTests
     }
 
     [Fact]
+    public void OnlyTheQuotaClassesReleaseAfterASend()
+    {
+        // YR19 corrected (QA D2): a release that survives a session create has to be the ledger's reading of Google's
+        // own answer, so `quotaExceeded`/`uploadLimitExceeded` are the only entries that may carry the flag. A 401 or
+        // `invalid_client` that answers an upload already in flight keeps the unit Google may have counted.
+        var releasing = new[]
+        {
+            YouTubeErrorCodes.QuotaExceeded,
+            YouTubeErrorCodes.ReauthRequired,
+            YouTubeErrorCodes.ClientBroken,
+            YouTubeErrorCodes.SessionExpired,
+            YouTubeErrorCodes.Transport,
+            YouTubeErrorCodes.UploadFailed,
+            YouTubeErrorCodes.Rejected,
+        }
+            .Select(code => (Code: code, Decision: UploadFailureMap.Map(YouTubeError(code, reason: null, status: 400))))
+            .Where(mapped => mapped.Decision?.ReleaseReservation == true)
+            .Select(mapped => mapped.Code)
+            .ToArray();
+
+        releasing.ShouldBe(new[] { YouTubeErrorCodes.QuotaExceeded });
+    }
+
+    [Fact]
     public void ClientBroken_RaisesIncidentAndHolds()
     {
         // `invalid_client` is a problem of the OAuth client, not of this owner's grant: the row is held under the
-        // incident (YR24) instead of being failed, and this run's untouched unit is given back.
+        // incident (YR24) instead of being failed. The decision itself names no release — `invalid_client` can answer a
+        // session that was already opened, so the unit follows the handler's "nothing was sent" rule (YR19, QA D2).
         var decision = UploadFailureMap.Map(YouTubeError(YouTubeErrorCodes.ClientBroken, "invalid_client", 401));
 
         decision.ShouldNotBeNull();
         decision.Outcome.ShouldBe(UploadOutcome.HeldByIncident);
         decision.ErrorCode.ShouldBe(PublicationErrorCodes.PlatformIncident);
         decision.RaiseIncident.ShouldBeTrue();
-        decision.ReleaseReservation.ShouldBeTrue();
+        decision.ReleaseReservation.ShouldBeFalse();
         decision.ExpireConnection.ShouldBeFalse();
         decision.Retryable.ShouldBeFalse();
     }
@@ -50,7 +77,8 @@ public sealed class UploadFailureMapTests
     [Fact]
     public void ReauthRequired_FailsThePublication()
     {
-        // A dead grant is the owner's decision to fix: the row is terminal for this row and the connection expires.
+        // A dead grant is the owner's decision to fix: the row is terminal for this row and the connection expires. The
+        // failing row is failed for good (nothing left to resume), so the handler keeps the unit that bought the attempt.
         var decision = UploadFailureMap.Map(YouTubeError(YouTubeErrorCodes.ReauthRequired, "invalid_grant", 400));
 
         decision.ShouldNotBeNull();
@@ -58,7 +86,7 @@ public sealed class UploadFailureMapTests
         decision.ErrorCode.ShouldBe(PublicationErrorCodes.ChannelReauthRequired);
         decision.ExpireConnection.ShouldBeTrue();
         decision.RaiseIncident.ShouldBeFalse();
-        decision.ReleaseReservation.ShouldBeTrue();
+        decision.ReleaseReservation.ShouldBeFalse();
     }
 
     [Fact]
@@ -120,7 +148,9 @@ public sealed class UploadFailureMapTests
     public void TokenServiceDeadEnd_FailsWithoutExpiringTheConnection()
     {
         // `ITokenService`'s uniform answer covers a missing row, a revoked row and an unreadable cipher: the connection
-        // is already unusable, so only the row is failed and no expiry event is raised a second time.
+        // is already unusable, so only the row is failed and no expiry event is raised a second time. The unit is the
+        // handler's call — this decision names no release, because a token dead end can surface on a run whose unit was
+        // already committed for a session (YR19, QA D2).
         var decision = UploadFailureMap.Map(
             Error.NotFound(ErrorCodes.ChannelReauthRequired, "The channel connection must be reconnected."));
 
@@ -128,7 +158,7 @@ public sealed class UploadFailureMapTests
         decision.Outcome.ShouldBe(UploadOutcome.ReauthRequired);
         decision.ErrorCode.ShouldBe(PublicationErrorCodes.ChannelReauthRequired);
         decision.ExpireConnection.ShouldBeFalse();
-        decision.ReleaseReservation.ShouldBeTrue();
+        decision.ReleaseReservation.ShouldBeFalse();
     }
 
     [Theory]
