@@ -66,9 +66,10 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <para>
 /// This class no longer owns the last-migration check (<c>migrations[^1]</c>): 02.8.3-T2's
 /// <see cref="AddAutopilotAuthorizationRevokedReasonMigrationTests"/> appended
-/// <c>_02_AutopilotAuthorizationRevokedReason</c> after this one and took that check (and the
-/// no-pending-model-change check) over, exactly as 06.2.1-T1's <see cref="AddPublicationsMigrationTests"/>
-/// handed it to this class; it now only proves its own migration is compiled in.
+/// <c>_02_AutopilotAuthorizationRevokedReason</c> after 06.2.3-T2's <see cref="AddPlatformIncidentsMigrationTests"/>
+/// and took that check (and the no-pending-model-change check) over, exactly as 06.2.1-T1's
+/// <see cref="AddPublicationsMigrationTests"/> handed it to this class; it now only proves its own migration is
+/// compiled in.
 /// </para>
 /// </remarks>
 [Trait("Category", "Integration")]
@@ -388,6 +389,13 @@ public sealed class AddAutopilotRunsStateAndSlotMigrationTests(TestDatabase data
 
         try
         {
+            // The class database is shared by its tests, and an earlier one leaves autopilot_runs rows behind —
+            // some with a NULL `outcome`, which the backfill under test deliberately rewrites to `failed`
+            // (`Applies_BackfillsABlockedRunWithoutFinishedAt_AndANullOutcomeAsFailed` pins exactly that). The
+            // fingerprint below claims "the migration touches none of the inherited rows", so its precondition is a
+            // table holding exactly the old-shape row this dataset plants, not a sibling test's leftovers.
+            await Database.ExecuteAsync("DELETE FROM autopilot_runs", Ct);
+
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             var inherited = await SeedPrevious.CaptureTablesAsync(fixture, name, Ct);

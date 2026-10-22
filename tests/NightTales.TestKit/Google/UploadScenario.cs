@@ -56,11 +56,45 @@ public sealed record UploadScenario
     /// <summary>The scheduled publication instant is refused: <c>400</c> + <c>invalidPublishAt</c>.</summary>
     public static UploadScenario InvalidPublishAt() => Refusal(Reasons.InvalidPublishAt);
 
+    /// <summary>
+    /// The insert itself is refused as unauthorized: the session create answers <c>401</c> + <c>authError</c>, the
+    /// answer Google gives a token it no longer accepts. It is the "refusal after the send" shape: the create has
+    /// been issued by the time this arrives, which is exactly what the release predicate has to distinguish from a
+    /// refusal before it (06.2.3-T2 YR19, QA D2).
+    /// </summary>
+    public static UploadScenario SessionCreateAuthFailure() => new() { AuthFailureAtSessionCreate = true };
+
+    /// <summary>A <c>401</c> + <c>authError</c> on one chunk <c>PUT</c> only: the token expired mid-stream shape.</summary>
+    /// <param name="chunkRequest">Which chunk request answers 401, counting from 1; 0 turns it off.</param>
+    public static UploadScenario AuthErrorOnChunk(int chunkRequest) => new() { AuthErrorChunkRequest = chunkRequest };
+
+    /// <summary>
+    /// Accepts <paramref name="acceptedChunks"/> chunk <c>PUT</c>s and then drops every later one, so the session holds
+    /// a prefix of the object and the next run resumes from it with a <c>Partial</c> probe (PERF-2).
+    /// </summary>
+    /// <param name="acceptedChunks">How many chunks are appended before the connection starts dying.</param>
+    public static UploadScenario DropChunksAfter(int acceptedChunks) => new() { AcceptChunksBeforeDrop = acceptedChunks };
+
     /// <summary>Whether the drop-after-last-chunk fault is armed.</summary>
     public bool DropLastChunk { get; init; }
 
+    /// <summary>Which chunk <c>PUT</c> answers <c>401</c> + <c>authError</c> (1-based), or 0 for none (PERF-5).</summary>
+    public int AuthErrorChunkRequest { get; init; }
+
+    /// <summary>
+    /// How many chunk <c>PUT</c>s are appended before every later one is read and dropped, so the session keeps a
+    /// prefix; 0 (the default) never drops (PERF-2).
+    /// </summary>
+    public int AcceptChunksBeforeDrop { get; init; }
+
     /// <summary>Whether every session request answers <c>404</c>.</summary>
     public bool ExpireSession { get; init; }
+
+    /// <summary>
+    /// Whether the session create answers <c>401</c> + <c>authError</c> instead of opening a session: the insert is
+    /// refused after it was issued, so nothing is opened and no chunk can follow.
+    /// </summary>
+    public bool AuthFailureAtSessionCreate { get; init; }
 
     /// <summary>The <c>error.errors[].reason</c> every session request is refused with, or null for no refusal.</summary>
     public string? UploadFailureReason { get; init; }
@@ -99,6 +133,14 @@ public sealed record UploadScenario
     public UploadScenario WithPersistentServerErrors() =>
         this with { ServerErrorsPersistently = true, ChunkServerErrors = 0 };
 
+    /// <summary>The same scenario with the mid-stream <c>401</c> armed on the given chunk request (PERF-5).</summary>
+    /// <param name="chunkRequest">The 1-based chunk request, or 0 to disarm.</param>
+    public UploadScenario WithAuthErrorOnChunk(int chunkRequest) => this with { AuthErrorChunkRequest = chunkRequest };
+
+    /// <summary>The same scenario dropping every chunk after the first <paramref name="accepted"/> ones (PERF-2).</summary>
+    /// <param name="accepted">How many chunks the session keeps.</param>
+    public UploadScenario WithDropChunksAfter(int accepted) => this with { AcceptChunksBeforeDrop = accepted };
+
     /// <summary>The same scenario with a bounded per-request append, 0 to append the whole body (SEC-5).</summary>
     /// <param name="bytes">How many bytes a chunk <c>PUT</c> may append.</param>
     public UploadScenario WithChunkProgressBytes(int bytes) => this with { ChunkProgressBytes = bytes };
@@ -114,5 +156,11 @@ public sealed record UploadScenario
 
         /// <summary>The publication instant is not accepted (a channel-schedule constraint, plan §3).</summary>
         public const string InvalidPublishAt = "invalidPublishAt";
+
+        /// <summary>
+        /// The token is no longer accepted: Google's <c>401</c> reason. The client maps it to
+        /// <c>youtube_reauth_required</c>, never to a transport retry.
+        /// </summary>
+        public const string AuthError = "authError";
     }
 }

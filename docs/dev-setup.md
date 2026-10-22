@@ -276,7 +276,7 @@ Worker, which also bind these keys.
 |`nts-seed` / Api or Worker `--seed`|Environment of the invoking host/process|target PostgreSQL database, already migrated|Same configuration sources and eager composition checks as the invoking Api/Worker. The host is built, then `SeedCommand.Run` executes `SeedRunner` and exits without starting listeners or hosted services; host-start `ValidateOnStart` checks are not automatically run.|
 |`ApiFactory` (TestKit)|Development (WebApplicationFactory)|per-class test database|`ApiFactory.ApplyRequiredStartupSettings` (`tests/NightTales.TestKit/Api/ApiFactory.cs`) supplies the required values, including a non-secret OpenAI key placeholder; `ConfigureTestServices` installs a deterministic moderator after production registration, then explicit service overrides. The moderation-event writer remains real.|
 |`ApiFactory.ProductionHost` (TestKit)|Development by default (WebApplicationFactory); the callback may select Production with `UseEnvironment`|per-class test database|`appsettings*.json` + process configuration, overridden by `ApplyRequiredStartupSettings`, the connection string and the caller's callback; production authentication and clock, with a test-only deterministic moderator and non-secret OpenAI key placeholder.|
-|`WorkerHost` (TestKit)|Process-selected Generic Host environment; not explicitly forced to Development|per-class test database|`WorkerHost.HarnessSettings` + `EmailTestSettings`; default configuration sources are cleared. Telemetry is opt-in and `WithTelemetry()` supplies `Logging:UserHashSalt`; the harness removes the outbox, node-health and render-polling loops (`WithoutOutboxDispatcherLoop`, `WithoutNodeHealthPoller`, `WithoutRenderPollingService`), defaults to inline jobs and does not run entry-point node registration. The render poller singleton stays resolvable, so a test drives one tick through `RenderPollingService.TickAsync` (09.6.3-T1).|
+|`WorkerHost` (TestKit)|Process-selected Generic Host environment; not explicitly forced to Development|per-class test database|`WorkerHost.HarnessSettings` + the shared TestKit settings helpers (`EmailTestSettings`, `YouTubeTestSettings`); default configuration sources are cleared. Telemetry is opt-in and `WithTelemetry()` supplies `Logging:UserHashSalt`; the harness removes the outbox, node-health and render-polling loops (`WithoutOutboxDispatcherLoop`, `WithoutNodeHealthPoller`, `WithoutRenderPollingService`), defaults to inline jobs and does not run entry-point node registration. The render poller singleton stays resolvable, so a test drives one tick through `RenderPollingService.TickAsync` (09.6.3-T1).|
 |`NightTales.MptAdapter` executable (`AdapterHost.RunAsync`)|Process-selected WebApplication environment; Development affects allowed listen addresses|local SQLite under `Adapter:DataDir`, migrated before listening|Default WebApplication configuration providers plus `Adapter` and `RenderNodeServer` option defaults. `RenderNodeServer:ApiKey` is required, with `ADAPTER_API_KEY` as fallback; the optional next key has the analogous `ADAPTER_API_KEY_NEXT` fallback. Startup checks key separation, `Adapter:ListenAddress`, valid `Adapter:CertPath` / `Adapter:KeyPath` files and writable `Adapter:DataDir`; options are validated on start.|
 |**Build-time OpenAPI generator** (every `dotnet build` of the Api, `OpenApiGenerateDocuments=true` in `NightTales.Api.csproj`)|Production|**none you can rely on**: CI passes a placeholder connection string; the local gate script points at the shared server, whose database may lack the newest tables|`appsettings.json` (Development defaults, some refused outside Development) overridden by process env: the global `env:` block of `.github/workflows/backend.yml` (including non-secret `OpenAi__ApiKey`), the local gate script's existing shared `OPENAI_API_KEY`, or the build-time blocks in [.NET solution](#net-solution). No moderation call is made while generating the document.|
 |Docker image publish (`src/NightTales.Api/Dockerfile`)|n/a|n/a|the generator is off (`-p:OpenApiGenerateDocuments=false`); `tools/dev/up.sh` turns it off the same way|
@@ -308,7 +308,8 @@ Rules for any change that runs at start-up:
   non-secret placeholder in every Production-like row: the `env:` block of
   `.github/workflows/backend.yml`, the local gate script, both build-time blocks in
   [.NET solution](#net-solution), `ApiFactory.ApplyRequiredStartupSettings`, and `WorkerHost.HarnessSettings` /
-  `EmailTestSettings` when the Worker binds it. Precedent: `Email__AddressHashPepper` (09.2.6-T3).
+  `EmailTestSettings` (or the key's own `*TestSettings` helper, e.g. `YouTubeTestSettings`) when the Worker binds it.
+  Precedent: `Email__AddressHashPepper` (09.2.6-T3).
   02.2.1-T2 adds the existing shared `OpenAi:ApiKey`: `OpenAiTestSettings.WorkerSettings` feeds
   `WorkerHost.HarnessSettings` and `WorkerHealthProbe`. 02.3.2-T1 also requires it for Api edit/approval
   moderation; no new key name is introduced. The Api preserves a nonblank canonical `OpenAi:ApiKey`
@@ -374,9 +375,15 @@ Rules for any change that runs at start-up:
   failure message names the key and the rule only, never a configured value (06 README D17). `ApiBaseUrl` is the
   Google **host root** (`https://www.googleapis.com`): the SDK appends its own `youtube/v3/` path, so a value that
   already carried that path would address `.../youtube/v3/youtube/v3/channels`. `Pkce` and `RedirectUri` are
-  restart-only: the callback re-reads both, while the state row pins only the client id. The Worker composes
-  `AddPersistence` only, so it keeps the quota-only validation it had and
-  needs no placeholder anywhere. The client secret is deliberately **not** a start-up key:
+  restart-only: the callback re-reads both, while the state row pins only the client id. Until 06.2.3-T2 the Worker
+  composed `AddPersistence` only, so it kept the quota-only validation and needed no placeholder; 06.2.3-T2's Worker
+  composition root now calls `AddYouTubePublishing` too (the upload job is its first `IYouTubeClient` consumer, and a
+  refresh resolves the connection's pinned client through `IOAuthClientResolver`), so the **full** `YouTube` validation
+  is a Worker boot rule as well. The configuration-cleared Worker harnesses therefore supply the section from
+  `YouTubeTestSettings.WorkerSettings` (TestKit): `WorkerHost.HarnessSettings` and `WorkerHealthProbe`. The values are
+  the production shape the validator needs — a named client whose `SecretRef` is a secret-manager *name*, an absolute
+  `RedirectUri` and exactly the frozen scope pair — and the endpoints keep their `https` defaults. The client secret
+  is deliberately **not** a start-up key:
   `ConfigurationSecretProvider` reads `YOUTUBE_CLIENT_SECRET` (the last path segment of e.g.
   `nts/<env>/api/YOUTUBE_CLIENT_SECRET`) when a connect runs, so a missing secret fails that request with 503
   `service_unavailable` and never the host. Each environment overrides `YouTube:ActiveClientId`,

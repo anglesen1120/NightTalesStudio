@@ -437,6 +437,18 @@ internal static class SeedPrevious
                     now(), now(), 'youtube')
             """),
         (
+            // 06.2.3-T2: the table the `_06_PlatformIncidents` migration creates. Same rule as above: skipped while
+            // the previous schema lacks it, so the row lands only on a schema that has the table. It is one open
+            // incident of the seed channel's OAuth client, as an `invalid_client`/`unauthorized_client` refusal leaves
+            // it — `cleared_at`, `cleared_by` and `note` are NULL, so it is the single open member of
+            // `ux_platform_incidents_open` for that client and the row a later migration must not disturb.
+            "platform_incidents",
+            """
+            INSERT INTO platform_incidents (id, platform, oauth_client_id, error_code, raised_at)
+            VALUES ('01920000-0000-7000-8000-000000000020', 'youtube', 'seed-client', 'invalid_client',
+                    TIMESTAMPTZ '2026-10-22 03:00:00+00')
+            """),
+        (
             // 02.8.3-T1: no table is created here — the row is the OLD shape of an existing table, which is what
             // `_02_AutopilotRunsStateAndSlot` backfills. The table has existed since `InitialCore`, so this insert
             // runs from the first migration after it. Its columns are conditional because the dataset outlives the

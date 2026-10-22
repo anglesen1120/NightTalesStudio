@@ -39,11 +39,12 @@ public sealed class AddRenderJobWorstCaseUsdMigrationTests(TestDatabase database
     /// The tables a migration <em>after</em> this one creates. The migrator is linear, so reverting to the
     /// migration before this one also reverts every later one and takes their tables with it: 06.1.2-T1's
     /// <c>_06_OAuthStates</c> appended <c>oauth_states</c> after this one, 06.1.2-T2's
-    /// <c>_06_ChannelConnections</c> appended <c>channel_connections</c> and 06.2.1-T1's
-    /// <c>_06_Publications</c> appended <c>publications</c>.
+    /// <c>_06_ChannelConnections</c> appended <c>channel_connections</c>, 06.2.1-T1's
+    /// <c>_06_Publications</c> appended <c>publications</c> and 06.2.3-T2's <c>_06_PlatformIncidents</c>
+    /// appended <c>platform_incidents</c>.
     /// </summary>
     private static readonly string[] LaterMigrationTables =
-        ["oauth_states", "channel_connections", "publications"];
+        ["oauth_states", "channel_connections", "publications", "platform_incidents"];
 
     /// <summary>
     /// The <c>render_jobs</c> row of <see cref="SeedPrevious"/> (09.6.1-T1's dataset entry, the queued job of the

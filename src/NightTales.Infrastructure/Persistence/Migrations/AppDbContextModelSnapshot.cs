@@ -1104,6 +1104,58 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.PlatformIncident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ClearedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("cleared_at");
+
+                    b.Property<string>("ClearedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("cleared_by");
+
+                    b.Property<string>("ErrorCode")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<string>("OAuthClientId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("oauth_client_id");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<DateTimeOffset>("RaisedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("raised_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_platform_incidents");
+
+                    b.HasIndex("RaisedAt")
+                        .IsDescending()
+                        .HasDatabaseName("ix_platform_incidents_raised_at");
+
+                    b.HasIndex("Platform", "OAuthClientId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_platform_incidents_open")
+                        .HasFilter("cleared_at IS NULL");
+
+                    b.ToTable("platform_incidents", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Publishing.PlatformQuotaUsage", b =>
                 {
                     b.Property<string>("Platform")
@@ -2298,6 +2350,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamptz")
                         .HasColumnName("revoked_at");
 
+                    b.Property<string>("RevokedReason")
+                        .HasColumnType("text")
+                        .HasColumnName("revoked_reason");
+
                     b.Property<Guid>("SeriesId")
                         .HasColumnType("uuid")
                         .HasColumnName("series_id");
@@ -2350,6 +2406,8 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("series_autopilot_authorizations", null, t =>
                         {
                             t.HasCheckConstraint("ck_series_autopilot_authorizations_privacy_status", "\"privacy_status\" IN ('private', 'public', 'unlisted')");
+
+                            t.HasCheckConstraint("ck_series_autopilot_authorizations_revoked_reason", "\"revoked_reason\" IN ('channel_changed', 'disabled', 'owner_revoked', 'superseded', 'text_changed', 'topic_changed')");
 
                             t.HasCheckConstraint("ck_series_autopilot_authorizations_topic", "\"topic\" IN ('ghost', 'spiritual', 'true_crime')");
                         });

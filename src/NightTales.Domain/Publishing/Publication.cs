@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Globalization;
 using ErrorOr;
 using NightTales.Domain.Common;
 
@@ -49,17 +48,22 @@ namespace NightTales.Domain.Publishing;
 /// <para>
 /// <b>Events.</b> <see cref="Create"/>, <see cref="Consent"/>, <see cref="ConsentFromAuthorization"/> and
 /// <see cref="Cancel"/> raise <see cref="PublicationUpdated"/>, which the interceptor stores as
-/// <c>publication_updated.v1</c> beside the row in the same unit of work (06 README D13). The upload transitions
-/// raise nothing: no consumer acts on them yet (06.2.3-T2 schedules the job off the consent event, YR3). The
-/// payload is ids, the status and the error code only — the type never exposes the title, the description or the
-/// channel display name to a log line or an outbox row (06 README D17).
+/// <c>publication_updated.v1</c> beside the row in the same unit of work (06 README D13), and so do the upload
+/// transitions that change what a consumer must do: <see cref="RescheduleUpload"/> and
+/// <see cref="HoldForIncident"/> (back to <c>scheduled</c>, so the Worker schedules the retry at
+/// <c>next_attempt_at</c>, YR3/UC4), <see cref="MarkProcessing"/>/<see cref="MarkUploadedExternal"/>
+/// (<c>processing</c>) and <see cref="FailUpload"/> (<c>failed</c>). The writes that only move bookkeeping raise
+/// nothing — <see cref="StartUpload"/> and its resume no-op (YR18), <see cref="AttachUploadSession"/>,
+/// <see cref="MarkQuotaReserved"/> and <see cref="ClearQuotaReservation"/> — because no consumer acts on them.
+/// The payload is ids, the status and the error code only — the type never exposes the title, the description or
+/// the channel display name to a log line or an outbox row (06 README D17).
 /// </para>
 /// <para>
-/// <b>Immutability.</b> Every setter is private, so the members without a method here — <c>external_post_id</c>,
-/// <c>external_url</c>, <c>published_at</c>, <c>next_attempt_at</c>, <c>error_code</c> and
-/// <c>veto_notice_sent_at</c> — are written by the tasks that own those transitions (06.2.3-T2, 06.2.5-T1,
-/// 06.2.2-T2/T3) through EF, which is what keeps this file the state machine of the create/consent/cancel half of
-/// the row.
+/// <b>Immutability.</b> Every setter is private, so the columns without a member of their own —
+/// <c>published_at</c> (06.2.5-T1) and <c>veto_notice_sent_at</c> (06.2.2-T3) — are written by the tasks that own
+/// those transitions through EF, while <c>external_post_id</c>, <c>external_url</c>, <c>next_attempt_at</c> and
+/// <c>error_code</c> are written here by the upload transitions of 06.2.3-T2. <c>platform_payload</c> is reached
+/// only through <see cref="PublicationPayload"/>, one key at a time, so a task's keys cannot collide.
 /// </para>
 /// </remarks>
 public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
@@ -215,6 +219,89 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     public string? PlatformPayloadJson { get; private set; }
 
     /// <summary>
+    /// The <em>protected</em> resumable session URI of the upload in progress
+    /// (<c>platform_payload.uploadSessionEnc</c>, 06 README D4, plan §3.2), or <see langword="null"/> when no session
+    /// is open. It is Data-Protection ciphertext the caller protected under <c>tokens.v1/{connectionId}</c>; the
+    /// aggregate stores it and hands it back to the one caller that resumes the upload, and it never appears in a log
+    /// line, an outbox payload, an audit row or an exception message.
+    /// </summary>
+    public string? UploadSessionEnc =>
+        PublicationPayload.ReadString(PlatformPayloadJson, PublicationPayload.UploadSessionEncKey);
+
+    /// <summary>
+    /// The Pacific quota day the row holds a reserved unit on (<c>platform_payload.quotaReservedDay</c>, 06 README
+    /// D10), or <see langword="null"/> when nothing is reserved. Its presence is what makes 06.2.6-T1's cancel
+    /// release a unit.
+    /// </summary>
+    public DateOnly? QuotaReservedDay => PublicationPayload.ReadQuotaDay(PlatformPayloadJson);
+
+    /// <summary>
+    /// When the run that holds this row's reservation issued its <c>videos.insert</c> session create
+    /// (<c>platform_payload.uploadCreateIssuedAt</c>, plan §3.2, YR19), or <see langword="null"/> when no create was
+    /// issued against the current reservation. It is what makes the release decision survive the attempt that made the
+    /// call: a later attempt sees it without ever having called Google itself.
+    /// </summary>
+    public DateTimeOffset? UploadCreateIssuedAt =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadCreateIssuedAtKey);
+
+    /// <summary>
+    /// Whether a create was issued against the row's current reservation (YR19's release predicate): either the marker
+    /// is stamped, or a session is stored — a session URI only exists because an insert answered it.
+    /// </summary>
+    public bool HasUploadCreateIssued => UploadCreateIssuedAt is not null || UploadSessionEnc is not null;
+
+    /// <summary>
+    /// Until when one run owns this row's session create (<c>platform_payload.uploadSessionCreateLeaseUntil</c>, plan
+    /// §Performance, SEC-8), or <see langword="null"/> when no claim is held. Compared against the caller's clock, never
+    /// by itself: the Domain may not read one.
+    /// </summary>
+    public DateTimeOffset? UploadSessionLeaseUntil =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadSessionLeaseKey);
+
+    /// <summary>
+    /// The sticky upload plan the insert is built from (<c>platform_payload.upload</c>, plan §3 F13), or
+    /// <see langword="null"/> when the row carries none — 06.2.4-T1 has not written it yet, so
+    /// <see cref="EnsureUploadPlan"/> derives one from the row's own columns before the request is built.
+    /// </summary>
+    public PublicationPayload.UploadPlan? UploadPlan =>
+        PublicationPayload.ReadUpload(PlatformPayloadJson);
+
+    /// <summary>
+    /// Which run owns this row's streaming window (<c>platform_payload.uploadStreamLeaseOwner</c>, SEC-4), or
+    /// <see langword="null"/> when no run claims one.
+    /// </summary>
+    public Guid? UploadStreamLeaseOwner =>
+        PublicationPayload.ReadGuid(PlatformPayloadJson, PublicationPayload.UploadStreamLeaseOwnerKey);
+
+    /// <summary>
+    /// Until when the run named by <see cref="UploadStreamLeaseOwner"/> owns this row's streaming window
+    /// (<c>platform_payload.uploadStreamLeaseUntil</c>, SEC-4). Compared against the caller's clock, never by itself:
+    /// a lease that has passed is stale and may be taken over.
+    /// </summary>
+    public DateTimeOffset? UploadStreamLeaseUntil =>
+        PublicationPayload.ReadInstant(PlatformPayloadJson, PublicationPayload.UploadStreamLeaseUntilKey);
+
+    /// <summary>
+    /// The id of the open <see cref="PlatformIncident"/> holding the row (<c>platform_payload.heldByIncidentId</c>,
+    /// YR24), or <see langword="null"/> when the row is not held.
+    /// </summary>
+    public Guid? HeldByIncidentId =>
+        PublicationPayload.ReadGuid(PlatformPayloadJson, PublicationPayload.HeldByIncidentIdKey);
+
+    /// <summary>
+    /// The raw Google <c>reason</c> of the last failure (<c>platform_payload.lastGoogleReason</c>, plan §3.2), already
+    /// sanitised by the caller: diagnostic bookkeeping, never a client-facing code.
+    /// </summary>
+    public string? LastGoogleReason =>
+        PublicationPayload.ReadString(PlatformPayloadJson, PublicationPayload.LastGoogleReasonKey);
+
+    /// <summary>
+    /// The processing block <c>{ startedAt, deadlineAt, polls }</c> 06.2.5-T1's poller claims a row on
+    /// (<c>platform_payload.processing</c>, plan §3.2), or <see langword="null"/> before the upload finished.
+    /// </summary>
+    public PublicationPayload.Processing? Processing => PublicationPayload.ReadProcessing(PlatformPayloadJson);
+
+    /// <summary>
     /// The catalogued reason a <c>failed</c> publication gave up (<c>platform_incident</c>,
     /// <c>youtube_go_live_unconfirmed</c>, …); <see langword="null"/> in every other state. It is also copied into
     /// <c>publication_updated.v1</c>, so a client learns why without a second request (D13).
@@ -224,7 +311,12 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// <summary>When the row was created; the factory stamps it from the command's clock (09 W3 CR-38).</summary>
     public DateTimeOffset CreatedAt { get; private set; }
 
-    /// <summary>When the row last changed; every mutation here moves it to the command's clock reading.</summary>
+    /// <summary>
+    /// When the row last changed; every transition here moves it to the command's clock reading. The payload-only
+    /// writes (<see cref="AttachUploadSession"/>, <see cref="ClearUploadSession"/>, <see cref="MarkQuotaReserved"/>,
+    /// <see cref="ClearQuotaReservation"/>) leave it alone, exactly as <see cref="SetVetoNoticeEmailId"/> does: the
+    /// stamp belongs to the transition that owns the run.
+    /// </summary>
     public DateTimeOffset UpdatedAt { get; private set; }
 
     /// <summary>
@@ -422,41 +514,12 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
             return PublicationErrors.InvalidState();
         }
 
-        PlatformPayloadJson = WithPlatformPayloadKey(
+        PlatformPayloadJson = PublicationPayload.WithKey(
             PlatformPayloadJson,
             VetoNoticeEmailIdKey,
             emailMessageId.ToString());
 
         return Result.Success;
-    }
-
-    /// <summary>
-    /// Sets one key of the <c>platform_payload</c> document, leaving every other key exactly as it was.
-    /// </summary>
-    /// <param name="json">The stored document, or <see langword="null"/>.</param>
-    /// <param name="key">The key to write.</param>
-    /// <param name="value">The key's string value.</param>
-    /// <returns>The document to store.</returns>
-    private static string WithPlatformPayloadKey(string? json, string key, string value)
-    {
-        JsonObject payload;
-
-        try
-        {
-            payload = string.IsNullOrWhiteSpace(json)
-                ? new JsonObject()
-                : JsonNode.Parse(json) as JsonObject ?? new JsonObject();
-        }
-        catch (JsonException)
-        {
-            // A payload nobody can parse is bookkeeping, not a contract: it is replaced rather than thrown out
-            // of, so one hand-edited row can never fail a create (the 02 autopilot-settings precedent).
-            payload = new JsonObject();
-        }
-
-        payload[key] = value;
-
-        return payload.ToJsonString();
     }
 
     /// <summary>
@@ -586,4 +649,786 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// Stores the <em>already protected</em> resumable session URI of the upload in progress (plan §3.1, 06 README
+    /// D4): one key of <see cref="PlatformPayloadJson"/>, written before the first byte leaves the process so a run
+    /// whose last response was lost resumes from the probe instead of creating a second video (F02).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Ciphertext in, ciphertext out.</b> The caller protects the URI through <c>ITokenProtector</c> under
+    /// <c>tokens.v1/{connectionId}</c> and passes the result; this member never sees the plaintext, never logs the
+    /// value, and nothing here can echo it into an exception message. A repeated call replaces the stored value, which
+    /// is what a session-expired restart does (plan §7: a 404 on probe reserves a fresh unit and opens a new session).
+    /// </para>
+    /// <para>
+    /// <b>Bookkeeping, not a transition.</b> The status stays <c>uploading</c>, so — like
+    /// <see cref="SetVetoNoticeEmailId"/> and <see cref="StartUpload"/>'s resume no-op — no domain event is raised and
+    /// no stamp moves: the row's <c>updated_at</c> belongs to the transition that owns the run.
+    /// </para>
+    /// </remarks>
+    /// <param name="protectedSessionUri">The Data-Protection ciphertext of the resumable session URI; never the URI.</param>
+    /// <returns><c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="protectedSessionUri"/> is <see langword="null"/> or blank.</exception>
+    public ErrorOr<Success> AttachUploadSession(string protectedSessionUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(protectedSessionUri);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        PlatformPayloadJson = PublicationPayload.WithKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadSessionEncKey,
+            protectedSessionUri);
+
+        // The create's outcome is now recorded, so the claim that preceded it ends in the same write (SEC-8).
+        ClearUploadSessionLease();
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Claims this row's next <c>videos.insert</c> session create for one run (plan §Performance, SEC-8): stamps
+    /// <c>platform_payload.uploadCreateIssuedAt</c> — the persistent "a create has been issued against this
+    /// reservation" fact the release rule reads — and a lease until <paramref name="leaseUntil"/>, so a second run
+    /// backs off instead of opening a second session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not a lock.</b> The two keys are written in a short transaction that commits <em>before</em> the Google call
+    /// and hold nothing across it: the row lock of a transaction is not involved, and a run that dies holding the lease
+    /// blocks nobody for longer than the create's own timeout plus the caller's margin.
+    /// </para>
+    /// <para>
+    /// <b>The caller reads the lease.</b> <see cref="UploadSessionLeaseUntil"/> is compared against the caller's clock;
+    /// this member only writes what the caller computed, because the Domain may not read a timeout option.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The job's clock reading: the stamp of the marker.</param>
+    /// <param name="leaseUntil">When the claim expires if its outcome is never observed.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c>.
+    /// </returns>
+    public ErrorOr<Success> ClaimUploadSessionCreate(DateTimeOffset now, DateTimeOffset leaseUntil)
+    {
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var payload = PublicationPayload.WithInstant(
+            PlatformPayloadJson,
+            PublicationPayload.UploadCreateIssuedAtKey,
+            now);
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            payload,
+            PublicationPayload.UploadSessionLeaseKey,
+            leaseUntil);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Gives up this row's claim on the session create (<c>platform_payload.uploadSessionCreateLeaseUntil</c>):
+    /// the outcome of the create was observed — attached, refused or lost — so the next attempt may claim again.
+    /// </summary>
+    /// <remarks>
+    /// <b>The marker stays.</b> Ending the lease says "nobody is calling Google right now"; it says nothing about whether
+    /// a call was made, which is what <see cref="UploadCreateIssuedAt"/> keeps until the reservation is given up.
+    /// Removing an absent key leaves the document byte-identical.
+    /// </remarks>
+    public void ClearUploadSessionLease()
+    {
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadSessionLeaseKey);
+    }
+
+    /// <summary>
+    /// Removes the stored resumable session URI (<c>platform_payload.uploadSessionEnc</c>) of a session that can no
+    /// longer be resumed — the session expired and no new one replaced it, or the row reached a state in which
+    /// nothing will ever probe it again. A resume that opens a new session calls
+    /// <see cref="AttachUploadSession"/> instead, which overwrites the value.
+    /// </summary>
+    /// <remarks>
+    /// The key is removed rather than stored as <c>null</c>, the same rule <see cref="QuotaReservedDay"/> follows.
+    /// Bookkeeping only: no status move, no event, no stamp.
+    /// </remarks>
+    public void ClearUploadSession()
+    {
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadSessionEncKey);
+    }
+
+    /// <summary>
+    /// The sticky plan the insert is built from (<c>platform_payload.upload</c>, plan §3 F13): the one already stored,
+    /// or — while 06.2.4-T1 is not shipped and the row carries none — one derived from the row's own columns and
+    /// <em>persisted here</em>, so every later attempt of this row sends the same request the first one planned.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why a plan at all.</b> The privacy and the scheduled instant are decided when the row is planned, not when
+    /// the bytes flow: a pre-audit row goes to YouTube as <c>private</c> with no <c>publishAt</c>, and an approval
+    /// that lands afterwards must not turn the same row into a public one mid-flight. Reading the live
+    /// <see cref="Privacy"/>/<see cref="PublishAt"/> columns would do exactly that.
+    /// </para>
+    /// <para>
+    /// <b>The fallback rule is 06.2.4-T1's, copied not invented</b> (its <c>PlanUpload</c>, 06.2.4 plan §4 UC1):
+    /// pre-audit ⇒ <c>private</c> and no instant; <c>public</c> with an instant more than one minute ahead ⇒
+    /// <c>private</c> plus that instant (YouTube's own scheduled-publishing shape); anything else ⇒ the column's
+    /// privacy and no instant. When 06.2.4-T1 ships it writes the key at consent time and this derivation never
+    /// runs again for that row.
+    /// </para>
+    /// <para>
+    /// <b>Bookkeeping, not a transition.</b> No event, no stamp: the plan is an input of the upload, and the write
+    /// rides in the caller's locked transaction.
+    /// </para>
+    /// </remarks>
+    /// <param name="now">The job's clock reading, the instant the one-minute lead is measured from.</param>
+    /// <returns>
+    /// The plan to build the request from; or 409 <c>publication_invalid_state</c> when the row carries none and is
+    /// not <c>scheduled</c>/<c>uploading</c>.
+    /// </returns>
+    public ErrorOr<PublicationPayload.UploadPlan> EnsureUploadPlan(DateTimeOffset now)
+    {
+        if (UploadPlan is { } stored)
+        {
+            return stored;
+        }
+
+        if (Status is not (PublicationStatus.Scheduled or PublicationStatus.Uploading))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var preAudit = PublicationPayload.ReadFlag(PlatformPayloadJson, PublicationPayload.PreAuditKey);
+        var planned = PlanUploadPayload(preAudit, now);
+
+        PlatformPayloadJson = PublicationPayload.WithUpload(PlatformPayloadJson, planned);
+
+        return planned;
+    }
+
+    /// <summary>
+    /// Whether a run other than the caller's currently owns this row's streaming window
+    /// (<c>platform_payload.uploadStreamLeaseUntil</c>, SEC-4). A lease whose instant has passed is stale and reads
+    /// as "nobody", which is how a run that died releases its window without writing anything.
+    /// </summary>
+    /// <param name="now">The caller's clock reading.</param>
+    /// <returns>Whether a live lease is held.</returns>
+    public bool HasLiveUploadStreamLease(DateTimeOffset now) =>
+        UploadStreamLeaseUntil is { } until && until > now;
+
+    /// <summary>
+    /// Claims this row's streaming window for one run (plan §Performance, SEC-4): the owner id and the instant the
+    /// claim expires, written together, so a second run can see that bytes are already flowing into this row's
+    /// session and write nothing instead of streaming into the same session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Refused while another run's lease is live.</b> A lease that has passed is stale — the run that held it
+    /// stopped renewing — and is taken over by the caller, which is the only recovery a crashed run needs.
+    /// </para>
+    /// <para>
+    /// <b>Not a lock.</b> The two keys are written in a short transaction that holds no row lock across the stream;
+    /// the caller stamps this in the same transaction that claims the session create, before the stream opens.
+    /// </para>
+    /// </remarks>
+    /// <param name="owner">The calling run's own id, the value every later renew and release compares against.</param>
+    /// <param name="now">The job's clock reading.</param>
+    /// <param name="leaseUntil">When the claim expires if it is never renewed.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c> and for a live
+    /// lease another run holds.
+    /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="owner"/> is <see cref="Guid.Empty"/>.</exception>
+    public ErrorOr<Success> ClaimUploadStreamLease(Guid owner, DateTimeOffset now, DateTimeOffset leaseUntil)
+    {
+        ArgumentOutOfRangeException.ThrowIfEqual(owner, Guid.Empty);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        if (UploadStreamLeaseOwner is { } holder && holder != owner && HasLiveUploadStreamLease(now))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var payload = PublicationPayload.WithKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseOwnerKey,
+            owner.ToString("D", CultureInfo.InvariantCulture));
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            payload,
+            PublicationPayload.UploadStreamLeaseUntilKey,
+            leaseUntil);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Pushes this row's streaming lease out while the bytes still flow (SEC-4): a run that is streaming keeps the
+    /// window, and a run that stopped renewing lets it expire.
+    /// </summary>
+    /// <param name="owner">The calling run's own id.</param>
+    /// <param name="leaseUntil">The new expiry, as the caller computed it.</param>
+    /// <returns>
+    /// Whether the write happened: a lease another run now owns is left alone, which is what stops a late writer
+    /// from re-taking a window it lost.
+    /// </returns>
+    public bool RenewUploadStreamLease(Guid owner, DateTimeOffset leaseUntil)
+    {
+        if (UploadStreamLeaseOwner != owner)
+        {
+            return false;
+        }
+
+        PlatformPayloadJson = PublicationPayload.WithInstant(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseUntilKey,
+            leaseUntil);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Gives up this row's streaming window (<see cref="UploadStreamLeaseUntil"/>) when the calling run still owns
+    /// it: the outcome of the stream is being recorded in the same transaction, so the next attempt may stream.
+    /// </summary>
+    /// <param name="owner">The calling run's own id.</param>
+    public void ReleaseUploadStreamLease(Guid owner)
+    {
+        if (UploadStreamLeaseOwner != owner)
+        {
+            return;
+        }
+
+        ClearUploadStreamLease();
+    }
+
+    /// <summary>
+    /// Removes the streaming lease (<c>uploadStreamLeaseOwner</c> and <c>uploadStreamLeaseUntil</c>) whatever it
+    /// says. Used by the transitions a stream cannot outlive — every outcome of the row — so a late release by a run
+    /// that already lost the lease cannot leave the keys behind on a terminal row.
+    /// </summary>
+    public void ClearUploadStreamLease()
+    {
+        var payload = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadStreamLeaseOwnerKey);
+
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            payload,
+            PublicationPayload.UploadStreamLeaseUntilKey);
+    }
+
+    /// <summary>
+    /// The plan one row implies when nothing has planned it yet: 06.2.4-T1's <c>PlanUpload</c> rule, applied to the
+    /// columns this aggregate already holds (see <see cref="EnsureUploadPlan"/> for why it lives here).
+    /// </summary>
+    /// <param name="preAudit">Whether 06.2.1-T1 stamped the row pre-audit.</param>
+    /// <param name="now">The instant the one-minute lead is measured from.</param>
+    /// <returns>The plan to store.</returns>
+    private PublicationPayload.UploadPlan PlanUploadPayload(bool preAudit, DateTimeOffset now)
+    {
+        if (preAudit)
+        {
+            // An unaudited API project only publishes private videos, and a scheduled instant is refused: the row is
+            // private whatever the submitted privacy was (F13, 06 README D12).
+            return new PublicationPayload.UploadPlan(UploadPlanPrivate, null, PreAudit: true);
+        }
+
+        if (!string.Equals(Privacy, UploadPlanPublic, StringComparison.Ordinal))
+        {
+            // Private/unlisted: YouTube takes the visibility as it is, and a scheduled instant only means something
+            // for a public video (06.2.4-T1's G3 fix).
+            return new PublicationPayload.UploadPlan(Privacy, null, PreAudit: false);
+        }
+
+        if (PublishAt is { } publishAt && publishAt > now.Add(UploadPlanLeadTime))
+        {
+            // YouTube's scheduled publishing: private now, public at the instant. An instant closer than the lead
+            // time is not a schedule anymore, so it is dropped instead of refused at insert time.
+            return new PublicationPayload.UploadPlan(UploadPlanPrivate, publishAt, PreAudit: false);
+        }
+
+        return new PublicationPayload.UploadPlan(Privacy, null, PreAudit: false);
+    }
+
+    /// <summary>The <c>public</c> wire value of <c>publications.privacy</c> (G6).</summary>
+    private const string UploadPlanPublic = "public";
+
+    /// <summary>The <c>private</c> wire value of <c>publications.privacy</c> (G6), and the one a scheduled insert uses.</summary>
+    private const string UploadPlanPrivate = "private";
+
+    /// <summary>
+    /// How far ahead a scheduled instant must be to travel with the insert (06.2.4-T1's boundary): an instant this
+    /// close is "as soon as possible", which YouTube expresses by omitting <c>publishAt</c>.
+    /// </summary>
+    private static readonly TimeSpan UploadPlanLeadTime = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Records the Pacific quota day the row's unit is reserved on (<c>platform_payload.quotaReservedDay</c>, plan
+    /// §3.2, 06 README D10) — the key 06.2.6-T1's cancel reads to give the unit back, and the signal a resumed run
+    /// uses to skip a second reservation (YR27-2).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Server-only, one day.</b> The value is the ISO <c>yyyy-MM-dd</c> Pacific calendar date the caller computed
+    /// (<c>PacificQuotaDay.Day</c>); it is never derived here, because the Domain may not read a time zone of the
+    /// platform's quota. The key is written at the reserve step, in the same transaction as the
+    /// <c>scheduled → uploading</c> move (STATUS S72-1), and removed only by <see cref="MarkProcessing"/> (the upload
+    /// reached the platform) or <see cref="ClearQuotaReservation"/> (the handler's release branch) — never rewritten to
+    /// another day. <see cref="FailUpload"/> deliberately <em>keeps</em> it: the unit belongs to the handler's release
+    /// branch, the only place that knows whether this run reserved it (YR19/YR27-2).
+    /// </para>
+    /// <para>
+    /// <b>Bookkeeping, not a transition.</b> No event and no stamp: the reserve never changes what a consumer does,
+    /// and the row is about to move through <see cref="StartUpload"/> in the same commit anyway.
+    /// </para>
+    /// </remarks>
+    /// <param name="quotaDay">The Pacific calendar date of the reservation, as the ledger recorded it.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that can no longer reserve — anything but
+    /// <c>scheduled</c> (the reserve that precedes the upload) or <c>uploading</c> (the restart that reserves again,
+    /// YR27-3).
+    /// </returns>
+    public ErrorOr<Success> MarkQuotaReserved(DateOnly quotaDay)
+    {
+        if (Status is not (PublicationStatus.Scheduled or PublicationStatus.Uploading))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        PlatformPayloadJson = PublicationPayload.WithKey(
+            PlatformPayloadJson,
+            PublicationPayload.QuotaReservedDayKey,
+            PublicationPayload.FormatQuotaDay(quotaDay));
+
+        // A fresh unit buys a fresh insert: nothing was issued against it yet, and no run holds its claim (YR27-3's
+        // restart reserves again before it opens the new session).
+        ClearQuotaReservationMarker();
+        ClearUploadSessionLease();
+        ClearUploadStreamLease();
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Gives up the row's claim on a reserved quota unit (<c>platform_payload.quotaReservedDay</c>): the unit was
+    /// released to the ledger, or the upload finished, so the key is <em>removed</em> and a later cancel can no longer
+    /// release the same unit twice (06.2.6-T1's contract, STATUS S72-1).
+    /// </summary>
+    /// <remarks>
+    /// Unguarded on purpose: the release runs on the failure, quota and cancel paths alike, and a row with nothing
+    /// reserved is exactly the state this call produces. Removing an absent key leaves the document byte-identical.
+    /// </remarks>
+    public void ClearQuotaReservation()
+    {
+        var payload = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.QuotaReservedDayKey);
+
+        // The marker describes one reservation ("a create was issued against this unit"), so it goes with it (YR19):
+        // a row that holds no day must never look like one whose insert Google counted.
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            payload,
+            PublicationPayload.UploadCreateIssuedAtKey);
+
+        // The reservation and the streaming window end together: the run that released the unit is done with the row.
+        ClearUploadStreamLease();
+    }
+
+    /// <summary>Removes the <c>uploadCreateIssuedAt</c> marker alone, without touching the day that names the unit.</summary>
+    private void ClearQuotaReservationMarker()
+    {
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.UploadCreateIssuedAtKey);
+    }
+
+    /// <summary>
+    /// Moves an uploaded video into <see cref="PublicationStatus.Processing"/> (plan §3.1, 06 README D9/D12): YouTube
+    /// accepted the upload and is transcoding it, so the row names the video, drops every retry stamp and hands the
+    /// poller its claim window.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What it writes.</b> <c>external_post_id</c> and the watch URL built from it (06 CR-1),
+    /// <c>next_attempt_at = NULL</c>, <c>error_code = NULL</c>, the processing block
+    /// <c>{ startedAt: now, deadlineAt: now + maxMinutes, polls: 0 }</c> 06.2.5-T1's poller claims the row on, and the
+    /// <em>removal</em> of <c>quotaReservedDay</c> — the upload was received, so the unit is spent — and of
+    /// <c>heldByIncidentId</c>, because a row that finished its upload is no longer held. The session URI is kept:
+    /// nothing here needs it any more, and dropping it is not this transition's decision.
+    /// </para>
+    /// <para>
+    /// <b>Why <paramref name="maxMinutes"/> comes in.</b> The deadline is <c>YouTube:Poll:MaxMinutes</c>, an option
+    /// the Domain may not read, so the caller passes it; the Domain owns only the addition.
+    /// </para>
+    /// <para>
+    /// <b>Exactly once.</b> The guard is strict — <c>uploading</c> only — so a duplicate enqueue of the same run
+    /// cannot rewrite the deadline of a row the poller is already watching; that duplicate leaves through the job's
+    /// own status guard. The reconcile path (a run whose last response was lost) is
+    /// <see cref="MarkUploadedExternal"/>, which is idempotent for the same video id.
+    /// </para>
+    /// </remarks>
+    /// <param name="videoId">YouTube's id of the uploaded video.</param>
+    /// <param name="now">The job's clock reading: the processing start and the event's stamp.</param>
+    /// <param name="maxMinutes"><c>YouTube:Poll:MaxMinutes</c>: how long the poller may claim the row.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> from any state but <c>uploading</c> (including the
+    /// terminal states and <c>processing</c> itself).
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="videoId"/> is <see langword="null"/> or blank.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxMinutes"/> is not positive.</exception>
+    public ErrorOr<Success> MarkProcessing(string videoId, DateTimeOffset now, int maxMinutes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(videoId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxMinutes);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        MoveToProcessing(videoId, now, maxMinutes);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Records that YouTube already holds the video of this row (plan §3.1, 06 README D9/F02): the reconcile path of a
+    /// run that found <c>external_post_id</c> set, or whose probe answered <c>Complete(videoId)</c>, and therefore
+    /// must never upload a second time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Same write as <see cref="MarkProcessing"/>, wider door.</b> A row that was <c>uploading</c> when its last
+    /// response was lost is reconciled here, and so is one that is already <c>processing</c> — the latter is a no-op
+    /// success when the id matches (a redelivered job must not extend the poller's deadline) and a refusal when it
+    /// does not, because a different id means two videos and that is not a state a retry may paper over.
+    /// </para>
+    /// <para>
+    /// Terminal rows are refused, never silently accepted: a <c>failed</c>/<c>published</c>/<c>cancelled</c> row that
+    /// suddenly claims an upload would break D13's promise that those states are final for this row.
+    /// </para>
+    /// </remarks>
+    /// <param name="videoId">YouTube's id of the video the platform already holds.</param>
+    /// <param name="now">The job's clock reading: the processing start and the event's stamp.</param>
+    /// <param name="maxMinutes"><c>YouTube:Poll:MaxMinutes</c>: how long the poller may claim the row.</param>
+    /// <returns>
+    /// <c>Success</c> (including the idempotent repeat on a <c>processing</c> row with the same id); or 409
+    /// <c>publication_invalid_state</c> for a terminal row or a <c>processing</c> row naming another video.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="videoId"/> is <see langword="null"/> or blank.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxMinutes"/> is not positive.</exception>
+    public ErrorOr<Success> MarkUploadedExternal(string videoId, DateTimeOffset now, int maxMinutes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(videoId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxMinutes);
+
+        if (Status == PublicationStatus.Processing)
+        {
+            return string.Equals(ExternalPostId, videoId, StringComparison.Ordinal)
+                ? Result.Success
+                : PublicationErrors.InvalidState();
+        }
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        MoveToProcessing(videoId, now, maxMinutes);
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Sends the row back to <see cref="PublicationStatus.Scheduled"/> with the reason and the instant of its next
+    /// attempt (plan §3.1, 06 README D10, YR3): the quota-exhausted reschedule of UC1 step 6, and any other failure the
+    /// failure map classifies as retryable.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It keeps what a retry needs.</b> <c>platform_payload.uploadSessionEnc</c> survives — an open session must
+    /// resume instead of re-uploading (plan §Failure handling: "quota exhausted with a session already open") — and so
+    /// does <c>quotaReservedDay</c>, because releasing the unit is the handler's decision, made through
+    /// <see cref="ClearQuotaReservation"/> on exactly the branches D10 allows.
+    /// </para>
+    /// <para>
+    /// <b>It wakes the row.</b> The raised <see cref="PublicationUpdated"/> carries <c>scheduled</c>, and
+    /// <c>PublicationScheduledForUploadHandler</c> re-reads <c>next_attempt_at</c> off this row and schedules
+    /// <c>PublishYouTubeJob</c> there (UC4). Without that path a rescheduled row would sit <c>scheduled</c> with
+    /// nothing to wake it (TL-flagged 2026-09-25).
+    /// </para>
+    /// <para>
+    /// <b>The Google reason is diagnostic.</b> <paramref name="googleReason"/> lands in
+    /// <c>platform_payload.lastGoogleReason</c> and nowhere else — never in <c>error_code</c> (that is
+    /// <paramref name="errorCode"/>'s vocabulary), never in the outbox payload. A <see langword="null"/> or blank
+    /// reason leaves the stored one as it was, so an attempt Google answered nothing to cannot erase the last reason
+    /// it did give.
+    /// </para>
+    /// </remarks>
+    /// <param name="errorCode">The catalogued reason the attempt failed, from <see cref="PublicationErrorCodes"/>.</param>
+    /// <param name="nextAttemptAt">
+    /// The instant the retry is due, jittered by the caller (plan §7: the next Pacific midnight plus 0–10 minutes);
+    /// stored as given so a retry does not re-jitter into a different slot.
+    /// </param>
+    /// <param name="googleReason">The raw, already sanitised Google <c>reason</c>, or <see langword="null"/>.</param>
+    /// <param name="now">The job's clock reading: the stamp and the event's time.</param>
+    /// <returns><c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="errorCode"/> is <see langword="null"/> or blank.</exception>
+    public ErrorOr<Success> RescheduleUpload(
+        string errorCode,
+        DateTimeOffset nextAttemptAt,
+        string? googleReason,
+        DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        Status = PublicationStatus.Scheduled;
+        ErrorCode = errorCode;
+        NextAttemptAt = AsUtcInstant(nextAttemptAt);
+        PlatformPayloadJson = WithGoogleReason(googleReason);
+        UpdatedAt = now;
+
+        // The run that failed here is no longer streaming, so its window ends with the verdict (SEC-4).
+        ClearUploadStreamLease();
+
+        Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Ends the publication in <see cref="PublicationStatus.Failed"/> (plan §3.1, §7): the reason no retry can fix —
+    /// <see cref="PublicationErrorCodes.ChannelReauthRequired"/>, <see cref="PublicationErrorCodes.Rejected"/>, or
+    /// <see cref="PublicationErrorCodes.UploadFailed"/> once the attempts are spent.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Terminal for this row.</b> <c>next_attempt_at</c> is cleared and <c>heldByIncidentId</c> goes with it. The
+    /// reserved day is <em>kept</em>: the unit belongs to the handler's release branch, the only place that knows
+    /// whether this run reserved it (YR19) — a run that failed on a resume never reserved one, so dropping the key here
+    /// would hand the next run a second reservation for a session that already holds the first (YR27-2). The row leaves
+    /// the partial unique, so publishing the episode again is a new row, never a revival of this one.
+    /// </para>
+    /// <para>
+    /// <b>The repeat is a no-op success.</b> A retried run whose commit was lost reports the same failure again; when
+    /// the row is already <c>failed</c> with the same <paramref name="errorCode"/>, this writes nothing — no stamp, no
+    /// second <see cref="PublicationUpdated"/>. A <em>different</em> code on a failed row is a refusal: the first
+    /// verdict stands.
+    /// </para>
+    /// </remarks>
+    /// <param name="errorCode">The catalogued reason, from <see cref="PublicationErrorCodes"/>.</param>
+    /// <param name="googleReason">The raw, already sanitised Google <c>reason</c>, or <see langword="null"/>.</param>
+    /// <param name="now">The job's clock reading: the stamp and the event's time.</param>
+    /// <returns>
+    /// <c>Success</c> (including the repeat of the same verdict); or 409 <c>publication_invalid_state</c> for a row
+    /// that is not <c>uploading</c> and is not already failed with that code.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="errorCode"/> is <see langword="null"/> or blank.</exception>
+    public ErrorOr<Success> FailUpload(string errorCode, string? googleReason, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+
+        if (Status == PublicationStatus.Failed)
+        {
+            return string.Equals(ErrorCode, errorCode, StringComparison.Ordinal)
+                ? Result.Success
+                : PublicationErrors.InvalidState();
+        }
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        var payload = WithGoogleReason(googleReason);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.HeldByIncidentIdKey);
+
+        Status = PublicationStatus.Failed;
+        ErrorCode = errorCode;
+        NextAttemptAt = null;
+        PlatformPayloadJson = payload;
+        UpdatedAt = now;
+
+        // Nothing will stream this row again, so the streaming window ends with it (SEC-4).
+        ClearUploadStreamLease();
+
+        Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Holds the row while an open <see cref="PlatformIncident"/> blocks its OAuth client (plan §3.1 UC4, YR24): back
+    /// to <see cref="PublicationStatus.Scheduled"/> with <see cref="PublicationErrorCodes.PlatformIncident"/>, the
+    /// incident's id in <c>platform_payload.heldByIncidentId</c> and a <em>deferred</em> next attempt.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Deferred, never <c>null</c>.</b> YR24 fixed a hot loop here: with no <c>next_attempt_at</c> the re-enqueue
+    /// handler read the row as a fresh consent and scheduled it for roughly "now", so the job held it again
+    /// immediately. The caller passes <c>now + 5 × Poll:IntervalSeconds</c>, and the raised
+    /// <see cref="PublicationUpdated"/> makes <c>PublicationScheduledForUploadHandler</c> schedule the re-check at that
+    /// instant — a bounded lazy poll that either finds the incident cleared or holds again with a fresh instant.
+    /// </para>
+    /// <para>
+    /// <b>Nothing is released.</b> A hold is not a failure: the ledger is untouched here, the open session survives so
+    /// the resumed run continues from its offset, and so does <c>quotaReservedDay</c>. A hold is also per row, on the
+    /// row the caller already holds the lock on — there is no sweep of the client's other publications.
+    /// </para>
+    /// </remarks>
+    /// <param name="incidentId">The id <c>IPlatformIncidentStore.RaiseAsync</c> answered.</param>
+    /// <param name="nextAttemptAt">The deferred instant the row re-checks the incident at; never <c>null</c>.</param>
+    /// <param name="now">The job's clock reading: the stamp and the event's time.</param>
+    /// <returns><c>Success</c>; or 409 <c>publication_invalid_state</c> for a row that is not <c>uploading</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="incidentId"/> is <see cref="Guid.Empty"/>.</exception>
+    public ErrorOr<Success> HoldForIncident(Guid incidentId, DateTimeOffset nextAttemptAt, DateTimeOffset now)
+    {
+        ArgumentOutOfRangeException.ThrowIfEqual(incidentId, Guid.Empty);
+
+        if (Status != PublicationStatus.Uploading)
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        Status = PublicationStatus.Scheduled;
+        ErrorCode = PublicationErrorCodes.PlatformIncident;
+        NextAttemptAt = AsUtcInstant(nextAttemptAt);
+        PlatformPayloadJson = PublicationPayload.WithKey(
+            PlatformPayloadJson,
+            PublicationPayload.HeldByIncidentIdKey,
+            incidentId.ToString());
+        UpdatedAt = now;
+
+        // The hold ends this run's stream; the held row is re-run by its deferred wake, which claims a new window.
+        ClearUploadStreamLease();
+
+        Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Releases the row from an incident hold (plan §3.1, YR27-4): clears <c>error_code</c> and
+    /// <c>platform_payload.heldByIncidentId</c>, sets the next attempt the caller chose — a jittered instant for a
+    /// <c>scheduled</c> row, <c>now</c> for a <c>processing</c> one — and raises <see cref="PublicationUpdated"/> with
+    /// the status the row keeps.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the event matters.</b> 06.2.3-T3's clear command calls this on tracked entities instead of a set-based
+    /// <c>UPDATE</c>: a raw statement raises no domain event, and without the event the outbox would never schedule
+    /// the wake-up the clear is meant to cause (F6).
+    /// </para>
+    /// <para>
+    /// <b>Only a held row.</b> A row without <c>heldByIncidentId</c> is refused rather than "released": the
+    /// quota-reschedule path owns <c>scheduled</c> rows that carry another error code, and letting a clear command
+    /// clear their reason and pull their retry forward would be a bug this guard turns into a 409. The status is not
+    /// changed — the row is where the hold left it, and the poller keeps watching a <c>processing</c> row.
+    /// </para>
+    /// </remarks>
+    /// <param name="nextAttemptAt">The instant the row is due again (jittered for <c>scheduled</c>, <c>now</c> for <c>processing</c>).</param>
+    /// <param name="now">The command's clock reading: the stamp and the event's time.</param>
+    /// <returns>
+    /// <c>Success</c>; or 409 <c>publication_invalid_state</c> when the row is not held, or is in a state a hold never
+    /// leaves it in.
+    /// </returns>
+    public ErrorOr<Success> ReleaseHold(DateTimeOffset nextAttemptAt, DateTimeOffset now)
+    {
+        if (HeldByIncidentId is null
+            || Status is not (PublicationStatus.Scheduled or PublicationStatus.Processing))
+        {
+            return PublicationErrors.InvalidState();
+        }
+
+        PlatformPayloadJson = PublicationPayload.WithoutKey(
+            PlatformPayloadJson,
+            PublicationPayload.HeldByIncidentIdKey);
+        ErrorCode = null;
+        NextAttemptAt = AsUtcInstant(nextAttemptAt);
+        UpdatedAt = now;
+
+        Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// The one write of the <c>uploading → processing</c> transition, shared by
+    /// <see cref="MarkProcessing"/> and <see cref="MarkUploadedExternal"/>: the video id and its watch URL, every
+    /// retry stamp cleared, the processing block written for the poller, and the reserved-day and hold keys removed.
+    /// </summary>
+    /// <param name="videoId">YouTube's id of the video.</param>
+    /// <param name="now">The job's clock reading.</param>
+    /// <param name="maxMinutes"><c>YouTube:Poll:MaxMinutes</c>.</param>
+    private void MoveToProcessing(string videoId, DateTimeOffset now, int maxMinutes)
+    {
+        var payload = PublicationPayload.WithoutKey(PlatformPayloadJson, PublicationPayload.QuotaReservedDayKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.HeldByIncidentIdKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadCreateIssuedAtKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadSessionLeaseKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadStreamLeaseUntilKey);
+        payload = PublicationPayload.WithoutKey(payload, PublicationPayload.UploadStreamLeaseOwnerKey);
+
+        ExternalPostId = videoId;
+        ExternalUrl = WatchUrl(videoId);
+        NextAttemptAt = null;
+        ErrorCode = null;
+        Status = PublicationStatus.Processing;
+        PlatformPayloadJson = PublicationPayload.WithProcessing(
+            payload,
+            now,
+            now.AddMinutes(maxMinutes),
+            polls: 0);
+        UpdatedAt = now;
+
+        Raise(new PublicationUpdated(Id, EpisodeId, UserId, Status, ErrorCode, now));
+    }
+
+    /// <summary>
+    /// The <c>next_attempt_at</c> value of one caller-supplied instant, in the form the column stores.
+    /// </summary>
+    /// <remarks>
+    /// The instant is preserved and only its offset is dropped (<c>timestamp with time zone</c> refuses a non-zero
+    /// offset). Callers compute the instant from a time-zone rule — the Pacific quota day's next midnight carries the
+    /// offset in force at that instant — so the value must keep the instant it names, never be reinterpreted as local
+    /// wall-clock time.
+    /// </remarks>
+    /// <param name="instant">The instant a caller named.</param>
+    /// <returns>The same instant with a zero offset.</returns>
+    private static DateTimeOffset AsUtcInstant(DateTimeOffset instant) => instant.ToUniversalTime();
+
+    /// <summary>
+    /// Writes <c>platform_payload.lastGoogleReason</c> when the caller has one, and leaves the document as it was when
+    /// it has not: the key is the last reason Google gave, so an attempt with nothing to report must not erase it.
+    /// </summary>
+    /// <param name="googleReason">The raw, already sanitised Google <c>reason</c>, or <see langword="null"/>.</param>
+    /// <returns>The document to store.</returns>
+    private string? WithGoogleReason(string? googleReason) =>
+        string.IsNullOrWhiteSpace(googleReason)
+            ? PlatformPayloadJson
+            : PublicationPayload.WithKey(PlatformPayloadJson, PublicationPayload.LastGoogleReasonKey, googleReason);
+
+    /// <summary>The watch URL of a video id (06 CR-1: the row carries it so no DTO mapper builds one).</summary>
+    /// <param name="videoId">YouTube's video id.</param>
+    /// <returns>The public watch URL.</returns>
+    private static string WatchUrl(string videoId) => $"https://www.youtube.com/watch?v={videoId}";
 }

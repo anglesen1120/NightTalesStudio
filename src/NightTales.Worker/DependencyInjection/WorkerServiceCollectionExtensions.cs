@@ -14,6 +14,8 @@ using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Application.Features.Autopilot.Orchestration;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Publishing.Events;
+using NightTales.Application.Features.Publishing.Upload;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
@@ -32,6 +34,7 @@ using NightTales.Application.Telemetry;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Research.Events;
 using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Series.Events;
@@ -149,12 +152,18 @@ public static class WorkerServiceCollectionExtensions
         // connection, a settings secret — is readable here, and each purpose stays isolated.
         services.AddNightTalesDataProtection(configuration);
 
-        // 06.1.2-T2: the `channel_connections` store, its row lock and the refresh-under-lock token path
-        // (`channel_connection_changed.v1` itself needs no registration here: the outbox catalogue is the
-        // `[OutboxEvent]` scan of `OutboxEventRegistry`, and nothing in this wave consumes the event yet).
-        // Only the store is registered: `YouTube:Clients` is an Api-only section, so the OAuth client graph
-        // arrives with the upload wiring of 06.2.3, which is the first job to resolve `ITokenService`.
-        services.AddChannelConnections();
+        // 06.1.2-T2/06.2.3-T2: the `channel_connections` store, its row lock and the refresh-under-lock token path, plus
+        // the Google client graph the upload job is the first Worker consumer of (`IYouTubeClient`,
+        // `IOAuthClientResolver`, the secret provider, the three named transports), the `YouTube` section's single
+        // binding and start-up validation, and 06.2.3-T2's `platform_incidents` store. `YouTube:Clients` used to be an
+        // Api-only section; the Worker carries it now because a refresh reads the connection's pinned client
+        // (`IOAuthClientResolver`), which is exactly the `YouTube` keys `appsettings.json` holds for this host.
+        services.AddYouTubePublishing(configuration);
+
+        // 06.2.3-T2: `PublishYouTubeJob` resolves the handler from its tenant-pinned scope and calls it directly (the
+        // job has no sender: a job-dispatched message must not pass the deny-by-default `AuthorizationBehavior`).
+        // Registered here rather than by assembly scan so the dependency list of one job stays visible in one place.
+        services.TryAddScoped<PublishYouTubeHandler>();
 
         // 09.2.3-T1 (09 README D10): the Worker's actor is the scoped system context. Every user-owned
         // row stays invisible until a handler calls ISystemContext.For(userId), and both interfaces
@@ -401,6 +410,12 @@ public static class WorkerServiceCollectionExtensions
         // audit row and the NOTIFY; this handler is the outbox half of the two eviction paths.
         services.AddOutboxHandler<FeatureFlagsChanged, FeatureFlagsChangedHandler>();
 
+        // 06.2.3-T2 (06 README D13/YR3, plan §4 UC4): the one consumer of `publication_updated.v1` that turns "this row
+        // reached `scheduled`" into a queued or delayed `PublishYouTubeJob` at the row's own `next_attempt_at`. It lives
+        // here and not in `AddPersistence` because only the Worker may enqueue a job (D12: the Api's scheduler throws by
+        // design), and the delivery's scope is already pinned to the event's user.
+        services.AddOutboxHandler<PublicationUpdated, PublicationScheduledForUploadHandler>();
+
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
         services.AddOptions<OutboxDispatcherOptions>()
             .BindConfiguration(OutboxDispatcherOptions.SectionName)
@@ -628,22 +643,66 @@ public static class WorkerServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the single Hangfire server of the platform (09.2.6 plan §7): one server on every queue,
-    /// with the worker counts and poll intervals of the <c>Jobs</c> section. Production calls this from
-    /// <c>Program.cs</c>; the test harness calls it only in real-server mode (D13).
+    /// Adds the two Hangfire servers of the Worker (09.2.6 plan §7, 06.2.3-T2 review PERF-1): the main
+    /// server on every queue except <c>publish</c>, and a dedicated publish server on the <c>publish</c>
+    /// queue alone, with <c>Jobs:Workers:publish</c> worker threads. Production calls this from
+    /// <see cref="WorkerApplication"/>; the test harness calls it only in real-server mode (D13).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why two servers.</b> One server on every queue gives the publish queue no bound: each of its
+    /// workers fetches from every queue, so <c>Jobs:Workers:publish</c> only enlarged one shared pool and a
+    /// burst of minutes-long uploads could occupy every worker, starving <c>default</c>, <c>render</c> and
+    /// <c>email</c>. A server owns its own worker pool and a worker serves one queue at a time, so the
+    /// split makes <c>Jobs:Workers:publish</c> the real cap on concurrent uploads and keeps them off the
+    /// other queues' threads.
+    /// </para>
+    /// <para>
+    /// <b>Why two <c>AddHangfireServer</c> calls are correct.</b> That overload builds a fresh
+    /// <c>BackgroundJobServerOptions</c> per registration and registers its own
+    /// <c>BackgroundJobServerHostedService</c>, so each server gets its own queue list, worker count and
+    /// poll interval. Storage, activator and filter provider are resolved from the container, so both
+    /// dispatch with the platform retry policy and activate jobs in this host's scopes. Boot, the health
+    /// probe (<c>HangfireStorageHealthCheck</c> reads the storage, not a server) and shutdown need no
+    /// change: the host starts and stops both hosted services the same way.
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The service collection of the Worker host.</param>
     public static IServiceCollection AddWorkerHangfireServer(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        return services.AddHangfireServer((provider, options) =>
+        services.AddHangfireServer((provider, options) =>
         {
             var jobs = provider.GetRequiredService<IOptions<JobsOptions>>().Value;
 
-            options.Queues = [.. JobQueues.All];
-            options.WorkerCount = jobs.TotalWorkerCount;
-            options.SchedulePollingInterval = TimeSpan.FromSeconds(jobs.SchedulePollSeconds);
+            ConfigureServer(options, jobs, JobsOptions.MainServerQueues, jobs.MainServerWorkerCount);
         });
+
+        services.AddHangfireServer((provider, options) =>
+        {
+            var jobs = provider.GetRequiredService<IOptions<JobsOptions>>().Value;
+
+            ConfigureServer(options, jobs, JobsOptions.PublishServerQueues, jobs.PublishServerWorkerCount);
+        });
+
+        return services;
+    }
+
+    /// <summary>Applies the <c>Jobs</c> section to one server's options.</summary>
+    /// <param name="options">The options of the server being registered.</param>
+    /// <param name="jobs">The bound <c>Jobs</c> section.</param>
+    /// <param name="queues">The queues this server listens on.</param>
+    /// <param name="workerCount">The worker count of this server.</param>
+    private static void ConfigureServer(
+        BackgroundJobServerOptions options,
+        JobsOptions jobs,
+        IReadOnlyList<string> queues,
+        int workerCount)
+    {
+        options.Queues = [.. queues];
+        options.WorkerCount = workerCount;
+        options.SchedulePollingInterval = TimeSpan.FromSeconds(jobs.SchedulePollSeconds);
     }
 }
 

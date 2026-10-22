@@ -113,7 +113,8 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             // two later migrations' tables (02_AddFactSheets, 02_AddSeriesBible), `render_jobs` is 09_RenderJobs
             // and `platform_quota_usage` is 06_PlatformQuotaUsage, `source_candidates` is 02_AddSourceCandidates,
             // `episode_ideas` is 02_AddEpisodeIdeas, `oauth_states` is 06_OAuthStates, `channel_connections`
-            // is 06_ChannelConnections and `publications` is 06_Publications: all applied after
+            // is 06_ChannelConnections, `publications` is 06_Publications and `platform_incidents` is
+            // 06_PlatformIncidents: all applied after
             // 02_EpisodeApprovedAt, so the loop skips them. Every table that existed before this migration must
             // survive its Down.
             await migrator.MigrateAsync(migrations[own - 1], Ct);
@@ -128,7 +129,7 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             foreach (var table in tablesBefore.Where(table
                 => table is not ("fact_sheets" or "series_bibles" or "render_jobs" or "platform_quota_usage"
                     or "source_candidates" or "episode_ideas" or "oauth_states" or "channel_connections"
-                    or "publications")))
+                    or "publications" or "platform_incidents")))
             {
                 tablesAfter.ShouldContain(table, "Down removes only approved_at; it must not drop a table");
             }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Application.Abstractions.Catalog;
 using NightTales.Application.Abstractions.Compliance;
+using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
@@ -52,6 +53,14 @@ public static class ApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<IStoryPresetCatalog, NullStoryPresetCatalog>();
+
+        // 06.2.3-T2 (09.6.3-T2's port): the attempt the scheduling filter published, or "one attempt, and it is the
+        // last" outside a scheduling pipeline — the fail-safe both a direct call and a non-Worker host want. It is
+        // registered here because Mediator's generated registrations cover every handler in this assembly in both
+        // hosts, so a Worker-only dependency would fail the Api's composition root at start-up: the upload handler
+        // reads the attempt to tell a retry from its last chance (06 README §7). Stateless, therefore a singleton;
+        // the render leg's AddRenderIngest registers the same pair and TryAdd keeps whichever ran first.
+        services.TryAddSingleton<IJobAttempt, AmbientJobAttempt>();
 
         // 02.2.3-T2: stateless and pure; needs the IPromptCatalog singleton that both hosts register through AddPromptCatalog.
         services.TryAddSingleton<IPromptAssembler, PromptAssembler>();
