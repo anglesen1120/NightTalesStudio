@@ -23,13 +23,15 @@ namespace NightTales.Api.IntegrationTests.Health;
 /// <remarks>
 /// Every host here starts without the hosted <c>StorageHealthProbe</c> (<see cref="NewFactory"/>): the
 /// harness configures an unreachable <c>Storage:ServiceUrl</c>, so that prober publishes
-/// <c>storage_unavailable</c> on its first tick (~1.2 s after start-up, measured) and overwrites the
-/// <see cref="IStorageHealthCache"/> value a test publishes, which makes the report depend on which writer
-/// landed last — a proven way this class can fail. It is not a confirmed cause of the fast failures seen
-/// on 2026-10-22: those rows took 509/696 ms (the ticket's numbers, no log kept), before that first tick,
-/// and no local run since — 18 of them, 6 under CPU load — has reproduced them. A test that asserts a
-/// published health value owns the cache; the prober itself is exercised by <c>StorageHealthTests</c>,
-/// which drives <see cref="StorageHealthProbe.ProbeAsync"/> directly.
+/// <c>storage_unavailable</c> and overwrites the <see cref="IStorageHealthCache"/> value a test publishes,
+/// which makes the report depend on which writer landed last. Its first publish has no fixed delay — the
+/// loop probes before its first wait (<c>StorageHealthProbe.ExecuteAsync</c>) with only the refused
+/// loopback connect and the S3 client's retry ladder in the way (measured ~1.2 s cold on an idle Mac,
+/// much sooner in a warm process) — so the probe can win the race and it is the most likely explanation of
+/// the fast failures seen on 2026-10-22. That is unconfirmed: the assertion text of that run was lost, and
+/// the unfixed class was green in 18 later local runs (6 under CPU load). A test that asserts a published
+/// health value owns the cache; the prober itself is exercised by <c>StorageHealthTests</c>, which drives
+/// <see cref="StorageHealthProbe.ProbeAsync"/> directly.
 /// </remarks>
 [Trait("Category", "Integration")]
 public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest(database)
@@ -128,11 +130,13 @@ public sealed class HealthEndpointTests(TestDatabase database) : IntegrationTest
         report.GetProperty("status").GetString().ShouldBe("degraded");
 
         // The component, not just the aggregate: without this the test would also pass on a report whose
-        // only degraded check is `nodes` (the class database has no node rows). The wire cannot show the
-        // cause — `StorageHealth.NotChecked` is stale-degraded too and the report carries no error code —
-        // so removing the Publish above still leaves this test green (measured 2026-10-23); the assertion
-        // pins the component, not the cause.
+        // only degraded check is `nodes` (the class database has no node rows).
         CheckStatus(report, "storage").ShouldBe("degraded");
+
+        // And the cause the cache holds is the one this test published: `storage_unprobed` is degraded too,
+        // so only the error code shows that the probe answered rather than never having run.
+        factory.Services.GetRequiredService<IStorageHealthCache>().Current.ErrorCode
+            .ShouldBe(StorageHealth.UnavailableErrorCode);
     }
 
     private static void PublishHealthyStorage(ApiFactory factory, FakeClock clock) =>
