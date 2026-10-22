@@ -12,12 +12,13 @@ namespace NightTales.Application.Features.Autopilot.Commands.PutAutopilot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One route, three behaviours, and the order they are checked in.</b> Off (<c>enabled = false</c>) revokes with
+/// <b>One route, four behaviours, and the order they are checked in.</b> Off on an enabled series revokes with
 /// <c>disabled</c> and needs no re-auth. On from off runs the full ladder — legal acceptance, re-auth, the current
 /// authorization, the channel — because it is the click that authorizes future uploads without per-video consent.
-/// Settings-only while already on applies the document and runs the covered-field diff, revoking and holding the runs
-/// when a covered field moved (plan §3.7); it is deliberately <em>not</em> a 409, because the owner is editing the
-/// very settings the text covers.
+/// Settings-only applies the document and runs the covered-field diff, revoking and holding the runs when a covered
+/// field moved (plan §3.7); it is deliberately <em>not</em> a 409, because the owner is editing the very settings the
+/// text covers. That holds with the switch in either position: <c>enabled = false</c> sent to a series that is already
+/// off is the same document edit, so it writes no switch-off row and never answers as a second disable.
 /// </para>
 /// <para>
 /// <b><c>[NotAudited]</c> with a written reason, not <c>[Audited]</c>.</b> The action depends on the request:
@@ -38,7 +39,17 @@ namespace NightTales.Application.Features.Autopilot.Commands.PutAutopilot;
 public sealed record PutAutopilotCommand(Guid Id, string IfMatch, bool Enabled, string SettingsJson)
     : ICommand<ErrorOr<Success>>;
 
-/// <summary>The audit <c>data</c> keys of the three autopilot rows this command can write (plan §4).</summary>
+/// <summary>
+/// The audit <c>data</c> keys of the three autopilot rows this command can write (plan §4): <c>autopilot.enabled</c>
+/// carries <c>seriesId, settingsHash, authorizationId, authorizationVersion</c>, <c>autopilot.disabled</c> carries
+/// <c>seriesId, revokedAuthorizationId, reason</c>, and <c>autopilot.authorization_revoked</c> carries
+/// <c>seriesId, authorizationId, reason</c>.
+/// </summary>
+/// <remarks>
+/// <b>A digest, never the document.</b> The enable row names the settings document by the SHA-256 of the canonical
+/// text it stored, so the row proves which document the consent was given for without copying it into the audit log
+/// (contract D-8).
+/// </remarks>
 public static class PutAutopilotAuditKeys
 {
     /// <summary>The audit action of plan §4 for a successful enable.</summary>
@@ -56,11 +67,17 @@ public static class PutAutopilotAuditKeys
     /// <summary>The <c>data</c> member naming the series.</summary>
     public const string SeriesId = "seriesId";
 
-    /// <summary>The <c>data</c> member naming the authorization row.</summary>
+    /// <summary>The <c>data</c> member naming the authorization row the row is about.</summary>
     public const string AuthorizationId = "authorizationId";
 
-    /// <summary>The <c>data</c> member carrying the accepted version.</summary>
-    public const string Version = "version";
+    /// <summary>The <c>data</c> member naming the revoked row (plan §4: <c>revokedAuthorizationId</c>).</summary>
+    public const string RevokedAuthorizationId = "revokedAuthorizationId";
+
+    /// <summary>The <c>data</c> member carrying the accepted version (plan §4: <c>authorizationVersion</c>).</summary>
+    public const string AuthorizationVersion = "authorizationVersion";
+
+    /// <summary>The <c>data</c> member carrying the SHA-256 of the stored settings document, lowercase hex.</summary>
+    public const string SettingsHash = "settingsHash";
 
     /// <summary>The <c>data</c> member carrying the revoke reason slug.</summary>
     public const string Reason = "reason";

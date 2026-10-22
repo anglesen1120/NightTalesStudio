@@ -1,5 +1,6 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 
 namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 
@@ -14,4 +15,5 @@ namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 /// §3.6 trigger still holds.
 /// </remarks>
 /// <param name="SeriesId">The series to resume.</param>
+[NotAudited("02.8.3-T4 owns the autopilot.resumed row, whose data carries previousPauseReason from its trigger re-check; this route only clears the pause fields and T4 writes the row.")]
 public sealed record ResumeAutopilotCommand(Guid SeriesId) : ICommand<ErrorOr<Success>>;

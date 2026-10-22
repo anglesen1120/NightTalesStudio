@@ -3,16 +3,20 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Authorization;
+using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Domain.Publishing;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.UnitOfWork;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Auth;
@@ -27,8 +31,8 @@ namespace NightTales.Api.IntegrationTests.Autopilot;
 /// <summary>
 /// The consent half of the autopilot wire contract (02.8.3-T2 task §Tests rows <c>AcceptAuthorization_*</c>,
 /// <c>RevokeAuthorization_*</c>, <c>CoveredFieldChange_MovesPlannedRunsToAwaitingAuthorization</c> and
-/// <c>AuditRows_*</c>): the versioned text accept, its stale-hash and stale-version refusals, the replay, the
-/// supersede, the owner's revoke and the run that waits for the new text.
+/// <c>AuditRows_*</c>): the versioned text accept, its stale-hash and stale-version refusals, the body cap, the lost
+/// version race, the replay, the supersede, the owner's revoke and the run that waits for the new text.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -104,12 +108,16 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
 
         SqlProbe.ScalarText(
                 Database,
-                "SELECT coalesce(string_agg(coalesce(data ->> 'textHash', '') || '|' "
-                + "|| coalesce(data ->> 'authorizationId', ''), ','), '') FROM audit_logs "
+                "SELECT coalesce(string_agg(coalesce(data ->> 'seriesId', '') || '|' "
+                + "|| coalesce(data ->> 'authorizationId', '') || '|' "
+                + "|| coalesce(data ->> 'version', '') || '|' "
+                + "|| coalesce(data ->> 'textVersion', '') || '|' "
+                + "|| coalesce(data ->> 'textHash', ''), ','), '') FROM audit_logs "
                 + $"WHERE action = 'autopilot.authorization_accepted' AND entity_id = '{world.SeriesId}'")
             .ShouldBe(
-                $"{rendered.Hash}|{authorizationId}",
-                "the audit row names the digest the owner accepted (task §Acceptance 4)");
+                $"{world.SeriesId}|{authorizationId}|1|{rendered.Version}|{rendered.Hash}",
+                "the audit row carries plan §4's five keys — the series, the row, the revision, the template "
+                + "version and the digest the owner accepted (task §Acceptance 4), and never the text");
 
         SqlProbe.Count(
                 Database,
@@ -205,6 +213,112 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
         problem.Errors!.ShouldContainKey("textVersion");
         problem.Errors!["textVersion"].ShouldHaveSingleItem().ShouldBe("stale_version");
         Authorizations(world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// QA D3 (S71-48's cap on the accept body): the 16 KiB limit is enforced by the endpoint's own bounded read, so an
+    /// oversized body is refused with 413 before anything is parsed or the consent ladder runs — the same answer
+    /// <c>PUT</c> gives, and the only one a host whose server ignores the route's <c>RequestSizeLimit</c> can give.
+    /// </summary>
+    [Fact]
+    public async Task AcceptAuthorization_OversizedBody_Returns413()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, enabled: false);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: true);
+        await AcceptLegalAsync(factory, client);
+
+        var rendered = await RenderedTextAsync(client, world.SeriesId);
+        var oversized = "{\"textVersion\":\"" + rendered.Version + "\",\"textHash\":\"" + rendered.Hash
+            + "\",\"padding\":\"" + new string('a', 17 * 1024) + "\"}";
+
+        using var response = await client.SendAsync(
+            Request(HttpMethod.Post.Method, AuthorizationUrl(world.SeriesId), oversized),
+            Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
+        (await ProblemAsync(response)).Code.ShouldBe("payload_too_large");
+        Pointer(world.SeriesId).ShouldBeNull("a refused body reaches no handler, so nothing is accepted");
+        Authorizations(world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// QA D1: two accepts of one series can both read the same highest version and both insert
+    /// <c>max + 1</c>. The <c>(series_id, version)</c> unique index refuses the loser, and the unit of work maps that
+    /// refusal to the concurrency 409 — never a raw <c>DbUpdateException</c> under a 500. A client's retry then
+    /// re-reads the winner's committed revision and takes the replay branch (asserted by
+    /// <see cref="AcceptAuthorization_Replay_IsIdempotent"/>), which is the two-tab rule of task §Failure handling.
+    /// </summary>
+    /// <remarks>
+    /// The collision is reproduced at the save, not by racing two HTTP requests: a deterministic test cannot interleave
+    /// two accepts, and the mapping is exactly the seam the race would hit. Both rows are added in one transaction, so
+    /// the second insert is the one PostgreSQL refuses.
+    /// </remarks>
+    [Fact]
+    public async Task AcceptAuthorization_VersionCollision_MapsToConcurrencyConflictNotA500()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, enabled: false);
+
+        // The seed needs a host; this case is about the save, so the host is not used further.
+        world.Factory.Dispose();
+
+        await using var context = Database.CreateAppDbContext(new TestCurrentUser { Id = world.User.Id }, clock);
+        var unitOfWork = new EfUnitOfWork(context);
+
+        await unitOfWork.BeginAsync(Ct);
+
+        var settings = DefaultSettings();
+        var first = SeriesAutopilotAuthorization.Accept(
+            world.User.Id,
+            world.SeriesId,
+            version: 1,
+            textVersion: AuthorizationTextRenderer.CurrentTextVersion,
+            textHash: new string('b', 64),
+            topic: Topic.Ghost,
+            channelConnectionId: world.ChannelId,
+            snapshotJson: AutopilotAuthorizationCoverage.SnapshotJson(settings, preAuditPending: true),
+            privacy: settings.Privacy,
+            now: clock.UtcNow);
+
+        context.SeriesAutopilotAuthorizations.Add(first);
+        await context.SaveChangesAsync(Ct);
+
+        // The loser: the same series, the same version, written by a second accept that read the same maximum.
+        context.SeriesAutopilotAuthorizations.Add(SeriesAutopilotAuthorization.Accept(
+            world.User.Id,
+            world.SeriesId,
+            version: 1,
+            textVersion: AuthorizationTextRenderer.CurrentTextVersion,
+            textHash: new string('c', 64),
+            topic: Topic.Ghost,
+            channelConnectionId: world.ChannelId,
+            snapshotJson: AutopilotAuthorizationCoverage.SnapshotJson(settings, preAuditPending: true),
+            privacy: settings.Privacy,
+            now: clock.UtcNow.AddSeconds(1)));
+
+        var committed = await unitOfWork.CommitAsync(Ct);
+
+        committed.IsError.ShouldBeTrue("a refused commit is an error, never a thrown DbUpdateException");
+        committed.FirstError.Code.ShouldBe(ErrorCodes.ConcurrencyConflict);
+        committed.FirstError.Type.ShouldBe(ErrorType.Conflict);
+        Authorizations(world.SeriesId).ShouldBe(0, "the rollback leaves neither revision behind");
+    }
+
+    /// <summary>
+    /// QA D11: the <c>autopilot_authorization_accepted.v1</c> consumer drives <c>IAutopilotRunOrchestrator</c>, which
+    /// only the Worker composes. It is therefore registered by the Worker's <c>AddAutopilotOutboxHandlers</c> and not by
+    /// the shared <c>AddAutopilotAuthorization</c> — otherwise the Api would hold a scoped descriptor it can never
+    /// construct, and its Development build (which validates the graph) would fail at start-up.
+    /// </summary>
+    [Fact]
+    public void ApiHost_DoesNotRegisterTheWorkerOnlyAcceptConsumer()
+    {
+        using var factory = new ApiFactory(Database, new FakeClock(Start));
+
+        factory.Services.GetService<AutopilotAuthorizationAcceptedHandler>()
+            .ShouldBeNull("the accept consumer needs the Worker's orchestrator, so the Api must not register it");
     }
 
     /// <summary>

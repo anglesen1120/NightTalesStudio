@@ -3,9 +3,9 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Autopilot.Authorization;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series.Autopilot;
-using SeriesAggregate = NightTales.Domain.Series.Series;
 
 namespace NightTales.Application.Features.Autopilot.Commands.RevokeAutopilotAuthorization;
 
@@ -31,9 +31,6 @@ public sealed class RevokeAutopilotAuthorizationHandler(
     IClock clock)
     : ICommandHandler<RevokeAutopilotAuthorizationCommand, ErrorOr<Success>>
 {
-    /// <summary>How many open runs one request holds; the planner keeps far fewer per series.</summary>
-    private const int MaxHeldRuns = 20;
-
     /// <inheritdoc />
     public async ValueTask<ErrorOr<Success>> Handle(
         RevokeAutopilotAuthorizationCommand command,
@@ -72,44 +69,8 @@ public sealed class RevokeAutopilotAuthorizationHandler(
         command.RevokedAuthorizationId = row.Id;
         command.RevokedVersion = row.Version;
 
-        await HoldOpenRunsAsync(series, now, cancellationToken).ConfigureAwait(false);
+        await AutopilotRunHold.HoldPlannedAsync(db, series.Id, now, cancellationToken).ConfigureAwait(false);
 
         return Result.Success;
-    }
-
-    /// <summary>
-    /// Moves the series' <see cref="AutopilotRunState.Planned"/> runs to
-    /// <see cref="AutopilotRunState.AwaitingAuthorization"/> in this transaction (D-3), and touches no other state.
-    /// </summary>
-    /// <remarks>
-    /// <c>IAutopilotRunOrchestrator.AdvanceAsync</c> runs the next step (including the paid dispatches) and is
-    /// registered only in the Worker host, so a request path must not call it. A run already producing is stopped by
-    /// its next spend check (<c>AutopilotStepSupport.SeriesMaySpendAsync</c>, the S71-43 deferred decision); a move the
-    /// state machine refuses is skipped, never a reason to fail the revocation.
-    /// </remarks>
-    /// <param name="series">The series whose planned runs are held.</param>
-    /// <param name="now">The clock reading stamped on every moved run.</param>
-    /// <param name="ct">Cancels the read.</param>
-    /// <returns>Nothing.</returns>
-    private async Task HoldOpenRunsAsync(SeriesAggregate series, DateTimeOffset now, CancellationToken ct)
-    {
-        var planned = await db.AutopilotRuns
-            .Where(run => run.SeriesId == series.Id
-                && run.FinishedAt == null
-                && run.State == AutopilotRunState.Planned)
-            .OrderBy(run => run.SlotAt)
-            .Take(MaxHeldRuns)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-
-        foreach (var run in planned)
-        {
-            if (!AutopilotRunStateMachine.CanTransition(run.State, AutopilotRunState.AwaitingAuthorization))
-            {
-                continue;
-            }
-
-            run.AdvanceTo(AutopilotRunState.AwaitingAuthorization, run.Step, now, authorizationId: null);
-        }
     }
 }

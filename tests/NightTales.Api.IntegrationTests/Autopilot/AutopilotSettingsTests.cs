@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -169,6 +170,19 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
                 $"{world.AuthorizationId}|1",
                 "the row names the authorization revision the enable rests on (plan §4: seriesId, settingsHash, "
                 + "authorizationId, authorizationVersion)");
+
+        // The document is named by its digest, never copied into the log (contract D-8): the hash of the canonical
+        // text the handler stored is the proof of which document the owner consented to.
+        var expectedHash = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(AutopilotSettingsValidator.Serialize(DefaultSettings()))));
+
+        SqlProbe.ScalarText(
+                Database,
+                "SELECT coalesce(data ->> 'settingsHash', '') || '|' || (data ? 'settings')::text FROM audit_logs "
+                + $"WHERE action = 'autopilot.enabled' AND entity_id = '{world.SeriesId}'")
+            .ShouldBe(
+                $"{expectedHash}|false",
+                "settingsHash is the lowercase sha256 of the stored document, and the document itself is absent");
     }
 
     /// <summary>
@@ -303,6 +317,11 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
     /// <c>channel_reauth_required</c> — and the same document saves with <c>enabled = false</c>, which is the task
     /// file's "no channel connected" row.
     /// </summary>
+    /// <remarks>
+    /// The series is off, so the second request is a document edit and not a switch-off: it applies, and because
+    /// <c>daily_cap</c> is a covered field the consent it no longer matches is revoked with the comparator's reason.
+    /// The switch-off row and the <c>disabled</c> reason belong to a real <c>true → false</c> move only (plan §3.7).
+    /// </remarks>
     [Fact]
     public async Task PutAutopilot_ChannelNotActive_Returns409()
     {
@@ -324,6 +343,16 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var saved = await PutAsync(client, world.SeriesId, enabled: false, moved, tag);
         saved.StatusCode.ShouldBe(HttpStatusCode.OK, await saved.Content.ReadAsStringAsync(Ct));
         SettingsColumn(world.SeriesId, "daily_cap").ShouldBe("3", "the document is stored even with the switch off");
+        StoredSettingsAre(world.SeriesId, moved).ShouldBeTrue("the published document is the request's, in full");
+
+        // Off already, so nothing was switched off: no `autopilot.disabled` row. `daily_cap` is covered by the
+        // accepted text, so the consent is revoked through the comparator with its own reason.
+        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "coalesce(revoked_reason, '')"))
+            .ShouldBe("text_changed", "a covered edit spends the acceptance whichever way the switch points");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM audit_logs WHERE action = 'autopilot.disabled' AND entity_id = '{world.SeriesId}'")
+            .ShouldBe(0, "the flag was already false, so no switch-off happened");
     }
 
     /// <summary>
@@ -390,16 +419,18 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
-    /// Task §Failure handling: "settings invalid <b>and</b> the authorization would change → 400 first", because the
-    /// text cannot be rendered from an invalid document. The series here has no authorization at all, so a 409 would
-    /// mean the ladder ran before the validator.
+    /// Task §Failure handling row "settings invalid <b>and</b> the authorization would change → 400 first": with the
+    /// legal acceptance and the re-authentication already satisfied and <b>no</b> authorization on the series, an
+    /// invalid document answers 400 <c>autopilot_settings_invalid</c>. What that proves is the one order this fixture
+    /// can isolate: the settings rung runs before the authorization rung, because a 409
+    /// <c>autopilot_authorization_required</c> would mean the current-authorization check had been asked first.
     /// </summary>
     /// <remarks>
-    /// The task file carries two statements that meet here: §Design's ladder numbers settings as rung (2), after legal
-    /// and re-auth, while its §Failure handling table says "settings invalid and the authorization would change → 400
-    /// first", because no text can be rendered from an invalid document. The handler validates the document in
-    /// <c>Handle</c> before <c>EnableAsync</c> opens the legal re-auth rungs, so this case states the failure-table
-    /// rule (the one a client can act on) and the divergence is recorded in the hand-off, not relaxed away.
+    /// It proves nothing about the ladder's first two rungs, and does not claim to: the legal gate and the re-auth gate
+    /// are both satisfied here, so this case cannot order them against the validator. The implemented order stays the
+    /// task file's (line 86): legal → re-auth → settings → authorization → channel, and the failure-table row is the
+    /// client-visible statement of what an invalid document wins against — the consent-bearing checks that come after
+    /// it, never the two gates that come before.
     /// </remarks>
     [Fact]
     public async Task PutAutopilot_InvalidSettingsAndNoAuthorization_Answers400First()
@@ -509,7 +540,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.SeriesId, enabled: true, moved, tag);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "revoked_at IS NOT NULL"))
+        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
             .ShouldBe("true", $"a change to {field} is covered by the accepted text");
         SqlProbe.ScalarText(Database, AuthorizationColumn(world, "coalesce(revoked_reason, '')"))
             .ShouldBe("text_changed");
@@ -561,7 +592,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.SeriesId, enabled: true, moved, tag);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "revoked_at IS NOT NULL"))
+        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
             .ShouldBe("false", $"{field} is not part of the accepted text");
         Pointer(world.SeriesId).ShouldBe(
             world.AuthorizationId,
@@ -640,6 +671,15 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
                 Database,
                 $"SELECT count(*) FROM audit_logs WHERE action = 'autopilot.disabled' AND entity_id = '{world.SeriesId}'")
             .ShouldBe(1);
+
+        // Plan §4's shape for the switch-off row: `seriesId, revokedAuthorizationId, reason`.
+        SqlProbe.ScalarText(
+                Database,
+                "SELECT coalesce(data ->> 'revokedAuthorizationId', '') || '|' || coalesce(data ->> 'reason', '') "
+                + "FROM audit_logs "
+                + $"WHERE action = 'autopilot.disabled' AND entity_id = '{world.SeriesId}'")
+            .ShouldBe($"{world.AuthorizationId}|disabled", "the row names the revoked row and the wire reason");
+
         SqlProbe.ScalarText(
                 Database,
                 "SELECT coalesce(string_agg(coalesce(data ->> 'reason', ''), ','), '') FROM audit_logs "
@@ -648,6 +688,86 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
 
         // The settings still travel: a disable is an edit of the document as well as a switch.
         SettingsColumn(world.SeriesId, "tone").ShouldBe("tat");
+        StoredSettingsAre(world.SeriesId, moved)
+            .ShouldBeTrue("the whole document is saved with `enabled = false`, not only the switch");
+    }
+
+    /// <summary>
+    /// <c>enabled = false</c> on a series that is already off is a document edit, not a second switch-off: the
+    /// document is applied and a field the accepted text never names keeps the consent the owner gave while the switch
+    /// was off (plan §3.7 checks the covered fields at <em>every</em> settings write).
+    /// </summary>
+    [Fact]
+    public async Task PutAutopilot_SettingsOnlyWhileDisabled_AppliesAndKeepsTheConsent()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, authorized: true, enabled: false);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: false);
+
+        var tag = await TagAsync(client, world.SeriesId);
+        var moved = DefaultSettings() with { Tone = "tat" };
+
+        using var response = await PutAsync(client, world.SeriesId, enabled: false, moved, tag);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+
+        Enabled(world.SeriesId).ShouldBeFalse("the flag was already off and the request said off");
+        StoredSettingsAre(world.SeriesId, moved).ShouldBeTrue("the document is applied with the switch off");
+
+        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
+            .ShouldBe("false", "tone is not part of the accepted text");
+        Pointer(world.SeriesId).ShouldBe(
+            world.AuthorizationId,
+            "a non-covered edit never spends an acceptance given while the switch was off");
+
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM audit_logs WHERE action = 'autopilot.disabled' AND entity_id = '{world.SeriesId}'")
+            .ShouldBe(0, "nothing was switched off, so no switch-off row is written");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM audit_logs WHERE action = 'autopilot.authorization_revoked' "
+                + $"AND entity_id = '{world.SeriesId}'")
+            .ShouldBe(0, "no covered field moved");
+    }
+
+    /// <summary>
+    /// The document and the switch both already say what the request says, so the write changes nothing: the series
+    /// row keeps its <c>xmin</c> and the tag the client sent stays valid (README D9, and
+    /// <c>Series.DisableAutopilot</c>'s own idempotence remark). A store that re-stamped an identical document would
+    /// answer with a new tag for a no-op and make every retry look like a lost update.
+    /// </summary>
+    /// <remarks>
+    /// <c>series.autopilot_settings</c> is <c>jsonb</c>, so the stored text is PostgreSQL's rendering of the document
+    /// and never byte-equal to <c>Serialize</c>'s canonical text; this case is what proves the comparison is made
+    /// against the document rather than against its spelling.
+    /// </remarks>
+    [Fact]
+    public async Task PutAutopilot_IdenticalDisableWhileOff_KeepsTheTagAndWritesNothing()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, authorized: true, enabled: false);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: false);
+
+        var tag = await TagAsync(client, world.SeriesId);
+
+        using var response = await PutAsync(client, world.SeriesId, enabled: false, DefaultSettings(), tag);
+        var text = await response.Content.ReadAsStringAsync(Ct);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, text);
+
+        using var document = JsonDocument.Parse(text);
+        response.Headers.ETag.ShouldNotBeNull();
+        response.Headers.ETag!.ToString().ShouldBe(tag, "no column changed, so the tag is the one the client held");
+        document.RootElement.GetProperty("etag").GetString().ShouldBe(tag, "the body carries the same value");
+
+        Enabled(world.SeriesId).ShouldBeFalse();
+        Pointer(world.SeriesId).ShouldBe(world.AuthorizationId, "the document is identical, so no consent was spent");
+        SqlProbe.Count(
+                Database,
+                "SELECT count(*) FROM audit_logs "
+                + $"WHERE entity_id = '{world.SeriesId}' AND action LIKE 'autopilot.%'")
+            .ShouldBe(0, "nothing moved, so nothing is audited");
     }
 
     /// <summary>

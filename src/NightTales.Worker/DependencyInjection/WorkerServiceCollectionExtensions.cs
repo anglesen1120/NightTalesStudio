@@ -327,15 +327,10 @@ public static class WorkerServiceCollectionExtensions
         // and the minimum veto window are read from `YouTube:*` and never duplicated here (06 CR-3), and the
         // task-file key names of the older subsections are still honoured as fall-backs by
         // `ApplyPlatformValues`. An impossible run policy fails the boot, not the first tick.
-        services.AddOptions<AutopilotRunOptions>()
-            .BindConfiguration(AutopilotRunOptions.SectionName)
-            .Configure<IConfiguration>((runOptions, configuration) =>
-                AutopilotRunOptions.ApplyPlatformValues(runOptions, key => configuration[key]))
-            .Validate(
-                options => AutopilotRunOptions.Validate(options).Count == 0,
-                $"'{AutopilotRunOptions.SectionName}' must hold a run policy whose bounds are in range (see AutopilotRunOptions.Validate).")
-            .ValidateOnStart();
-        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<AutopilotRunOptions>>().Value);
+        //
+        // 02.8.3-T2: the binding itself moved to `AddAutopilotRunOptions` (NightTales.Infrastructure), because the
+        // Api resolves the same plain value for its next-slot preview and two bindings could drift.
+        services.AddAutopilotRunOptions();
 
         // The Application half: the calculator, the planner, the orchestrator, the instruments and every
         // `IAutopilotStepHandler` found in that assembly (no step needs a DI edit here).

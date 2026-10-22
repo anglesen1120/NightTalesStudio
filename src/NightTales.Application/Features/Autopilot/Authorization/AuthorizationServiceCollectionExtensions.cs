@@ -1,7 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using NightTales.Application.Abstractions.Outbox;
-using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Domain.Series.Events;
 
 namespace NightTales.Application.Features.Autopilot.Authorization;
@@ -19,8 +17,15 @@ namespace NightTales.Application.Features.Autopilot.Authorization;
 /// <para>
 /// <b>What is registered elsewhere.</b> The commands that accept and revoke an authorization and the queries that
 /// show it are Mediator handlers, discovered from this assembly by the pipeline the host composes; nothing here
-/// calls them. The one delivery this extension does register is the outbox consumer of
-/// <see cref="AutopilotAuthorizationAccepted"/>, because it belongs to the same accept flow (S71-7).
+/// calls them.
+/// </para>
+/// <para>
+/// <b>Nothing here needs the Worker.</b> This extension is called by <c>AddNightTalesApplication</c>, i.e. by
+/// <em>both</em> hosts, so a descriptor it added has to be constructible in the Api as well. The outbox consumer of
+/// <see cref="AutopilotAuthorizationAccepted"/> (S71-7) is not: it drives <c>IAutopilotRunOrchestrator</c>, which only
+/// <c>AddAutopilotOrchestration</c> registers, so it is registered by the Worker-only
+/// <c>AddAutopilotOutboxHandlers</c> instead — a Worker-only port never hangs off a shared concrete descriptor
+/// (02.8.3-T2 QA D11).
 /// </para>
 /// </remarks>
 public static class AuthorizationServiceCollectionExtensions
@@ -33,10 +38,6 @@ public static class AuthorizationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<AuthorizationTextRenderer>();
-
-        // S71-7: an acceptance does not advance a run by itself. The aggregate raises the event and this consumer
-        // routes it to T1's orchestrator after the accepting transaction has committed.
-        services.AddOutboxHandler<AutopilotAuthorizationAccepted, AutopilotAuthorizationAcceptedHandler>();
 
         return services;
     }

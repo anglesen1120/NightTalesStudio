@@ -97,9 +97,10 @@ public static class ApplicationServiceCollectionExtensions
             Features.Autopilot.Orchestration.Steps.IChannelAuditPolicy,
             Features.Autopilot.Orchestration.Steps.PlatformChannelAuditPolicy>();
 
-        // The run policy is consumed through IOptions<AutopilotRunOptions> only: `AddOptions()` (already composed by
-        // every host) supplies the open generic, so a host that binds no `Autopilot` section — the Api — resolves the
-        // documented default values, and the Worker's bound section stays its own.
+        // The run policy is a plain value, not IOptions: Application may not reference the options binder, so each
+        // host binds `Autopilot:Run` through AddAutopilotRunOptions (NightTales.Infrastructure) and registers the
+        // bound instance as itself — the same split as the gate options above and as StoryJobOptions. The Api binds
+        // it too, because the autopilot page's `nextSlots` preview reads the same lead times the planner uses.
 
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();

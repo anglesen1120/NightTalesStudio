@@ -53,6 +53,7 @@ public sealed record AcceptAutopilotAuthorizationCommand(Guid Id, string TextVer
             EntityId: Id,
             Summary: new Dictionary<string, object>(StringComparer.Ordinal)
             {
+                [AcceptAutopilotAuthorizationAudit.SeriesId] = Id.ToString(),
                 [AcceptAutopilotAuthorizationAudit.AuthorizationId] = authorizationId.ToString(),
                 [AcceptAutopilotAuthorizationAudit.Version] = AcceptedVersion.ToString(CultureInfo.InvariantCulture),
                 [AcceptAutopilotAuthorizationAudit.TextVersion] = TextVersion,
@@ -62,13 +63,23 @@ public sealed record AcceptAutopilotAuthorizationCommand(Guid Id, string TextVer
 }
 
 /// <summary>
-/// The <c>data</c> keys of <c>autopilot.authorization_accepted</c> (plan §4; D13: the version and the digest, never
-/// the text).
+/// The <c>data</c> keys of <c>autopilot.authorization_accepted</c> (plan §4: <c>seriesId, authorizationId, version,
+/// textVersion, textHash</c>; D13: the version and the digest, never the text).
 /// </summary>
+/// <remarks>
+/// The four autopilot actions spell their keys the same way, so a query over <c>audit_logs.data</c> can join them on
+/// <see cref="SeriesId"/> without special-casing this one row (02.8.3-T2 QA D10). <see cref="Version"/> is the 1-based
+/// revision plan §4 names <c>version</c> — the <c>authorizationVersion</c> spelling belongs to
+/// <c>autopilot.enabled</c>'s row (<c>PutAutopilotAuditKeys</c>), where the version qualifies the pointer rather than
+/// the created row.
+/// </remarks>
 public static class AcceptAutopilotAuthorizationAudit
 {
     /// <summary>The entity kind the row names.</summary>
     public const string EntityType = "series";
+
+    /// <summary>The <c>data</c> member naming the series the acceptance belongs to (plan §4).</summary>
+    public const string SeriesId = "seriesId";
 
     /// <summary>The <c>data</c> member naming the created row.</summary>
     public const string AuthorizationId = "authorizationId";

@@ -68,11 +68,13 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
         LogRouted(domainEvent.SeriesId, domainEvent.AuthorizationId, domainEvent.Version, open.Count);
     }
 
+    // 02.8.3-T2: 6695-6699 is the block this task takes (see PutAutopilotHandler): 6347 already belonged to
+    // `ProposeBibleUpdateHandler.LogTrueCrimeAutopilot`.
     /// <summary>Logs what one delivery routed.</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="authorizationId">The accepted row.</param>
     /// <param name="version">Its version.</param>
     /// <param name="runs">How many open runs were advanced.</param>
-    [LoggerMessage(EventId = 6347, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; advanced {runs} open run(s).")]
+    [LoggerMessage(EventId = 6697, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; advanced {runs} open run(s).")]
     private partial void LogRouted(Guid seriesId, Guid authorizationId, int version, int runs);
 }

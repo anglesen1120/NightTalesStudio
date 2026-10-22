@@ -151,6 +151,10 @@ try
     // has an in-code default — `DryRun` is true, so the Api never auto-approves until the owner flips it — and an
     // impossible value fails the boot instead of a gate. The Worker binds the same section for the gate it runs.
     builder.Services.AddAutopilotGatesOptions();
+    // 02.8.3-T2: the run policy (`Autopilot:Run`) the autopilot page's `nextSlots` preview computes from. It is the
+    // same binding the Worker plans with, so the preview cannot name a slot the planner would not use; the Api's
+    // page handlers take it as a plain value, because Application may not reference the options binder.
+    builder.Services.AddAutopilotRunOptions();
     builder.Services.AddOptions<AssetRetentionOptions>()
         .BindConfiguration(AssetRetentionOptions.SectionName)
         .ValidateOnStart();

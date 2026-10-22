@@ -2,7 +2,6 @@ using System.Text.Json;
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Authorization;
@@ -40,20 +39,20 @@ namespace NightTales.Application.Features.Autopilot.Queries.GetAutopilot;
 /// </remarks>
 /// <param name="db">The tenant-filtered read model.</param>
 /// <param name="slots">The shipped slot planner of plan §3.2 (never re-implemented here).</param>
-/// <param name="options">The configured lead times and estimates the timing formula reads.</param>
+/// <param name="options">The run policy the timing formula reads, as the plain value each host registers from its
+/// bound <c>Autopilot:Run</c> section (<c>AddAutopilotRunOptions</c>): Application may not reference the options
+/// binder, and the Api binds the same section as the Worker, so the preview and the planning agree.</param>
 /// <param name="auditPolicy">The channel's YouTube audit state, which decides the pre-audit note.</param>
 /// <param name="renderer">The single render point of the authorization text.</param>
 /// <param name="gateOptions">The bound <c>Autopilot:Gates</c> section, which owns the dry-run switch.</param>
 /// <param name="clock">The clock the "future" of a slot and the text's freshness are read from.</param>
-/// <param name="options">The run policy the timing formula reads, through <see cref="IOptions{T}"/>: the Api binds no
-/// <c>Autopilot</c> section, so it resolves to the documented defaults, and the Worker's bound section is its own.</param>
 public sealed class GetAutopilotHandler(
     IAppDbContext db,
     ISlotCalculator slots,
-    IOptions<AutopilotRunOptions> options,
+    AutopilotRunOptions options,
     IChannelAuditPolicy auditPolicy,
     AuthorizationTextRenderer renderer,
-    IOptions<AutopilotGateOptions> gateOptions,
+    AutopilotGateOptions gateOptions,
     IClock clock) : IQueryHandler<GetAutopilotQuery, ErrorOr<AutopilotDto>>
 {
     /// <summary>How many future slots the page previews (task §DTOs: `nextSlots`).</summary>
@@ -163,7 +162,7 @@ public sealed class GetAutopilotHandler(
             channelRef,
             // The gate profile's dry-run switch is the bound `Autopilot:Gates` option (02.8.2); it is a platform
             // setting, not a per-series one, so it is read here rather than stored on the series.
-            GatesDryRun: gateOptions.Value.DryRun,
+            GatesDryRun: gateOptions.DryRun,
             // No calibration status type exists yet (02.8.2-T3's `GateCalibrationStatus` is not in the codebase; the
             // run page omits its sibling `calibrationReport` for the same reason), so the remaining count has no true
             // source and is answered as 0 — a recorded gap, not a count of `gate_results`.
@@ -215,7 +214,7 @@ public sealed class GetAutopilotHandler(
             bySlot[run.SlotAt] = JsonNamingPolicy.SnakeCaseLower.ConvertName(run.State.ToString());
         }
 
-        var timingOptions = options.Value.ToTimingOptions();
+        var timingOptions = options.ToTimingOptions();
         var preview = new List<NextSlotDto>(PreviewedSlots);
         foreach (var slotAt in instants.Take(PreviewedSlots))
         {

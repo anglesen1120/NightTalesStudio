@@ -47,12 +47,14 @@ namespace NightTales.Api.Endpoints;
 /// (09 README D10).
 /// </para>
 /// <para>
-/// <b>The two bodies are read here and not bound.</b> <c>PUT</c> carries <c>{ enabled, settings }</c> where
+/// <b>The three bodies are read here and not bound.</b> <c>PUT</c> carries <c>{ enabled, settings }</c> where
 /// <c>settings</c> is the owner's document, and the command must receive that document <em>verbatim</em> (its key order
 /// included: the domain <c>AutopilotSettingsValidator</c> validates it and the covered-field comparator later diffs it), so
-/// the endpoint reads the capped bytes and passes <c>settings.GetRawText()</c> on. The 16 KiB cap is S71-48's, declared
-/// twice — as endpoint metadata for the middleware and Kestrel, and in the bounded read for a streamed body that grows
-/// past it — which is what makes it hold in a test host too.
+/// the endpoint reads the capped bytes and passes <c>settings.GetRawText()</c> on. The <c>POST …/authorization</c> pair and
+/// the optional <c>POST …/pause</c> note are read the same way, so one cap covers every body of the group. The 16 KiB cap
+/// is S71-48's, declared twice — as endpoint metadata for the middleware and Kestrel, and in the bounded read for a
+/// streamed body that grows past it — which is what makes it hold in a test host too (QA D3: the accept route was the
+/// one body left to the binder).
 /// </para>
 /// <para>
 /// No route carries <c>RequireIdempotencyKey()</c>: none of them spends money or calls out, and the <c>If-Match</c> tag is
@@ -95,6 +97,12 @@ public static class AutopilotEndpoints
     /// <see cref="StoryEndpoints"/> and <c>VideoReviewEndpoints</c>).
     /// </summary>
     private const string JsonBodyDescription = "The request body must be a JSON object.";
+
+    /// <summary>The wire name of the template version in the <c>authorization</c> body (D-6).</summary>
+    private const string AcceptTextVersionMember = "textVersion";
+
+    /// <summary>The wire name of the accepted digest in the <c>authorization</c> body (D-6).</summary>
+    private const string AcceptTextHashMember = "textHash";
 
     /// <summary>
     /// The feature flag that gates every route (06 README D9); the same key the publishing routes carry, declared once
@@ -141,6 +149,7 @@ public static class AutopilotEndpoints
         autopilot.MapPost("/authorization", AcceptAsync)
             .WithMetadata(new RequestSizeLimitAttribute(MaxBodyBytes))
             .RequireFeature(FeatureKey)
+            .Accepts<AcceptAutopilotAuthorizationRequest>("application/json")
             .Produces<AcceptedAuthorizationDto>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
@@ -260,29 +269,49 @@ public static class AutopilotEndpoints
     /// <summary>
     /// <c>POST /api/v1/series/{id}/autopilot/authorization</c>: 201 with <c>{ version, acceptedAt }</c>, or the documented
     /// 400 <c>autopilot_settings_invalid</c> / 404 / 409 <c>autopilot_authorization_required</c> (with
-    /// <c>errors.textHash = stale_text</c> or <c>errors.textVersion</c>).
+    /// <c>errors.textHash = stale_text</c> or <c>errors.textVersion</c>) / 413 <c>payload_too_large</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The body is D-6's pair only — <c>{ textVersion, textHash }</c> — and the handler re-renders both locales from the
     /// <em>stored</em> settings, so a page rendered before a settings change cannot be accepted (task §Failure handling).
+    /// </para>
+    /// <para>
+    /// <b>The body is read under the route's cap, not bound</b> (QA D3): the cap is S71-48's, and the bounded read is
+    /// what enforces it in a host whose server does not (an in-process <c>TestServer</c> ignores the endpoint's
+    /// <c>RequestSizeLimit</c> metadata) — the same doubling the <c>PUT</c> branch makes. An unreadable body is therefore
+    /// answered before the command's ladder (404 → legal → re-auth), exactly as on the settings route.
+    /// </para>
+    /// <para>
     /// The response republishes the series tag as the header: accepting moves the series' pointer, so the client's next
     /// <c>If-Match</c> must come from here rather than from the page it read before.
+    /// </para>
     /// </remarks>
     private static async Task<IResult> AcceptAsync(
         Guid id,
-        [FromBody] AcceptAutopilotAuthorizationRequest? request,
         ISender sender,
         PostCommitETagReader etags,
         HttpContext http,
         CancellationToken ct)
     {
+        var raw = await BoundedBodyReader.ReadAsync(http, MaxBodyBytes, ct).ConfigureAwait(false);
+        if (raw is null)
+        {
+            return ProblemDetailsWriter.ToProblem([ProblemDetailsWriter.PayloadTooLargeError], http);
+        }
+
+        if (!http.Request.HasJsonContentType())
+        {
+            return ProblemDetailsWriter.ToProblem([Errors.ValidationFailed("body", JsonBodyDescription)], http);
+        }
+
+        if (TryReadAcceptBody(raw.Value, out var textVersion, out var textHash) is { } bodyError)
+        {
+            return ProblemDetailsWriter.ToProblem([bodyError], http);
+        }
+
         var result = await sender
-            .Send(
-                new AcceptAutopilotAuthorizationCommand(
-                    id,
-                    request?.TextVersion ?? string.Empty,
-                    request?.TextHash ?? string.Empty),
-                ct)
+            .Send(new AcceptAutopilotAuthorizationCommand(id, textVersion, textHash), ct)
             .ConfigureAwait(false);
 
         if (result.IsError)
@@ -516,6 +545,84 @@ public static class AutopilotEndpoints
         }
     }
 
+    /// <summary>
+    /// Reads the <c>authorization</c> body: D-6's pair <c>{ textVersion, textHash }</c>, both strings.
+    /// </summary>
+    /// <remarks>
+    /// The answer for an absent or <c>null</c> member is the empty string, which is what the former binder produced and
+    /// what the handler's render comparison refuses as 409 <c>stale_version</c> — not a 400, because a pair the client
+    /// failed to send is a stale page, not a malformed request. A member of another JSON type is a 400 under its own
+    /// wire name, exactly as the binder's conversion failure was.
+    /// </remarks>
+    /// <param name="raw">The bounded bytes of the body.</param>
+    /// <param name="textVersion">The template version the page displayed.</param>
+    /// <param name="textHash">The digest the owner read and accepted.</param>
+    /// <returns>The 400 to answer, or <see langword="null"/> when the body is usable.</returns>
+    private static Error? TryReadAcceptBody(ReadOnlyMemory<byte> raw, out string textVersion, out string textHash)
+    {
+        textVersion = string.Empty;
+        textHash = string.Empty;
+
+        if (raw.IsEmpty)
+        {
+            return Errors.ValidationFailed("body", "The body must be an object with `textVersion` and `textHash`.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var body = document.RootElement;
+
+            if (body.ValueKind != JsonValueKind.Object)
+            {
+                return Errors.ValidationFailed("body", "The body must be an object with `textVersion` and `textHash`.");
+            }
+
+            if (ReadMember(body, AcceptTextVersionMember, out var version) is { } versionError)
+            {
+                return versionError;
+            }
+
+            if (ReadMember(body, AcceptTextHashMember, out var hash) is { } hashError)
+            {
+                return hashError;
+            }
+
+            textVersion = version;
+            textHash = hash;
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return Errors.ValidationFailed("body", "The body is not valid JSON.");
+        }
+    }
+
+    /// <summary>Reads one optional string member of a body: absent or <c>null</c> is the empty string.</summary>
+    /// <param name="body">The body's root object.</param>
+    /// <param name="member">The wire name.</param>
+    /// <param name="value">The member's value, or the empty string.</param>
+    /// <returns>The 400 to answer when the member is present with another type, or <see langword="null"/>.</returns>
+    private static Error? ReadMember(JsonElement body, string member, out string value)
+    {
+        value = string.Empty;
+
+        if (!body.TryGetProperty(member, out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (element.ValueKind != JsonValueKind.String)
+        {
+            return Errors.ValidationFailed(member, $"`{member}` must be a string.");
+        }
+
+        value = element.GetString() ?? string.Empty;
+
+        return null;
+    }
+
     /// <summary>Whether the body is the JSON <c>null</c> literal, which a "no body" client sometimes sends.</summary>
     private static bool IsNullLiteral(ReadOnlySpan<byte> raw) =>
         raw.Trim(" \t\r\n"u8).SequenceEqual("null"u8);
@@ -546,6 +653,12 @@ public sealed record PutAutopilotRequest(bool Enabled, JsonElement Settings);
 /// The <c>POST /api/v1/series/{id}/autopilot/authorization</c> body (D-6): the version and the hash of the text the
 /// owner read. The server re-renders both locales from the stored settings and accepts only an exact hash.
 /// </summary>
+/// <remarks>
+/// Declared for the OpenAPI document only, exactly as <see cref="PutAutopilotRequest"/> is: the endpoint reads the
+/// capped bytes (<c>BoundedBodyReader</c>, QA D3) instead of binding this record, so the 16 KiB cap holds in a host
+/// whose server does not enforce the route's <c>RequestSizeLimit</c>, and the route names the body with
+/// <c>.Accepts&lt;AcceptAutopilotAuthorizationRequest&gt;</c> so the generated document still describes what it accepts.
+/// </remarks>
 /// <param name="TextVersion">The template version the page rendered, e.g. <c>autopilot-auth.v1</c>.</param>
 /// <param name="TextHash">The lowercase hex SHA-256 of the rendered text the owner accepted.</param>
 public sealed record AcceptAutopilotAuthorizationRequest(string TextVersion, string TextHash);

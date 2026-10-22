@@ -1,5 +1,6 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 
 namespace NightTales.Application.Features.Autopilot.Commands.PauseAutopilot;
 
@@ -22,6 +23,7 @@ namespace NightTales.Application.Features.Autopilot.Commands.PauseAutopilot;
 /// </remarks>
 /// <param name="SeriesId">The series to hold.</param>
 /// <param name="Note">The owner's optional note; accepted and not stored (see the remarks).</param>
+[NotAudited("02.8.3-T4 owns the autopilot.paused row (its trigger ladder supplies pauseReason/runId); this route only sets the series' pause fields, and D8 keeps the note out of audit.")]
 public sealed record PauseAutopilotCommand(
     Guid SeriesId,
     string? Note) : ICommand<ErrorOr<Success>>;

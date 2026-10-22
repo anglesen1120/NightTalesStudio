@@ -27,7 +27,9 @@ namespace NightTales.Infrastructure.Persistence.UnitOfWork;
 /// <c>service_unavailable</c> (503), because a change is never recorded without its audit row
 /// (09.3.6-T1 failure handling). Every mapping rolls the transaction back first. A partial unique index a
 /// command's own pre-check already covers — 02's active run, 09.6.1's render job, 06's one live connection per
-/// channel — keeps the conflict status its failure table fixes instead of becoming a 500.
+/// channel — keeps the conflict status its failure table fixes instead of becoming a 500, and 02.8.3-T2's
+/// <c>(series_id, version)</c> index on <c>series_autopilot_authorizations</c> does the same for two accepts of one
+/// series that both read the same maximum.
 /// </para>
 /// </remarks>
 public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
@@ -81,6 +83,14 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     /// rule, which is what a second account connecting the same channel loses to.
     /// </summary>
     private const string ChannelAccountIndex = "ux_channel_connections_account";
+
+    /// <summary>
+    /// The unique index that makes <c>series_autopilot_authorizations.version</c> monotonic per series
+    /// (<c>(series_id, version)</c>, 02.8.3 plan §3.7). The accept handler computes the next version as
+    /// <c>max + 1</c>, so two accepts of one series that both read the same maximum collide here; the index is the
+    /// backstop that keeps a double-click or a two-tab submit from writing two revisions with one number.
+    /// </summary>
+    private const string AutopilotAuthorizationVersionIndex = "ix_series_autopilot_authorizations_series_id_version";
 
     /// <summary>
     /// The stable description of a refused live connection (06.1.2-T2): the same 409
@@ -184,6 +194,18 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
                 code: ErrorCodes.ChannelAlreadyConnected,
                 description: ChannelAlreadyConnectedDescription);
         }
+        catch (DbUpdateException exception) when (IsAutopilotAuthorizationVersionViolation(exception))
+        {
+            // 02.8.3-T2 failure handling (QA D1): two accepts of one series both read the same
+            // `max(version)` and both insert `max + 1`; the unique index refuses the loser at this save, so it
+            // gets the concurrency 409 the render-job mapping answers for the same kind of race — never a raw
+            // 500 from the provider exception. Its retry re-reads the winner's committed revision and takes the
+            // accept handler's replay branch, which answers the winner's acceptance instead of a second
+            // version (the documented two-tab rule of task §Failure handling).
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return Error.Conflict(code: ErrorCodes.ConcurrencyConflict, description: ConcurrencyDescription);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -206,6 +228,14 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
     private static bool IsChannelAlreadyConnectedViolation(Exception exception) =>
         ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ChannelAccountIndex };
+
+    /// <summary>
+    /// Whether the save was refused by the autopilot authorization's <c>(series_id, version)</c> unique index
+    /// (02.8.3-T2). The accept handler's <c>max + 1</c> is a pre-check, not a lock, so this is the same lost race
+    /// the active-render-job mapping covers for its own table.
+    /// </summary>
+    private static bool IsAutopilotAuthorizationVersionViolation(Exception exception) =>
+        ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: AutopilotAuthorizationVersionIndex };
 
     /// <summary>
     /// The 409 of a refused active run, named for the kind of run the request was queueing: the index is

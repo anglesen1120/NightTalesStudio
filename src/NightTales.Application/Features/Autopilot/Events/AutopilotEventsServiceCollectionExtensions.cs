@@ -6,6 +6,7 @@ using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Publishing;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Research.Events;
+using NightTales.Domain.Series.Events;
 using NightTales.Domain.Stories.Events;
 using NightTales.Domain.Stories.Generation.Events;
 
@@ -32,12 +33,21 @@ namespace NightTales.Application.Features.Autopilot.Events;
 /// are registered by <c>AddAutopilotOrchestration</c>, which owns the handler scan: a port lives with the code that
 /// resolves it.
 /// </para>
+/// <para>
+/// <b>Why this extension is the home of the accepted-event consumer.</b> This is the Worker-only side of the
+/// autopilot composition (<c>AddAutopilotOrchestration</c> and this call are made by the Worker host alone), and
+/// <see cref="AutopilotAuthorizationAcceptedHandler"/> drives <c>IAutopilotRunOrchestrator</c>, which only that
+/// Worker-only extension registers. Registering it from a shared extension — <c>AddAutopilotAuthorization</c> is
+/// called by <c>AddNightTalesApplication</c>, i.e. by the Api too — would give the Api a concrete descriptor it can
+/// never construct, so the Api's Development build (<c>ValidateOnBuild</c>) would fail at start-up (02.8.3-T2 QA
+/// D11).
+/// </para>
 /// </remarks>
 /// <param name="services">The host's service collection.</param>
 /// <returns>The same collection, for chaining.</returns>
 public static class AutopilotEventsServiceCollectionExtensions
 {
-    /// <summary>Registers the run locator and every step-trigger handler.</summary>
+    /// <summary>Registers the run locator, every step-trigger handler and the accepted-event consumer.</summary>
     /// <param name="services">The host's service collection.</param>
     /// <returns>The same collection, for chaining.</returns>
     public static IServiceCollection AddAutopilotOutboxHandlers(this IServiceCollection services)
@@ -45,6 +55,11 @@ public static class AutopilotEventsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<IAutopilotRunLocator, AutopilotRunLocator>();
+
+        // S71-7: an acceptance does not advance a run by itself. The aggregate raises the event and this consumer
+        // routes it to T1's orchestrator after the accepting transaction has committed. It lives here, not beside the
+        // renderer, because the orchestrator is this extension's (see the remarks).
+        services.AddOutboxHandler<AutopilotAuthorizationAccepted, AutopilotAuthorizationAcceptedHandler>();
 
         services.AddOutboxHandler<StoryGenerated, StoryGeneratedHandler>();
         services.AddOutboxHandler<StoryGenerationFailed, StoryGenerationFailedHandler>();
