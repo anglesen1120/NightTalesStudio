@@ -127,11 +127,22 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
                 $"SELECT count(*) FROM outbox_messages WHERE type = '{AcceptedEventType}' "
                 + $"AND user_id = '{world.User.Id}'")
             .ShouldBe(1, "the acceptance is an outbox event so a waiting run can leave its state (S71-7)");
-        SqlProbe.ScalarText(
-                Database,
-                "SELECT payload::text FROM outbox_messages "
-                + $"WHERE type = '{AcceptedEventType}' AND user_id = '{world.User.Id}'")
-            .ShouldContain(rendered.Hash, Case.Sensitive, "the event carries the accepted digest");
+        // D-8 / 09 README BD16: the event is ids and the version only. The acceptance is observable on the bus, while
+        // the sentence and its digest stay with the rows (the digest lives in the audit entry, never in the payload).
+        var payload = SqlProbe.ScalarText(
+            Database,
+            "SELECT payload::text FROM outbox_messages "
+            + $"WHERE type = '{AcceptedEventType}' AND user_id = '{world.User.Id}'");
+        payload.ShouldContain(
+            $"\"authorizationId\": \"{authorizationId}\"",
+            Case.Sensitive,
+            "the event names the row it accepted");
+        payload.ShouldContain("\"version\": 1", Case.Sensitive, "and the revision it created");
+        payload.ShouldNotContain(rendered.Hash, Case.Sensitive, "the digest is never copied onto the bus");
+        payload.ShouldNotContain(
+            rendered.Text[..40],
+            Case.Sensitive,
+            "the accepted sentence never leaves the owner's page");
 
         SqlProbe.Count(
                 Database,
@@ -419,7 +430,8 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
     public async Task RevokeAuthorization_SetsRevokedAtAndReason()
     {
         var clock = new FakeClock(Start);
-        var world = await SeedAsync(clock, enabled: true);
+        // The case is about the row a revoke spends, so the series carries the live revision it revokes.
+        var world = await SeedAsync(clock, enabled: true, authorized: true);
         using var factory = world.Factory;
         using var client = Owner(world, reauthenticated: false);
 
@@ -461,7 +473,8 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
     public async Task RevokeAuthorization_WithNothingCurrent_IsIdempotent()
     {
         var clock = new FakeClock(Start);
-        var world = await SeedAsync(clock, enabled: true);
+        // The documented window: the first DELETE spends a live revision, the retried one finds nothing current.
+        var world = await SeedAsync(clock, enabled: true, authorized: true);
         using var factory = world.Factory;
         using var client = Owner(world, reauthenticated: false);
 
@@ -507,7 +520,10 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
     public async Task AuditRows_NameIdsAndDigestsButNeverTheText()
     {
         var clock = new FakeClock(Start);
-        var world = await SeedAsync(clock, enabled: true);
+        // The three audited commands are enable → accept → revoke, so the series starts off with the live revision
+        // the enable rests on: with the switch already on the first request would be a document edit and write no
+        // `autopilot.enabled` row.
+        var world = await SeedAsync(clock, enabled: false, authorized: true);
         using var factory = world.Factory;
         using var client = Owner(world, reauthenticated: true);
         await AcceptLegalAsync(factory, client);
@@ -921,9 +937,19 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
     /// <param name="world">The seeded world.</param>
     /// <param name="reauthenticated">Whether the client carries a recently re-authenticated family.</param>
     /// <returns>The client the test sends through.</returns>
-    private static HttpClient Owner(World world, bool reauthenticated) => reauthenticated
-        ? world.Factory.ClientFor(world.User.Id, world.User.Role, sessionId: world.FamilyId)
-        : world.Factory.ClientFor(world.User.Id, world.User.Role);
+    private static HttpClient Owner(World world, bool reauthenticated)
+    {
+        var client = reauthenticated
+            ? world.Factory.ClientFor(world.User.Id, world.User.Role, sessionId: world.FamilyId)
+            : world.Factory.ClientFor(world.User.Id, world.User.Role);
+
+        // The legal acceptance the accept ladder's gate (0) posts is a browser form post: its route carries
+        // RequireSameOriginFilter, and a browser always sends `Origin`. The Publishing harnesses do the same
+        // (ConnectChannelHarness), so this is the client shape those routes are written for.
+        client.DefaultRequestHeaders.Add(AuthTestFlow.OriginHeaderName, AuthTestFlow.Origin);
+
+        return client;
+    }
 
     private static HttpRequestMessage Request(string method, string url, string? body = null, string? ifMatch = null)
     {

@@ -189,10 +189,18 @@ public sealed class GetAutopilotHandler(
             return [];
         }
 
+        // The planner's own horizon (plan §3.2: `buffer_days + one cadence interval`) only has to reach the NEXT slot,
+        // which a weekly cadence can hold in a single week. The preview owes three, so it asks for as many intervals as
+        // it shows: three Mon/Thu instants span at most two weekly gaps after the first, and the first is always inside
+        // one. Never narrower than the planner's horizon, so a wide cadence keeps its buffer.
+        var horizonDays = Math.Max(
+            AutopilotSettingsValidator.HorizonDays(settings),
+            PreviewedSlots * AutopilotSettingsValidator.CadenceIntervalDays(settings.Cadence));
+
         var instants = slots.NextSlots(
             settings.Cadence,
             now,
-            AutopilotSettingsValidator.HorizonDays(settings),
+            horizonDays,
             settings.DailyCap);
 
         if (instants.Count == 0)

@@ -109,10 +109,18 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         authorizationText.ShouldContain("Asia/Ho_Chi_Minh", Case.Sensitive);
         authorizationText.ShouldContain(ChannelConnectionBuilder.DefaultDisplayName, Case.Sensitive);
         authorizationText.ShouldContain("ghost stories", Case.Sensitive);
+        // The note's wording belongs to the renderer (AuthorizationTextRendererTests pins it); what the contract
+        // fixes is the fact it states (06 README D11 / 08 README K7): while the audit is pending, uploads stay
+        // private until it is approved. `privacy` is public in the seeded document, so "private" can only come
+        // from the note.
         authorizationText.ShouldContain(
-            "private until the audit",
+            "audit",
             Case.Insensitive,
             "YouTube:AuditStatus defaults to pending, so the pre-audit note is part of this text");
+        authorizationText.ShouldContain(
+            "private",
+            Case.Insensitive,
+            "the pending-audit note says the uploads stay private until the audit is approved");
         authorizationText.ShouldNotContain("{{", Case.Sensitive, "every placeholder is substituted");
 
         var textHash = rendered.GetProperty("textHash").GetString()!;
@@ -347,7 +355,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
 
         // Off already, so nothing was switched off: no `autopilot.disabled` row. `daily_cap` is covered by the
         // accepted text, so the consent is revoked through the comparator with its own reason.
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "coalesce(revoked_reason, '')"))
+        AuthorizationColumn(world, "coalesce(revoked_reason, '')")
             .ShouldBe("text_changed", "a covered edit spends the acceptance whichever way the switch points");
         SqlProbe.Count(
                 Database,
@@ -540,9 +548,9 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.SeriesId, enabled: true, moved, tag);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
+        AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text")
             .ShouldBe("true", $"a change to {field} is covered by the accepted text");
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "coalesce(revoked_reason, '')"))
+        AuthorizationColumn(world, "coalesce(revoked_reason, '')")
             .ShouldBe("text_changed");
         Pointer(world.SeriesId).ShouldBeNull("a revoked revision is no longer the series' current one");
 
@@ -592,7 +600,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.SeriesId, enabled: true, moved, tag);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
+        AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text")
             .ShouldBe("false", $"{field} is not part of the accepted text");
         Pointer(world.SeriesId).ShouldBe(
             world.AuthorizationId,
@@ -635,7 +643,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.SeriesId, enabled: true, accepted, tag);
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "coalesce(revoked_reason, '')"))
+        AuthorizationColumn(world, "coalesce(revoked_reason, '')")
             .ShouldBe("text_changed", "the pre-audit note is part of the accepted text (D-7)");
         Pointer(world.SeriesId).ShouldBeNull();
     }
@@ -714,7 +722,7 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
         Enabled(world.SeriesId).ShouldBeFalse("the flag was already off and the request said off");
         StoredSettingsAre(world.SeriesId, moved).ShouldBeTrue("the document is applied with the switch off");
 
-        SqlProbe.ScalarText(Database, AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text"))
+        AuthorizationColumn(world, "(revoked_at IS NOT NULL)::text")
             .ShouldBe("false", "tone is not part of the accepted text");
         Pointer(world.SeriesId).ShouldBe(
             world.AuthorizationId,
@@ -896,9 +904,19 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
     /// <param name="world">The seeded world.</param>
     /// <param name="reauthenticated">Whether the client carries a recently re-authenticated family.</param>
     /// <returns>The client the test sends through.</returns>
-    private static HttpClient Owner(World world, bool reauthenticated) => reauthenticated
-        ? world.Factory.ClientFor(world.User.Id, world.User.Role, sessionId: world.FamilyId)
-        : world.Factory.ClientFor(world.User.Id, world.User.Role);
+    private static HttpClient Owner(World world, bool reauthenticated)
+    {
+        var client = reauthenticated
+            ? world.Factory.ClientFor(world.User.Id, world.User.Role, sessionId: world.FamilyId)
+            : world.Factory.ClientFor(world.User.Id, world.User.Role);
+
+        // The legal acceptance the enable ladder's gate (0) posts is a browser form post: its route carries
+        // RequireSameOriginFilter, and a browser always sends `Origin`. The Publishing harnesses do the same
+        // (ConnectChannelHarness), so this is the client shape those routes are written for.
+        client.DefaultRequestHeaders.Add(AuthTestFlow.OriginHeaderName, AuthTestFlow.Origin);
+
+        return client;
+    }
 
     private static HttpRequestMessage Request(string method, string url, string? body = null, string? ifMatch = null)
     {

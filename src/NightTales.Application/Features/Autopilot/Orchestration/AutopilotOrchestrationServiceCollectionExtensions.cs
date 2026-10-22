@@ -50,7 +50,10 @@ public static class AutopilotOrchestrationServiceCollectionExtensions
         // cannot see them, and none has another registration in the tree: `PublicationCreatedStep`,
         // `ScheduledStep` and `VetoWindowStep` take `IAutopilotStepReader` (and the veto step the consent gate)
         // in their only constructor, so leaving these out fails the Worker boot in `AutopilotStartupCheck`.
-        services.TryAddScoped<Steps.AutopilotPublicationCreator>();
+        // Through `ActivatorUtilities`: the plain container ignores `[ActivatorUtilitiesConstructor]` and finds the
+        // two public seam constructors ambiguous once `IChannelAuditPolicy` is registered.
+        services.TryAddScoped(serviceProvider =>
+            ActivatorUtilities.CreateInstance<Steps.AutopilotPublicationCreator>(serviceProvider));
         services.TryAddScoped<Steps.IAutopilotStepReader, Steps.EfAutopilotStepReader>();
         services.TryAddScoped<Steps.IAutopilotConsentGate, Steps.PublicationConsentGate>();
 

@@ -45,7 +45,7 @@ public sealed class AutopilotVideoGateStepTests(TestDatabase database) : Integra
 
         result.Kind.ShouldBe(StepResultKind.Stopped);
         result.Code.ShouldBe(AutopilotStepCodes.GateFailed);
-        run.Run.State.ShouldBe(AutopilotRunState.Failed);
+        run.Run.State.ShouldBe(AutopilotRunState.GateFailed);
         run.Run.Outcome.ShouldBe(AutopilotRunOutcome.GateFailed);
         gate.Calls.ShouldBe(1);
         sender.Sent.ShouldBeEmpty("a failed cut is never published");
@@ -135,7 +135,8 @@ public sealed class AutopilotVideoGateStepTests(TestDatabase database) : Integra
 
         result.Kind.ShouldBe(StepResultKind.Stopped);
         result.Code.ShouldBe(AutopilotStepCodes.GateFailed);
-        run.Run.State.ShouldBe(AutopilotRunState.Failed);
+        run.Run.State.ShouldBe(AutopilotRunState.GateFailed);
+        run.Run.Outcome.ShouldBe(AutopilotRunOutcome.GateFailed);
         gate.Calls.ShouldBe(0, "the stored verdict is the gate's own write; re-evaluating would notify the owner twice");
         sender.Sent.ShouldBeEmpty();
     }

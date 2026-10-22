@@ -216,13 +216,43 @@ public sealed class AutopilotPublicationCreatorTests(TestDatabase database) : In
     /// <summary>An instant inside the create window and before the cutoff: 2026-10-20T19:00Z.</summary>
     private static readonly DateTimeOffset InWindow = AutopilotStepContexts.DefaultSlotAt.AddHours(-25);
 
+    /// <summary>The connection a case publishes through when it does not decide the channel itself.</summary>
+    private static readonly AutopilotChannelSnapshot ActiveChannel = new(
+        Guid.CreateVersion7(),
+        Platform.YouTube,
+        ChannelConnectionStatus.Active);
+
+    /// <summary>The arrange of a case that does not decide the channel: <see cref="ActiveChannel"/> resolves.</summary>
+    /// <param name="status">The episode's status.</param>
+    /// <param name="preAudit">Whether the channel answers pre-audit.</param>
+    /// <param name="refusal">The code the create answers with, or <see langword="null"/> for a created row.</param>
+    /// <returns>The run, the creator, its reader and its sender.</returns>
+    private Task<(
+        RunAndSeries Run,
+        AutopilotPublicationCreator Creator,
+        FakeStepReader Reader,
+        PublicationCreateSender Sender)> Arrange(
+        EpisodeStatus status,
+        bool preAudit = false,
+        string? refusal = null) =>
+        Arrange(status, ActiveChannel, preAudit, refusal);
+
+    /// <summary>
+    /// The arrange of a case that decides the channel, <see langword="null"/> included: "the run's authorization names
+    /// no channel" is a trigger of its own, so the channel is taken as given and never defaulted here.
+    /// </summary>
+    /// <param name="status">The episode's status.</param>
+    /// <param name="channel">The channel the reader resolves, or <see langword="null"/> for none.</param>
+    /// <param name="preAudit">Whether the channel answers pre-audit.</param>
+    /// <param name="refusal">The code the create answers with, or <see langword="null"/> for a created row.</param>
+    /// <returns>The run, the creator, its reader and its sender.</returns>
     private async Task<(
         RunAndSeries Run,
         AutopilotPublicationCreator Creator,
         FakeStepReader Reader,
         PublicationCreateSender Sender)> Arrange(
         EpisodeStatus status,
-        AutopilotChannelSnapshot? channel = null,
+        AutopilotChannelSnapshot? channel,
         bool preAudit = false,
         string? refusal = null)
     {
@@ -242,10 +272,7 @@ public sealed class AutopilotPublicationCreatorTests(TestDatabase database) : In
                 Version: 3,
                 Title: "an episode",
                 Brief: "a brief"),
-            Channel = channel ?? new AutopilotChannelSnapshot(
-                Guid.CreateVersion7(),
-                Platform.YouTube,
-                ChannelConnectionStatus.Active),
+            Channel = channel,
             CurrentAuthorizationId = Guid.CreateVersion7(),
         };
 
