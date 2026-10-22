@@ -127,17 +127,18 @@ public sealed class AuthorizationCoverageTests
     }
 
     [Fact]
-    public void FirstCoveredChange_DaysOfWeekReordered_IsTextChanged()
+    public void FirstCoveredChange_DaysOfWeekReordered_IsNotACoveredChange()
     {
-        // The rendered text lists the weekdays in the stored order, so a reorder is a new text.
+        // The authorization text sorts and de-duplicates the weekdays, so `thu, mon` and `mon, thu` are the same
+        // sentence and the same hash: a reorder contradicts nothing the owner accepted (plan §3.7).
         var snapshot = AutopilotAuthorizationCoverage.SnapshotJson(Baseline, preAuditPending: false);
-        var moved = Baseline with
+        var reordered = Baseline with
         {
             Cadence = Baseline.Cadence with { DaysOfWeek = [DayOfWeek.Thursday, DayOfWeek.Monday] },
         };
 
-        Change(snapshot, Topic.Ghost, Channel, Topic.Ghost, Channel, moved, preAuditPending: false)
-            .ShouldBe(AutopilotAuthorizationRevokeReason.TextChanged);
+        Change(snapshot, Topic.Ghost, Channel, Topic.Ghost, Channel, reordered, preAuditPending: false)
+            .ShouldBeNull();
     }
 
     [Fact]

@@ -28,17 +28,28 @@ namespace NightTales.Application.Features.Autopilot.Commands.PutAutopilot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The answer order is the contract's</b> (task §Failure handling): 404 (foreign or missing, D10) → 412 (stale
-/// <c>If-Match</c>) → 400 <c>autopilot_settings_invalid</c> (the document, every failure keyed by JSON path) → the
-/// enable ladder → success. Nothing about the row is revealed to a caller who did not read it.
+/// <b>The answer order is the contract's</b> (task §Failure handling). Two of its rungs are answered before this
+/// handler runs: the feature filter (404 <c>feature_disabled</c>) and authentication (401) come first, and the
+/// endpoint reads and size-checks the body before the command is dispatched, so 413 / 415 / 400 shape errors can
+/// precede any answer below (S77 review S-3 — the endpoint, not the handler, owns those). Inside the handler:
+/// 404 (foreign or missing, D10) → 412 (stale <c>If-Match</c>) → [enable only] 409 <c>series_archived</c> → 400
+/// <c>autopilot_settings_invalid</c> (the document, every failure keyed by JSON path) → the enable ladder → success.
+/// Nothing about the row is revealed to a caller who did not read it.
 /// </para>
 /// <para>
 /// <b>Enable ladder</b> (plan §3.7, in this order): (0) the owner's current legal acceptance, whose error is returned
 /// untouched (13.2.1-T1); (1) re-auth within five minutes, because this click authorizes future uploads without
-/// per-video consent (09.3.2); (3) a live authorization whose covered snapshot still matches the <em>new</em>
-/// settings, the topic and the channel — compared field by field, never by diffing the rendered text, because the
-/// text also carries the series title and a rename must not revoke (plan §3.7); (4) an <c>active</c> channel
-/// connection that is not TikTok (07 CR-5).
+/// per-video consent (09.3.2); (2) the settings document; (3) a live authorization whose covered snapshot still
+/// matches the <em>new</em> settings, the topic and the channel — compared field by field, never by diffing the
+/// rendered text, because the text also carries the series title and a rename must not revoke (plan §3.7); (4) an
+/// <c>active</c> channel connection that is not TikTok (07 CR-5).
+/// </para>
+/// <para>
+/// <b>An archived series is never enabled</b> (S77 review C-3/S-2): the refusal sits above the ladder, on the enable
+/// branch only, because an archived series must never reach a consent-bearing step — and because
+/// <see cref="SeriesAggregate.Archive"/> already switched autopilot off, a re-enable would only re-create a live
+/// consent pointer on a series nothing may produce for. Disabling, revoking and a settings edit with
+/// <c>enabled = false</c> stay allowed: they reduce risk, and the document of a switched-off series stays editable.
 /// </para>
 /// <para>
 /// <b>Settings-only is not the ladder.</b> The owner is editing the document the text covers, so a covered-field
@@ -100,6 +111,16 @@ public sealed partial class PutAutopilotHandler(
             return Error.Failure(
                 ErrorCodes.SeriesConflict,
                 "The series changed since it was read; read it again and retry.");
+        }
+
+        // S77 review C-3/S-2: an archived series can never be switched on again. The check sits above the enable
+        // ladder (an archived series must not reach a consent-bearing step) and outside the other branches (disabling,
+        // and the document edit of a series that is already off, stay allowed — they reduce risk and touch no upload).
+        if (command.Enabled && series.ArchivedAt is not null)
+        {
+            return Error.Conflict(
+                ErrorCodes.SeriesArchived,
+                "The series is archived; autopilot cannot be enabled for it.");
         }
 
         var now = clock.UtcNow;
@@ -343,6 +364,18 @@ public sealed partial class PutAutopilotHandler(
             return enabled.Errors;
         }
 
+        // S77 review C-2/S-1 follow-up: a run paused while the switch was off (the spend check pauses it with
+        // `owner_paused`) is not due, so nothing else would ever release it — and a re-accept cannot do it either while
+        // the series is disabled. The ladder above has just proved the live authorization still matches, so this is the
+        // same release an acceptance makes, on the other route that restores permission to spend.
+        var release = await AutopilotRunHold
+            .ReleaseOwnerPausedAsync(db, series.Id, now, ct)
+            .ConfigureAwait(false);
+        if (release.Refused > 0 || release.Untouched > 0)
+        {
+            LogRunReleaseIncomplete(series.Id, release.Refused, release.Untouched);
+        }
+
         await WriteAuditAsync(
             series.Id,
             PutAutopilotAuditKeys.EnabledAction,
@@ -419,7 +452,8 @@ public sealed partial class PutAutopilotHandler(
         && await auditPolicy.IsPreAuditAsync(channelId, ct).ConfigureAwait(false);
 
     /// <summary>
-    /// Holds the series' planned runs through the one shared step (D-3), and logs what the state machine refused.
+    /// Holds the series' planned runs through the one shared step (D-3), and logs what the state machine refused and
+    /// what the pass bound left for the next one.
     /// </summary>
     /// <param name="seriesId">The series whose planned runs are held.</param>
     /// <param name="now">The clock reading stamped on every moved run.</param>
@@ -427,10 +461,17 @@ public sealed partial class PutAutopilotHandler(
     /// <returns>Nothing.</returns>
     private async Task HoldPlannedRunsAsync(Guid seriesId, DateTimeOffset now, CancellationToken ct)
     {
-        var refused = await AutopilotRunHold.HoldPlannedAsync(db, seriesId, now, ct).ConfigureAwait(false);
-        if (refused > 0)
+        var held = await AutopilotRunHold.HoldPlannedAsync(db, seriesId, now, ct).ConfigureAwait(false);
+        if (held.Refused > 0)
         {
-            LogRunHoldDeferred(seriesId, refused);
+            LogRunHoldDeferred(seriesId, held.Refused);
+        }
+
+        // The bound is above the widest plan the validator accepts, so this only fires for rows a second writer
+        // planned into the same window; the next hold of the series rotates them in.
+        if (held.Untouched > 0)
+        {
+            LogRunHoldTruncated(seriesId, held.Untouched);
         }
     }
 
@@ -562,7 +603,7 @@ public sealed partial class PutAutopilotHandler(
                 OccurredAt: now),
             ct);
 
-    // 02.8.3-T2: 6695-6699 is the block this task takes, directly above the shipped `AutopilotRunOrchestrator` /
+    // 02.8.3-T2: 6695-6700 is the block this task takes, directly above the shipped `AutopilotRunOrchestrator` /
     // `AutopilotPlanJob` ids (6690-6694) and clear of 63xx, where `ProposeBibleUpdateHandler` already holds
     // 6340-6358 — the collision `LoggerMessageEventIdTests` caught on this branch.
     /// <summary>Logs one applied change with ids and slugs only (D19).</summary>
@@ -577,4 +618,17 @@ public sealed partial class PutAutopilotHandler(
     /// <param name="refused">How many runs the state machine would not move.</param>
     [LoggerMessage(EventId = 6696, Level = LogLevel.Warning, Message = "Autopilot put: {refused} planned run(s) of series {seriesId} could not be held; the next tick retries.")]
     private partial void LogRunHoldDeferred(Guid seriesId, int refused);
+
+    /// <summary>Logs the planned runs one pass did not read, which the next hold of the same series picks up.</summary>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="untouched">How many planned runs lie beyond the pass bound.</param>
+    [LoggerMessage(EventId = 6698, Level = LogLevel.Warning, Message = "Autopilot put: {untouched} planned run(s) of series {seriesId} lie beyond the hold bound and stay planned; the next hold picks them up.")]
+    private partial void LogRunHoldTruncated(Guid seriesId, int untouched);
+
+    /// <summary>Logs the owner-paused runs an enable did not release; the next resume or acceptance retries them.</summary>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="refused">How many rows the domain refused to resume.</param>
+    /// <param name="untouched">How many paused rows lie beyond the release bound.</param>
+    [LoggerMessage(EventId = 6700, Level = LogLevel.Warning, Message = "Autopilot put: enabling series {seriesId} left {refused} paused run(s) unreleased and {untouched} beyond the release bound.")]
+    private partial void LogRunReleaseIncomplete(Guid seriesId, int refused, int untouched);
 }

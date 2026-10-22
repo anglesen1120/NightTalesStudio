@@ -53,7 +53,7 @@ public sealed class AutopilotStepHandlerRegistrationTests
     /// <see cref="IChannelAuditPolicy"/> — are registered by <c>AddNightTalesApplication</c>, not here: the Api's
     /// autopilot routes resolve them too and the Api never calls this Worker-only extension, so a registration here
     /// would resolve nowhere in the Api. Both are composed in this test for the same reason the Worker composes both
-    /// (02.8.3-T2); <see cref="AddNightTalesApplication_RegistersThePortsTheApiRoutesResolve"/> pins that half.
+    /// (02.8.3-T2); the routes' own integration tests are what prove that half by resolving the ports in a host.
     /// </remarks>
     [Fact]
     public void AddAutopilotOrchestration_RegistersEveryScannedHandler()
@@ -74,21 +74,6 @@ public sealed class AutopilotStepHandlerRegistrationTests
         services.Any(descriptor => descriptor.ServiceType == typeof(AutopilotSlotPlanner)).ShouldBeTrue();
         services.Any(descriptor => descriptor.ServiceType == typeof(IAutopilotRunOrchestrator)).ShouldBeTrue();
         services.Any(descriptor => descriptor.ServiceType == typeof(AutopilotRunMetrics)).ShouldBeTrue();
-    }
-
-    /// <summary>
-    /// The two ports the Api's autopilot routes resolve beside the Worker's orchestration belong to the shared
-    /// Application registration, because the Api never calls <c>AddAutopilotOrchestration</c> (02.8.3-T2).
-    /// </summary>
-    [Fact]
-    public void AddNightTalesApplication_RegistersThePortsTheApiRoutesResolve()
-    {
-        var services = new ServiceCollection();
-
-        services.AddNightTalesApplication();
-
-        services.Any(descriptor => descriptor.ServiceType == typeof(ISlotCalculator)).ShouldBeTrue();
-        services.Any(descriptor => descriptor.ServiceType == typeof(IChannelAuditPolicy)).ShouldBeTrue();
     }
 
     /// <summary>The scan never picks up a nested or abstract type: neither can be a handler.</summary>

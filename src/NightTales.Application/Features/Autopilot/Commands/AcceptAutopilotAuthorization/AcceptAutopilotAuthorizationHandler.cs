@@ -24,10 +24,11 @@ namespace NightTales.Application.Features.Autopilot.Commands.AcceptAutopilotAuth
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Order: ownership, then re-auth, then the text.</b> The tenant-filtered load answers 404 for a foreign series
-/// before the re-auth guard can answer 401 — the tenancy contract every consent-bearing route keeps (the
-/// <c>ConnectYouTube</c> precedent). Accepting is consent-bearing (§3.7 marks the route re-auth required), so the
-/// guard runs next, then the render.
+/// <b>Order: ownership, then archive, then re-auth, then the text.</b> The tenant-filtered load answers 404 for a
+/// foreign series before the re-auth guard can answer 401 — the tenancy contract every consent-bearing route keeps
+/// (the <c>ConnectYouTube</c> precedent). An archived series answers 409 <c>series_archived</c> next (S77 review
+/// C-3/S-2). Accepting is consent-bearing (§3.7 marks the route re-auth required), so the guard runs after those two,
+/// then the render.
 /// </para>
 /// <para>
 /// <b>Rendering is the comparison.</b> The two shipped locales are rendered from the <em>stored</em> settings, topic,
@@ -79,6 +80,17 @@ public sealed class AcceptAutopilotAuthorizationHandler(
         if (series is null)
         {
             return Errors.NotFound();
+        }
+
+        // S77 review C-3/S-2: an archived series may never carry a live consent pointer again — its autopilot is off
+        // and nothing may produce for it, so an acceptance would only record consent to uploads that cannot happen.
+        // The refusal is above the consent gates for the same reason the enable ladder's is: no legal or re-auth
+        // question is worth asking on a series that cannot be enabled.
+        if (series.ArchivedAt is not null)
+        {
+            return Error.Conflict(
+                ErrorCodes.SeriesArchived,
+                "The series is archived; its autopilot authorization cannot be accepted.");
         }
 
         // The ladder is the contract's (contract line 60): legal → re-auth → settings → render. The legal acceptance

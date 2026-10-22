@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Features.Autopilot.Authorization;
 using NightTales.Application.Features.Autopilot.Orchestration;
 using NightTales.Domain.Series.Events;
 
@@ -20,15 +21,34 @@ namespace NightTales.Application.Features.Autopilot.Events;
 /// step needs.
 /// </para>
 /// <para>
-/// <b>Idempotent.</b> Delivery is at least once; a redelivery re-advances runs that are already running or held, and
-/// <c>AdvanceAsync</c> is a no-op on a run whose next step is not due. No row is written here — the dispatcher owns
-/// the <c>outbox_messages</c> row and the orchestrator owns the run.
+/// <b>The consent also releases what its absence paused</b> (S77 review C-2/S-1). <c>SeriesMaySpendAsync</c> pauses a
+/// producing run with <c>owner_paused</c> when the current authorization is missing or revoked, because the §3.5 table
+/// has no <c>→ awaiting_authorization</c> row outside <c>planned</c>. A <c>paused</c> row is not due, so without this
+/// step those runs would stay paused forever, and the owner's <c>POST …/resume</c> cannot help either (the series is
+/// not paused, so the route is a documented no-op). The acceptance is the event that brings the consent back, so the
+/// runs go back through <c>AutopilotRun.Resume</c> — the domain's own <c>paused → previous state</c> edge, no
+/// state the table lacks — and then through the same advance loop as every other open run. Only
+/// <c>owner_paused</c> runs of an enabled, unpaused, live series are released; the other
+/// §3.6 reasons belong to 02.8.3-T4's trigger ladder.
 /// </para>
 /// <para>
-/// <b>Ids only in the log</b> (D19): the series, the authorization and the count.
+/// <b>The release is committed before the advance.</b> <c>IAutopilotRunOrchestrator.AdvanceAsync</c> opens its
+/// own scope, so it only sees rows this delivery has saved. The save comes first, and a redelivery is harmless: a run
+/// already released is no longer <c>paused</c>, and <c>AdvanceAsync</c> is a no-op on a run whose next step is not due.
+/// This handler calls <c>SaveChangesAsync</c> itself: 09 README D5's "handlers never save" rule is about Mediator
+/// handlers inside the unit-of-work pipeline, and an outbox delivery owns its scope (the <c>SendEmailJob</c> precedent).
+/// </para>
+/// <para>
+/// <b>Idempotent.</b> Delivery is at least once; a redelivery re-advances runs that are already running or held, and
+/// <c>AdvanceAsync</c> is a no-op on a run whose next step is not due. The release is the only row this delivery writes,
+/// and only for a run still <c>paused</c>; the dispatcher owns the <c>outbox_messages</c> row and the orchestrator owns
+/// the advance.
+/// </para>
+/// <para>
+/// <b>Ids only in the log</b> (D19): the series, the authorization, the released and the advanced counts.
 /// </para>
 /// </remarks>
-/// <param name="db">The tenant-filtered read model the open runs are selected from.</param>
+/// <param name="db">The tenant-filtered read model the open runs are selected from, and the tracked model the release writes.</param>
 /// <param name="orchestrator">T1's advance entry point.</param>
 /// <param name="logger">The outcome log of one delivery.</param>
 public sealed partial class AutopilotAuthorizationAcceptedHandler(
@@ -37,8 +57,12 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
     ILogger<AutopilotAuthorizationAcceptedHandler> logger)
     : IOutboxHandler<AutopilotAuthorizationAccepted>
 {
-    /// <summary>How many runs one delivery advances; the planner keeps far fewer per series.</summary>
-    private const int MaxAdvancedRuns = 20;
+    /// <summary>
+    /// How many runs one delivery releases and advances: the same bound
+    /// <see cref="AutopilotRunHold.MaxRunsPerPass"/> uses, which is above the widest plan a settings document can
+    /// produce, so a normal series is served in one delivery.
+    /// </summary>
+    private const int MaxAdvancedRuns = AutopilotRunHold.MaxRunsPerPass;
 
     /// <inheritdoc />
     public async ValueTask HandleAsync(
@@ -47,6 +71,19 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(domainEvent);
+
+        // S77 review C-2/S-1: the runs the missing consent paused go back to the state their step implies, and the
+        // save has to land before the orchestrator opens its own scope below. The rows are stamped with the event's
+        // own instant — the moment the owner accepted — which is what the delivery carries and what a redelivery
+        // repeats.
+        var release = await AutopilotRunHold
+            .ReleaseOwnerPausedAsync(db, domainEvent.SeriesId, context.OccurredAt, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (release.Changed > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var open = await db.AutopilotRuns
             .Where(run => run.SeriesId == domainEvent.SeriesId && run.FinishedAt == null)
@@ -65,16 +102,34 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
                 .ConfigureAwait(false);
         }
 
-        LogRouted(domainEvent.SeriesId, domainEvent.AuthorizationId, domainEvent.Version, open.Count);
+        LogRouted(
+            domainEvent.SeriesId,
+            domainEvent.AuthorizationId,
+            domainEvent.Version,
+            release.Changed,
+            open.Count);
+
+        if (release.Refused > 0 || release.Untouched > 0)
+        {
+            LogReleaseIncomplete(domainEvent.SeriesId, release.Refused, release.Untouched);
+        }
     }
 
     // 02.8.3-T2: 6695-6699 is the block this task takes (see PutAutopilotHandler): 6347 already belonged to
     // `ProposeBibleUpdateHandler.LogTrueCrimeAutopilot`.
-    /// <summary>Logs what one delivery routed.</summary>
+    /// <summary>Logs what one delivery released and routed.</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="authorizationId">The accepted row.</param>
     /// <param name="version">Its version.</param>
+    /// <param name="released">How many runs the restored consent un-paused.</param>
     /// <param name="runs">How many open runs were advanced.</param>
-    [LoggerMessage(EventId = 6697, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; advanced {runs} open run(s).")]
-    private partial void LogRouted(Guid seriesId, Guid authorizationId, int version, int runs);
+    [LoggerMessage(EventId = 6697, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; released {released} paused run(s), advanced {runs} open run(s).")]
+    private partial void LogRouted(Guid seriesId, Guid authorizationId, int version, int released, int runs);
+
+    /// <summary>Logs the runs one release pass could not move; the next acceptance or tick retries them.</summary>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="refused">How many rows the domain refused to resume.</param>
+    /// <param name="untouched">How many paused rows lie beyond the pass bound.</param>
+    [LoggerMessage(EventId = 6699, Level = LogLevel.Warning, Message = "Autopilot authorization accepted for series {seriesId}: {refused} paused run(s) could not be released and {untouched} lie beyond the release bound.")]
+    private partial void LogReleaseIncomplete(Guid seriesId, int refused, int untouched);
 }

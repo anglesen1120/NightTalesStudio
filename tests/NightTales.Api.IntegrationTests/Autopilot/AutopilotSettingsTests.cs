@@ -808,6 +808,56 @@ public sealed class AutopilotSettingsTests(TestDatabase database) : IntegrationT
             .ShouldBe($"{world.AuthorizationId}|disabled", "one row records both facts");
     }
 
+    /// <summary>
+    /// S77 review C-3/S-2 (route gate): an archived series can never be switched on again — 409 <c>series_archived</c>
+    /// from the enable branch, above the ladder and after the <c>If-Match</c> check — while the document of that
+    /// switched-off series stays editable and a disable still answers 200. The archive route itself has already
+    /// disabled autopilot, so this only stops a re-enable from re-creating a live consent pointer on a dead series.
+    /// </summary>
+    [Fact]
+    public async Task PutAutopilot_EnableOnArchivedSeries_Returns409AndTheOffEditStaysAllowed()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, authorized: true, enabled: false);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: true);
+        await AcceptLegalAsync(factory, client);
+
+        using (var archive = await client.SendAsync(
+            Request(HttpMethod.Delete.Method, $"{SeriesRoute}/{world.SeriesId}"),
+            Ct))
+        {
+            archive.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                await archive.Content.ReadAsStringAsync(Ct));
+        }
+
+        var settings = DefaultSettings();
+        var tag = await TagAsync(client, world.SeriesId);
+
+        using (var enable = await PutAsync(client, world.SeriesId, enabled: true, settings, tag))
+        {
+            var problem = await ProblemAsync(enable);
+            enable.StatusCode.ShouldBe(HttpStatusCode.Conflict, "an archived series is never enabled (plan §3.7)");
+            problem.Code.ShouldBe("series_archived");
+        }
+
+        Enabled(world.SeriesId).ShouldBeFalse("the refusal writes nothing");
+
+        // The document of a switched-off series is still the owner's to edit (the same 200 the settings-only path
+        // answers), because it changes no switch and revokes no consent: the archive already revoked it.
+        var edited = Move(settings, "tone");
+        var retag = await TagAsync(client, world.SeriesId);
+
+        using (var response = await PutAsync(client, world.SeriesId, enabled: false, edited, retag))
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        }
+
+        StoredSettingsAre(world.SeriesId, edited).ShouldBeTrue(
+            "the settings-only edit is not part of the archive gate");
+    }
+
     /// <summary>The settings every test starts from (19:00 Mon/Thu, daily_cap 1, public, 12 h veto).</summary>
     /// <returns>The suite's default document.</returns>
     private static AutopilotSettings DefaultSettings() => AutopilotTickHarness.Settings(daysOfWeek: Days);

@@ -3,14 +3,11 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Autopilot.Authorization;
 using NightTales.Application.Features.Autopilot.Orchestration.Steps;
 using NightTales.Domain.Common;
 using NightTales.Domain.Publishing;
 using NightTales.Domain.Series.Autopilot;
-
-// `NightTales.Domain.Series` is the namespace of the run and the name of the series aggregate; the autopilot feature
-// aliases the aggregate (the `AutopilotSlotPlanner` convention).
-using SeriesAggregate = NightTales.Domain.Series.Series;
 
 namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 
@@ -24,7 +21,8 @@ namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 /// <c>autopilot_authorization_required</c> (the same filtered pointer read the paid steps use,
 /// <see cref="AutopilotStepSupport.CurrentAuthorizationAsync"/>, so there is one implementation of the §3.7 rule), and
 /// an authorization whose channel connection is not <c>active</c> answers 409 <c>channel_reauth_required</c> — a
-/// resumed cadence would upload nothing but would keep paying for stories.
+/// resumed cadence would upload nothing but would keep paying for stories. Before both, an archived series answers 409
+/// <c>series_archived</c> (S77 review C-3/S-2): its autopilot can never run again, so a resume has nothing to release.
 /// </para>
 /// <para>
 /// <b>The trigger ladder is 02.8.3-T4's.</b> Plan §3.6 "Resume" also requires every row of the trigger table to be
@@ -35,10 +33,20 @@ namespace NightTales.Application.Features.Autopilot.Commands.ResumeAutopilot;
 /// in T2's contract changes.
 /// </para>
 /// <para>
-/// <b>Idempotent.</b> Resuming a series that is not paused answers <c>Success</c> without touching the row (and
-/// therefore without bumping <c>xmin</c>, the autopilot's ETag), and a paused run that is already back in its
-/// pre-pause state is left alone: the state is derived by <see cref="AutopilotRun.Resume"/>, so a partial resume of a
-/// previous attempt is completed rather than refused.
+/// <b>It releases the runs, not only the series</b> (S77 review C-2/S-1). A run paused by
+/// <c>AutopilotStepSupport.SeriesMaySpendAsync</c> is not due, so nothing else would ever look at it: this route is the
+/// owner's "continue", and it moves the series' <c>paused</c> runs back through <see cref="AutopilotRun.Resume"/> —
+/// the domain's own <c>paused → previous state</c> edge, so no state is guessed here. That also covers a series whose
+/// own pause was already cleared (a switch-off, or a disabled-then-enabled series): the two refusals above apply to
+/// that release too, because moving a run without a live authorization would only feed it back into the spend check
+/// that paused it. With no paused run left to move and no series pause, the route is the documented no-op it always
+/// was.
+/// </para>
+/// <para>
+/// <b>Idempotent.</b> Resuming a series that is not paused and holds no paused run answers <c>Success</c> without
+/// touching a row (and therefore without bumping <c>xmin</c>, the autopilot's ETag), and a paused run that is already
+/// back in its pre-pause state is left alone: the state is derived by <see cref="AutopilotRun.Resume"/>, so a partial
+/// resume of a previous attempt is completed rather than refused.
 /// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
@@ -60,7 +68,25 @@ public sealed class ResumeAutopilotHandler(IAppDbContext db, IClock clock)
             return Errors.NotFound();
         }
 
-        if (series.AutopilotPausedAt is null && series.AutopilotPauseReason is null)
+        // S77 review C-3/S-2: an archived series can never produce again, so a resume would only move run rows a
+        // failing spend check stops on their next tick.
+        if (series.ArchivedAt is not null)
+        {
+            return Error.Conflict(
+                ErrorCodes.SeriesArchived,
+                "The series is archived; autopilot cannot be resumed for it.");
+        }
+
+        var pausedRuns = await db.AutopilotRuns
+            .Where(run => run.SeriesId == command.SeriesId && run.State == AutopilotRunState.Paused)
+            .OrderBy(run => run.SlotAt)
+            .Take(AutopilotRunHold.MaxRunsPerPass)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var seriesIsIdle = series.AutopilotPausedAt is null && series.AutopilotPauseReason is null;
+
+        if (seriesIsIdle && pausedRuns.Count == 0)
         {
             // Nothing to resume: the second click of a resume, or a series that was never paused. No trigger is
             // re-checked on a no-op, because there is no pause for a trigger to still hold.
@@ -95,12 +121,10 @@ public sealed class ResumeAutopilotHandler(IAppDbContext db, IClock clock)
                 "The authorization's channel connection is not active; reconnect the channel first.");
         }
 
-        series.ResumeAutopilot(now);
-
-        var pausedRuns = await db.AutopilotRuns
-            .Where(run => run.SeriesId == command.SeriesId && run.State == AutopilotRunState.Paused)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        if (!seriesIsIdle)
+        {
+            series.ResumeAutopilot(now);
+        }
 
         foreach (var run in pausedRuns)
         {

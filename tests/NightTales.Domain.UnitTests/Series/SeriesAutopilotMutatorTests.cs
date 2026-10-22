@@ -250,11 +250,6 @@ public sealed class SeriesAutopilotMutatorTests
         series.ArchivedAt.ShouldBe(FixedNow);
     }
 
-    [Fact]
-    public void AutopilotAuthorizationAccepted_HasItsOutboxName() =>
-        typeof(AutopilotAuthorizationAccepted).GetCustomAttributes(typeof(OutboxEventAttribute), inherit: false)
-            .Cast<OutboxEventAttribute>().Single().Name.ShouldBe("autopilot_authorization_accepted.v1");
-
     /// <summary>
     /// The Domain spells its own codes (D1: ErrorOr is its only package), so the constant is joined to the
     /// catalogue here, the way <c>SeriesTests.Series_Codes_MatchTheErrorCatalogue</c> joins the other two.

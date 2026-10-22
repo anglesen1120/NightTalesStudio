@@ -9,12 +9,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Authorization;
 using NightTales.Application.Features.Autopilot.Events;
 using NightTales.Domain.Publishing;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Series.Events;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
 using NightTales.TestKit;
@@ -622,6 +625,171 @@ public sealed class AutopilotAuthorizationTests(TestDatabase database) : Integra
         stillPaused.State.ShouldBe(AutopilotRunState.Paused, "a paused run keeps the reason the owner gave");
         stillPaused.PauseReason.ShouldBe(AutopilotPauseReason.OwnerPaused);
         stillPaused.Step.ShouldBe(AutopilotRunStep.Idea);
+    }
+
+    /// <summary>
+    /// S77 review C-3/S-2 (route gate): an archived series answers 409 <c>series_archived</c> to a new acceptance —
+    /// the refusal sits after the tenant-filtered 404 and before the legal and re-auth gates — and the owner's revoke
+    /// stays allowed on it, because that route only ever reduces what the series may do.
+    /// </summary>
+    [Fact]
+    public async Task AcceptAuthorization_ArchivedSeries_Returns409AndRevokeStaysAllowed()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, enabled: false);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: true);
+        await AcceptLegalAsync(factory, client);
+
+        using (var archive = await client.SendAsync(
+            Request(HttpMethod.Delete.Method, $"{SeriesRoute}/{world.SeriesId}"),
+            Ct))
+        {
+            archive.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                await archive.Content.ReadAsStringAsync(Ct));
+        }
+
+        // The page still renders (the read has no archive gate), so the client can still send the pair it was shown.
+        var rendered = await RenderedTextAsync(client, world.SeriesId);
+
+        using (var response = await AcceptAsync(client, world.SeriesId, rendered.Version, rendered.Hash))
+        {
+            var problem = await ProblemAsync(response);
+            response.StatusCode.ShouldBe(
+                HttpStatusCode.Conflict,
+                "an archived series cannot accept a consent that could never be used");
+            problem.Code.ShouldBe("series_archived");
+        }
+
+        Authorizations(world.SeriesId).ShouldBe(0, "the refusal writes no revision");
+        Pointer(world.SeriesId).ShouldBeNull();
+        AuditCount("autopilot.authorization_accepted", world.SeriesId).ShouldBe(0);
+
+        using var revoke = await client.SendAsync(
+            Request(HttpMethod.Delete.Method, AuthorizationUrl(world.SeriesId)),
+            Ct);
+        revoke.StatusCode.ShouldBe(
+            HttpStatusCode.NoContent,
+            "revoking reduces risk, so the archive gate does not cover it: "
+            + await revoke.Content.ReadAsStringAsync(Ct));
+    }
+
+    /// <summary>
+    /// S77 review C-3/S-2 (route gate): <c>POST …/resume</c> refuses an archived series with 409
+    /// <c>series_archived</c> before the no-op answer and before the authorization ladder, because a resumed cadence
+    /// on a series nothing may produce for could only stop at the next spend check.
+    /// </summary>
+    [Fact]
+    public async Task Resume_ArchivedSeries_Returns409SeriesArchived()
+    {
+        var clock = new FakeClock(Start);
+        var world = await SeedAsync(clock, enabled: true, authorized: true);
+        using var factory = world.Factory;
+        using var client = Owner(world, reauthenticated: false);
+
+        using (var archive = await client.SendAsync(
+            Request(HttpMethod.Delete.Method, $"{SeriesRoute}/{world.SeriesId}"),
+            Ct))
+        {
+            archive.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                await archive.Content.ReadAsStringAsync(Ct));
+        }
+
+        // The gate's negative side: the brake still works on an archived series — pausing only stops work, so the
+        // refusal is scoped to the routes that start or restart it (as revoke and the settings edit are).
+        using (var pause = await client.SendAsync(
+            Request(HttpMethod.Post.Method, $"{Url(world.SeriesId)}/pause"),
+            Ct))
+        {
+            pause.StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                await pause.Content.ReadAsStringAsync(Ct));
+        }
+
+        using var response = await client.SendAsync(
+            Request(HttpMethod.Post.Method, $"{Url(world.SeriesId)}/resume"),
+            Ct);
+
+        var problem = await ProblemAsync(response);
+        response.StatusCode.ShouldBe(
+            HttpStatusCode.Conflict,
+            "an archived series is never resumed, even when it is not paused");
+        problem.Code.ShouldBe("series_archived");
+        Enabled(world.SeriesId).ShouldBeFalse("the archive already switched autopilot off");
+    }
+
+    /// <summary>
+    /// S77 review C-2/S-1: the runs a missing consent paused are released by the acceptance event. The acceptance is
+    /// the only thing that can bring the consent back, and a <c>paused</c> run is not due, so without this the run
+    /// would never move again — the owner's <c>POST …/resume</c> cannot help, because the series itself is not paused.
+    /// Only <c>owner_paused</c> rows are released: every other §3.6 reason belongs to 02.8.3-T4's trigger ladder.
+    /// </summary>
+    [Fact]
+    public async Task AcceptedEvent_ReleasesTheRunsAMissingConsentPaused()
+    {
+        var clock = new FakeClock(Start);
+        await using var harness = await AutopilotTickHarness.StartAsync(Database, clock, ct: Ct);
+        var owner = await harness.CreateOwnerAsync(Ct);
+        var series = await harness.CreateAuthorizedSeriesAsync(owner, ct: Ct);
+        var authorizationId = series.AuthorizationId
+            ?? throw new InvalidOperationException("the harness seeds an authorized series");
+
+        // The spend guard pauses a run with `owner_paused` when the authorization is gone (T1's behaviour). The slot
+        // is far ahead, so nothing in this case depends on the planner.
+        var released = await harness.CreateRunAsync(
+            owner,
+            series.SeriesId,
+            slotAt: Start.AddDays(5),
+            startAt: Start.AddDays(4),
+            authorizationId: null,
+            state: AutopilotRunState.Paused,
+            step: AutopilotRunStep.Idea,
+            pauseReason: AutopilotPauseReason.OwnerPaused,
+            ct: Ct);
+
+        var heldByAnotherTrigger = await harness.CreateRunAsync(
+            owner,
+            series.SeriesId,
+            slotAt: Start.AddDays(5).AddHours(1),
+            startAt: Start.AddDays(4).AddHours(1),
+            authorizationId: null,
+            state: AutopilotRunState.Paused,
+            step: AutopilotRunStep.Idea,
+            pauseReason: AutopilotPauseReason.GateFailedStreak,
+            ct: Ct);
+
+        // The delivery the dispatcher makes: a fresh scope pinned to the event's owner before any DbContext is built.
+        using (var scope = harness.Host.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ISystemContext>().For(owner);
+
+            var handler = scope.ServiceProvider
+                .GetRequiredService<IOutboxHandler<AutopilotAuthorizationAccepted>>();
+
+            await handler.HandleAsync(
+                new AutopilotAuthorizationAccepted(
+                    owner,
+                    series.SeriesId,
+                    authorizationId,
+                    2,
+                    clock.UtcNow),
+                new OutboxContext(Guid.NewGuid(), owner, 1, clock.UtcNow),
+                Ct);
+        }
+
+        var resumed = await harness.RunAsync(owner, released.Id, Ct);
+        resumed.State.ShouldNotBe(
+            AutopilotRunState.Paused,
+            "the acceptance releases the run the missing consent paused");
+        resumed.PauseReason.ShouldBeNull("the reason is forgotten with the resume");
+
+        var kept = await harness.RunAsync(owner, heldByAnotherTrigger.Id, Ct);
+        kept.State.ShouldBe(
+            AutopilotRunState.Paused,
+            "a run held by another §3.6 trigger is T4's to resume, not the acceptance's");
+        kept.PauseReason.ShouldBe(AutopilotPauseReason.GateFailedStreak);
     }
 
     /// <summary>The settings every seeded series starts from (19:00 Mon/Thu, daily_cap 1, public, 12 h veto).</summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NightTales.Domain.Series.Autopilot;
 
 namespace NightTales.Application.Features.Autopilot.Dtos;
@@ -18,6 +19,15 @@ namespace NightTales.Application.Features.Autopilot.Dtos;
 /// The members are the full §3.1 schema, not only the ones the authorization text covers: the settings form
 /// edits all of them, and the covered-field rule belongs to the revoke comparison, not to this projection.
 /// </para>
+/// <para>
+/// <b>The wire keys are the document's.</b> Every member carries the §3.1 <c>snake_case</c> key as an explicit
+/// <see cref="JsonPropertyNameAttribute"/>, because the write route hands the <c>settings</c> object it is given
+/// <em>verbatim</em> to <see cref="AutopilotSettingsValidator"/>, which reads those keys and rejects any other
+/// (<c>RejectUnknownKeys</c>). A camelCase projection would answer <c>dailyCap</c> where the write demands
+/// <c>daily_cap</c>, so the client could not put back the document it just read. <c>schema_version</c> is the one
+/// §3.1 key deliberately absent: the route's validator writes it (see <c>PutAutopilotHandler.WithSchemaVersion</c>),
+/// so the round trip works without it.
+/// </para>
 /// </remarks>
 /// <param name="Cadence">The weekdays, local publish time and time zone the slots are computed from.</param>
 /// <param name="DailyCap">Publications per channel per local day, 1..5.</param>
@@ -32,18 +42,18 @@ namespace NightTales.Application.Features.Autopilot.Dtos;
 /// <param name="RenderLeadMinutes">The render lead override, or <see langword="null"/> for the configured estimate.</param>
 /// <param name="StoryLeadMinutes">The story lead override, or <see langword="null"/> for the configured estimate.</param>
 public sealed record AutopilotSettingsDto(
-    CadenceDto Cadence,
-    int DailyCap,
-    int BufferDays,
-    string Privacy,
-    int VetoWindowHours,
-    string PreAuditMode,
-    int PreAuditPauseAfter,
-    string GateThresholdsRef,
-    string Tone,
-    IReadOnlyList<string> BannedThemes,
-    int? RenderLeadMinutes,
-    int? StoryLeadMinutes)
+    [property: JsonPropertyName("cadence")] CadenceDto Cadence,
+    [property: JsonPropertyName("daily_cap")] int DailyCap,
+    [property: JsonPropertyName("buffer_days")] int BufferDays,
+    [property: JsonPropertyName("privacy")] string Privacy,
+    [property: JsonPropertyName("veto_window_hours")] int VetoWindowHours,
+    [property: JsonPropertyName("pre_audit_mode")] string PreAuditMode,
+    [property: JsonPropertyName("pre_audit_pause_after")] int PreAuditPauseAfter,
+    [property: JsonPropertyName("gate_thresholds_ref")] string GateThresholdsRef,
+    [property: JsonPropertyName("tone")] string Tone,
+    [property: JsonPropertyName("banned_themes")] IReadOnlyList<string> BannedThemes,
+    [property: JsonPropertyName("render_lead_minutes")] int? RenderLeadMinutes,
+    [property: JsonPropertyName("story_lead_minutes")] int? StoryLeadMinutes)
 {
     /// <summary>Projects a validated settings record onto the wire shape.</summary>
     /// <param name="settings">The settings a validated document produced.</param>

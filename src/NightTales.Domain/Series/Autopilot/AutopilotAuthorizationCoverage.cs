@@ -131,8 +131,9 @@ public static class AutopilotAuthorizationCoverage
     /// <remarks>
     /// A malformed, non-object or partly missing stored document answers <see langword="false"/> (fail closed,
     /// see the type remarks) rather than throwing: the caller's answer to that is a revocation, not a 500.
-    /// <c>cadence.days_of_week</c> is compared as the stored order of weekday names, because that is what the
-    /// rendered text lists and what the settings document round-trips (the validator never reorders).
+    /// <c>cadence.days_of_week</c> is compared as the <em>set</em> of weekdays the rendered text names, because the
+    /// text sorts and de-duplicates them (<c>AuthorizationTextRenderer.DaysOfWeek</c>): the same days in another
+    /// stored order are the same sentence, so they are the same agreement.
     /// </remarks>
     /// <param name="storedSnapshotJson">The stored snapshot.</param>
     /// <param name="currentSnapshotJson">The snapshot of the current state, from <see cref="SnapshotJson"/>.</param>
@@ -187,34 +188,68 @@ public static class AutopilotAuthorizationCoverage
             && TextMatches(storedCadence, currentCadence, "time_zone");
     }
 
-    /// <summary>Compares the two weekday arrays name by name, in order.</summary>
+    /// <summary>
+    /// Compares the two weekday arrays as <em>sets</em>, keyed by their Monday-to-Sunday position.
+    /// </summary>
+    /// <remarks>
+    /// The authorization text lists the weekdays sorted and de-duplicated
+    /// (<c>AuthorizationTextRenderer.DaysOfWeek</c>), so <c>["thu","mon"]</c> and <c>["mon","thu"]</c> render the same
+    /// sentence and hash to the same value: reordering a cadence is not a new agreement, and revoking on it would
+    /// contradict plan §3.7's rule that a revocation follows a change in what the owner agreed to. A name outside
+    /// <c>mon…sun</c> is unreadable and answers <see langword="false"/> (fail closed, see the type remarks).
+    /// </remarks>
     /// <param name="stored">The stored cadence object.</param>
     /// <param name="current">The current cadence object.</param>
-    /// <returns>Whether both arrays carry the same names in the same order.</returns>
-    private static bool DaysOfWeekMatch(JsonElement stored, JsonElement current)
+    /// <returns>Whether both arrays name the same weekdays.</returns>
+    private static bool DaysOfWeekMatch(JsonElement stored, JsonElement current) =>
+        TryDaySet(stored, out var storedDays)
+        && TryDaySet(current, out var currentDays)
+        && storedDays.SetEquals(currentDays);
+
+    /// <summary>Reads one cadence object's <c>days_of_week</c> into the set of its Monday-to-Sunday positions.</summary>
+    /// <param name="cadence">The cadence object.</param>
+    /// <param name="days">The positions, <c>0</c> for Monday through <c>6</c> for Sunday; empty when unreadable.</param>
+    /// <returns>Whether the member is an array of known weekday names.</returns>
+    private static bool TryDaySet(JsonElement cadence, out HashSet<int> days)
     {
-        if (!stored.TryGetProperty("days_of_week", out var storedDays)
-            || !current.TryGetProperty("days_of_week", out var currentDays)
-            || storedDays.ValueKind != JsonValueKind.Array
-            || currentDays.ValueKind != JsonValueKind.Array
-            || storedDays.GetArrayLength() != currentDays.GetArrayLength())
+        days = [];
+
+        if (!cadence.TryGetProperty("days_of_week", out var array) || array.ValueKind != JsonValueKind.Array)
         {
             return false;
         }
 
-        var storedNames = storedDays.EnumerateArray();
-        var currentNames = currentDays.EnumerateArray();
-
-        while (storedNames.MoveNext() && currentNames.MoveNext())
+        foreach (var element in array.EnumerateArray())
         {
-            if (!SameText(storedNames.Current, currentNames.Current))
+            var name = element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+
+            if (WeekdayIndex(name) is not { } index)
             {
+                days.Clear();
+
                 return false;
             }
+
+            days.Add(index);
         }
 
         return true;
     }
+
+    /// <summary>A wire weekday name's position in the Monday-to-Sunday order the text reads.</summary>
+    /// <param name="name">The name, <c>mon</c> … <c>sun</c>.</param>
+    /// <returns><c>0</c> for Monday through <c>6</c> for Sunday, or <see langword="null"/> for any other name.</returns>
+    private static int? WeekdayIndex(string? name) => name switch
+    {
+        "mon" => 0,
+        "tue" => 1,
+        "wed" => 2,
+        "thu" => 3,
+        "fri" => 4,
+        "sat" => 5,
+        "sun" => 6,
+        _ => null,
+    };
 
     /// <summary>Compares one text member of two objects.</summary>
     /// <param name="stored">The stored object.</param>

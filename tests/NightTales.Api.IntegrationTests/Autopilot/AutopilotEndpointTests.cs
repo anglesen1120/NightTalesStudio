@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Domain.Series.Autopilot;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Auth;
@@ -217,6 +218,84 @@ public sealed class AutopilotEndpointTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
+    /// The <c>settings</c> the read answers is a document the write accepts: the plan §3.1 keys travel
+    /// <c>snake_case</c> in both directions, so a client can put back what it just read (02.8.3 plan §3.1/§4 UC1+UC2).
+    /// </summary>
+    /// <remarks>
+    /// The write hands the <c>settings</c> object to <see cref="AutopilotSettingsValidator"/> verbatim, and that
+    /// validator reads the stored spellings and rejects every other key. A camelCase read projection would answer
+    /// <c>dailyCap</c>/<c>cadence.daysOfWeek</c> where the writer demands <c>daily_cap</c>/<c>days_of_week</c>, so the
+    /// round trip would answer 400 <c>autopilot_settings_invalid</c> on a document nobody edited — the failure this
+    /// test pins. <c>schema_version</c> is the one §3.1 key the read omits on purpose: the write route supplies it.
+    /// </remarks>
+    [Fact]
+    public async Task PutAutopilot_SettingsFromTheRead_RoundTripsVerbatim()
+    {
+        var world = await SeedSettingsOnlyAsync([DayOfWeek.Monday, DayOfWeek.Thursday]);
+        await SetFlagAsync(true);
+
+        using var factory = new ApiFactory(Database, new FakeClock(Start));
+        using var client = factory.ClientFor(world.UserId);
+
+        using var read = await client.SendAsync(Request(HttpMethod.Get.Method, Url(world.SeriesId), null), Ct);
+        var readText = await read.Content.ReadAsStringAsync(Ct);
+        read.StatusCode.ShouldBe(HttpStatusCode.OK, readText);
+
+        var tag = read.Headers.ETag;
+        tag.ShouldNotBeNull("the read is where the client learns the tag the write must carry (09 README D15)");
+        var tagText = tag!.ToString();
+
+        using var document = JsonDocument.Parse(readText);
+        var settings = document.RootElement.GetProperty("settings");
+
+        settings.ValueKind.ShouldBe(JsonValueKind.Object, "the seeded series carries a settings document");
+
+        settings.EnumerateObject().Select(property => property.Name).ShouldBe(
+            [
+                "cadence",
+                "daily_cap",
+                "buffer_days",
+                "privacy",
+                "veto_window_hours",
+                "pre_audit_mode",
+                "pre_audit_pause_after",
+                "gate_thresholds_ref",
+                "tone",
+                "banned_themes",
+                "render_lead_minutes",
+                "story_lead_minutes",
+            ],
+            ignoreOrder: true,
+            customMessage: "the settings travel the plan §3.1 keys the write route validates (`schema_version` excepted)");
+
+        settings.GetProperty("cadence").EnumerateObject().Select(property => property.Name).ShouldBe(
+            ["days_of_week", "publish_time", "time_zone"],
+            ignoreOrder: true,
+            customMessage: "the cadence's keys are §3.1's too, so the editor's chip list can be written back");
+
+        // Byte-for-byte the read's own settings, with no re-spelling in between: this is the client's PUT body.
+        var body = $"{{\"enabled\":false,\"settings\":{settings.GetRawText()}}}";
+        using var write = await client.SendAsync(
+            Request(HttpMethod.Put.Method, Url(world.SeriesId), body, ifMatch: tagText),
+            Ct);
+        var writeText = await write.Content.ReadAsStringAsync(Ct);
+
+        write.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            $"the document the read answered must be writable unchanged: {writeText}");
+
+        // A document nobody edited is not an edit: the read answers the same settings afterwards.
+        using var reread = await client.SendAsync(Request(HttpMethod.Get.Method, Url(world.SeriesId), null), Ct);
+        var rereadText = await reread.Content.ReadAsStringAsync(Ct);
+        reread.StatusCode.ShouldBe(HttpStatusCode.OK, rereadText);
+
+        using var rereadDocument = JsonDocument.Parse(rereadText);
+        rereadDocument.RootElement.GetProperty("settings").GetRawText().ShouldBe(
+            settings.GetRawText(),
+            "writing back the read's settings must not change the stored document");
+    }
+
+    /// <summary>
     /// <c>GET …/autopilot/runs</c> walks the log in <c>slot_at DESC, id DESC</c> order, page by page, without a gap or
     /// a repeat.
     /// </summary>
@@ -375,6 +454,27 @@ public sealed class AutopilotEndpointTests(TestDatabase database) : IntegrationT
             $"UPDATE series SET default_channel_id = '{channel.Id}', "
             + $"current_autopilot_authorization_id = '{authorizationId}' WHERE id = '{series.Id}'",
             Ct);
+
+        return new World(user, series.Id);
+    }
+
+    /// <summary>
+    /// Seeds an owner and one series with a stored §3.1 settings document and the switch <em>off</em>: no channel, no
+    /// authorization, nothing else. That is the state a first visit to the autopilot tab leaves behind, and the one the
+    /// settings round trip is about — a document edit that never touches a consent.
+    /// </summary>
+    /// <param name="daysOfWeek">The cadence days.</param>
+    /// <returns>The seeded owner and series.</returns>
+    private async Task<World> SeedSettingsOnlyAsync(IReadOnlyList<DayOfWeek> daysOfWeek)
+    {
+        var user = await SeedUserAsync();
+        var actor = new TestCurrentUser { Id = user };
+        var settings = AutopilotTickHarness.Settings(daysOfWeek: daysOfWeek);
+        var series = await new SeriesBuilder(Database, actor, new FakeClock(Start)).CreateAsync(
+            user,
+            autopilotEnabled: false,
+            autopilotSettings: AutopilotTickHarness.SettingsJson(settings),
+            ct: Ct);
 
         return new World(user, series.Id);
     }
