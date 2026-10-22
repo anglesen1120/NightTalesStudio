@@ -232,6 +232,20 @@ public sealed partial class PublishYouTubeHandler(
         {
             LogStreamLeaseHeld(request.PublicationId, held);
 
+            // A lease with more time left than StreamLeaseWait is being renewed, and this attempt has nothing to write.
+            // Returning a decided outcome here would end the job as a success: Hangfire would not deliver the row again
+            // and nothing wakes it, so a lease left behind by a run that threw would strand the row in `uploading`.
+            // Asking for another attempt is the same statement the create claim makes when a sibling holds it.
+            if (!attempt.IsLastAttempt)
+            {
+                LogRetrying(request.PublicationId, PublishAttemptException.RetryCode, attempt.Attempt, attempt.MaxAttempts);
+
+                throw new PublishAttemptException(PublishAttemptException.RetryCode);
+            }
+
+            // The last attempt leaves the row alone: the lease is genuinely live here (every shorter one was waited
+            // out above), so a sibling is streaming this row and failing it would orphan the video that upload owns.
+            // The sibling's own transition — `processing`, a reschedule or a verdict — is what wakes the row.
             return UploadOutcome.Rescheduled;
         }
 
@@ -252,6 +266,21 @@ public sealed partial class PublishYouTubeHandler(
             // A cancelled run (a shutting-down Worker, an aborted caller) is not a verdict, but it must not leave a
             // live window behind either: the next delivery would answer "nothing to do" until the lease expired.
             await ReleaseClaimsAfterThrownRunAsync(run).ConfigureAwait(false);
+
+            throw;
+        }
+        catch (Exception)
+        {
+            // Everything else — a provider exception from a lock or a save, a protector refusal, an invariant the run
+            // tripped — is still this run's claims to give back, and on the last attempt still this row's verdict.
+            // Nobody else writes either: `PublishYouTubeJob`'s catch-all only re-labels the exception, so without the
+            // verdict here the attempts would run out with the row left in `uploading` for good.
+            await ReleaseClaimsAfterThrownRunAsync(run).ConfigureAwait(false);
+            await TryFailExhaustedAsync(
+                    run,
+                    Error.Failure(PublicationErrorCodes.UploadFailed, "The attempt failed unexpectedly."),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
 
             throw;
         }
