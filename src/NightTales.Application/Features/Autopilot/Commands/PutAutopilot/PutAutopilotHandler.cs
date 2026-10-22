@@ -603,26 +603,26 @@ public sealed partial class PutAutopilotHandler(
                 OccurredAt: now),
             ct);
 
-    // 02.8.3-T2: 6695-6700 is the block this task takes, directly above the shipped `AutopilotRunOrchestrator` /
-    // `AutopilotPlanJob` ids (6690-6694) and clear of 63xx, where `ProposeBibleUpdateHandler` already holds
-    // 6340-6358 — the collision `LoggerMessageEventIdTests` caught on this branch.
+    // 02.8.3-T2: 6699-6702 and 6710-6713 are the ids this task takes, clear of `AutopilotRunOrchestrator` /
+    // `AutopilotPlanJob` (6690-6694), `PublishYouTubeHandler` (6695-6698, 06.2.3-T2) and 63xx, where
+    // `ProposeBibleUpdateHandler` holds 6340-6358 — the collisions `LoggerMessageEventIdTests` caught on this branch.
     /// <summary>Logs one applied change with ids and slugs only (D19).</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="enabled">Whether the series ended enabled.</param>
     /// <param name="revoked">Whether an authorization was revoked on the way.</param>
-    [LoggerMessage(EventId = 6695, Level = LogLevel.Information, Message = "Autopilot put: series {seriesId} enabled {enabled}, authorization revoked {revoked}.")]
+    [LoggerMessage(EventId = 6710, Level = LogLevel.Information, Message = "Autopilot put: series {seriesId} enabled {enabled}, authorization revoked {revoked}.")]
     private partial void LogChanged(Guid seriesId, bool enabled, bool revoked);
 
     /// <summary>Logs the planned runs the state machine would not hold; the next tick retries them.</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="refused">How many runs the state machine would not move.</param>
-    [LoggerMessage(EventId = 6696, Level = LogLevel.Warning, Message = "Autopilot put: {refused} planned run(s) of series {seriesId} could not be held; the next tick retries.")]
+    [LoggerMessage(EventId = 6711, Level = LogLevel.Warning, Message = "Autopilot put: {refused} planned run(s) of series {seriesId} could not be held; the next tick retries.")]
     private partial void LogRunHoldDeferred(Guid seriesId, int refused);
 
     /// <summary>Logs the planned runs one pass did not read, which the next hold of the same series picks up.</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="untouched">How many planned runs lie beyond the pass bound.</param>
-    [LoggerMessage(EventId = 6698, Level = LogLevel.Warning, Message = "Autopilot put: {untouched} planned run(s) of series {seriesId} lie beyond the hold bound and stay planned; the next hold picks them up.")]
+    [LoggerMessage(EventId = 6713, Level = LogLevel.Warning, Message = "Autopilot put: {untouched} planned run(s) of series {seriesId} lie beyond the hold bound and stay planned; the next hold picks them up.")]
     private partial void LogRunHoldTruncated(Guid seriesId, int untouched);
 
     /// <summary>Logs the owner-paused runs an enable did not release; the next resume or acceptance retries them.</summary>

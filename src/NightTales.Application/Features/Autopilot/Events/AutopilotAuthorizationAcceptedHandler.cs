@@ -134,15 +134,15 @@ public sealed partial class AutopilotAuthorizationAcceptedHandler(
         }
     }
 
-    // 02.8.3-T2: 6695-6699 is the block this task takes (see PutAutopilotHandler): 6347 already belonged to
-    // `ProposeBibleUpdateHandler.LogTrueCrimeAutopilot`.
+    // 02.8.3-T2: 6699-6702 and 6710-6713 are the ids this task takes (see PutAutopilotHandler): 6347 already
+    // belonged to `ProposeBibleUpdateHandler.LogTrueCrimeAutopilot`, 6695-6698 to `PublishYouTubeHandler`.
     /// <summary>Logs what one delivery released and routed.</summary>
     /// <param name="seriesId">The series.</param>
     /// <param name="authorizationId">The accepted row.</param>
     /// <param name="version">Its version.</param>
     /// <param name="released">How many runs the restored consent un-paused.</param>
     /// <param name="runs">How many open runs were advanced.</param>
-    [LoggerMessage(EventId = 6697, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; released {released} paused run(s), advanced {runs} open run(s).")]
+    [LoggerMessage(EventId = 6712, Level = LogLevel.Information, Message = "Autopilot authorization {authorizationId} v{version} accepted for series {seriesId}; released {released} paused run(s), advanced {runs} open run(s).")]
     private partial void LogRouted(Guid seriesId, Guid authorizationId, int version, int released, int runs);
 
     /// <summary>Logs the runs one release pass could not move; the next acceptance or tick retries them.</summary>
